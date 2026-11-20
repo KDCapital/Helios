@@ -170,6 +170,13 @@ matched by the entity registry's integration platform and translation key
 rather than by entity names. HomeWizard's P1 meter is recognised out of the box;
 unknown meters fall back to a device-class and naming heuristic.
 
+Detection is checked against the integration's own published metadata by
+`tests/test_homewizard_alignment.py`, which parses HomeWizard's sensor
+descriptions and fails if a counter is renamed, disabled by default, or stops
+being cumulative kWh. It also refuses to guess: if the combined counter is
+unavailable it suggests **nothing** rather than falling back to a T1/T2 register
+that would meter only part of the flow.
+
 A P1 meter reports live power as **one signed value**: positive when importing,
 negative when exporting. That sensor has no translation key on HomeWizard, so it
 is recognised as the only power sensor without one. Selecting it fills a single
@@ -401,7 +408,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 153 tests
+.venv/bin/python -m pytest        # 160 tests
 .venv/bin/ruff check custom_components tests
 ```
 

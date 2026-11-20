@@ -205,7 +205,12 @@ def _from_heuristic(candidates: list[_Candidate]) -> MeterDetection:
         ]
         if not matches:
             return None
-        return min(matches, key=_rank).entity_id
+        best = min(matches, key=_rank)
+        if _TARIFF_SUFFIX.search(best.entity_id) and len(matches) > 1:
+            # A split register such as T1/T2 only measures part of the flow.
+            # Metering half of it silently would be worse than no suggestion.
+            return None
+        return best.entity_id
 
     signed = [
         candidate
@@ -243,13 +248,20 @@ def async_detect_meter_entities(
         if not any(candidate.platform == platform for candidate in candidates):
             continue
         detection = _from_signature(candidates, signature)
-        if not detection.is_empty:
+        if detection.is_empty:
+            # A known meter whose documented counters are missing (disabled, or
+            # not supported by this model) must not be guessed at: the fallback
+            # would pick a per-tariff register and meter only part of the flow.
             _LOGGER.debug(
-                "Grid: recognised %s meter %s as %s",
-                platform,
-                device_id,
-                detection.found,
+                "Grid: %s meter %s has no recognisable counters", platform, device_id
             )
             return detection
+        _LOGGER.debug(
+            "Grid: recognised %s meter %s as %s",
+            platform,
+            device_id,
+            detection.found,
+        )
+        return detection
 
     return _from_heuristic(candidates)
