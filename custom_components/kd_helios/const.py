@@ -178,6 +178,9 @@ MIN_ERE_RATIO_WINDOW_KWH: Final = 1.0
 #: Fallback ERE/kWh used when a Joulo-derived ratio is not available yet.
 MIN_ERE_PER_KWH: Final = 0.0
 
+#: Repair issue shown while the entry has no tracked devices yet.
+ISSUE_NO_DEVICES: Final = "no_devices"
+
 STORAGE_VERSION: Final = 1
 STORAGE_SAVE_DELAY: Final = 15
 

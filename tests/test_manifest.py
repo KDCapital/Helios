@@ -118,6 +118,17 @@ def test_every_subentry_type_has_translations() -> None:
         assert step in device["step"], step
 
 
+def test_repair_issues_are_translated() -> None:
+    """Every repair issue the integration raises has en and nl strings."""
+    from custom_components.kd_helios.const import ISSUE_NO_DEVICES
+
+    for name in ("strings.json", "translations/en.json", "translations/nl.json"):
+        data = json.loads((COMPONENT / name).read_text(encoding="utf-8"))
+        issue = data["issues"][ISSUE_NO_DEVICES]
+        assert issue["title"]
+        assert issue["description"]
+
+
 def test_every_sensor_has_a_translated_name() -> None:
     """No entity is left showing a raw translation key."""
     from custom_components.kd_helios.sensor import DEVICE_SENSORS, HUB_SENSORS

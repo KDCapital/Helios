@@ -14,8 +14,16 @@ from dataclasses import dataclass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 
-from .const import CONF_PRICE_INTERVAL, CONF_PROVIDER, DEFAULT_PRICE_INTERVAL
+from .const import (
+    CONF_PRICE_INTERVAL,
+    CONF_PROVIDER,
+    DEFAULT_PRICE_INTERVAL,
+    DOMAIN,
+    ISSUE_NO_DEVICES,
+    SUBENTRY_TYPE_DEVICE,
+)
 from .coordinator import HeliosEngine, PriceCoordinator
 from .storage import HeliosStorage
 
@@ -65,6 +73,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HeliosConfigEntry) -> bo
     # Adding, editing or removing a device subentry must rebuild the trackers
     # and the entities, so a reload is the simplest correct response.
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+    _async_sync_no_device_issue(hass, entry)
     return True
 
 
@@ -78,7 +87,36 @@ async def async_unload_entry(hass: HomeAssistant, entry: HeliosConfigEntry) -> b
 
 async def async_remove_entry(hass: HomeAssistant, entry: HeliosConfigEntry) -> None:
     """Remove persisted accounting state when the entry is deleted."""
+    ir.async_delete_issue(hass, DOMAIN, _no_device_issue_id(entry))
     await HeliosStorage(hass, entry.entry_id).async_remove()
+
+
+def _no_device_issue_id(entry: HeliosConfigEntry) -> str:
+    """Return the repair issue id for an entry without devices."""
+    return f"{ISSUE_NO_DEVICES}_{entry.entry_id}"
+
+
+def _async_sync_no_device_issue(
+    hass: HomeAssistant, entry: HeliosConfigEntry
+) -> None:
+    """Nudge the user to add a device, since the tariff alone meters nothing.
+
+    Devices are config subentries, which are added from the integration page
+    rather than from the initial setup wizard. Without this hint a fresh
+    install looks finished but tracks nothing.
+    """
+    issue_id = _no_device_issue_id(entry)
+    if entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE):
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_NO_DEVICES,
+    )
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: HeliosConfigEntry) -> None:

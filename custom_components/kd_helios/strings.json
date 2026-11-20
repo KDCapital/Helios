@@ -213,5 +213,11 @@
         "joulo": "From the Joulo integration"
       }
     }
+  },
+  "issues": {
+    "no_devices": {
+      "title": "KD Helios is not tracking any device yet",
+      "description": "The tariff is loaded, but nothing is being metered yet.\n\nGo to **Settings → Devices & services → KD Helios** and choose **Add device** to attach a power or energy entity to an appliance, a circuit or an EV charger.\n\nUntil you do, KD Helios only shows the current energy prices."
+    }
   }
 }

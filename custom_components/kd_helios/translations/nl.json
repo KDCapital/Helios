@@ -213,5 +213,11 @@
         "joulo": "Uit de Joulo-integratie"
       }
     }
+  },
+  "issues": {
+    "no_devices": {
+      "title": "KD Helios meet nog geen enkel apparaat",
+      "description": "Het tarief is geladen, maar er wordt nog niets gemeten.\n\nGa naar **Instellingen → Apparaten & diensten → KD Helios** en kies **Apparaat toevoegen** om een vermogens- of energiesensor te koppelen aan een apparaat, een groep of een laadpaal.\n\nTot die tijd toont KD Helios alleen de actuele energieprijzen."
+    }
   }
 }

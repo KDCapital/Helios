@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
+import orjson
 import pytest
 from freezegun import freeze_time
 from homeassistant.config_entries import (
@@ -379,3 +380,61 @@ async def test_disabling_reimbursement_removes_its_entities(hass, entry) -> None
     assert "reimbursement_rate" not in after
     assert "net_cost" not in after
     assert "energy" in after and "cost" in after
+
+
+async def test_subentry_type_is_exposed_to_the_frontend(hass, entry) -> None:
+    """The UI needs this payload field to render the "Add device" button."""
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.supported_subentry_types == {
+        SUBENTRY_TYPE_DEVICE: {"supports_reconfigure": True}
+    }
+    # The same value is serialised into the WebSocket payload the UI reads.
+    payload = orjson.loads(orjson.dumps(entry.as_json_fragment))
+    assert payload["supported_subentry_types"] == {
+        SUBENTRY_TYPE_DEVICE: {"supports_reconfigure": True}
+    }
+
+
+async def test_repair_hint_points_at_adding_a_device(hass) -> None:
+    """A fresh install with no devices shows a repair, and clears it later."""
+    from homeassistant.helpers import issue_registry as ir
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=USER_INPUT,
+        unique_id="zonneplan_quarterly",
+        title="Zonneplan",
+    )
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    issues = ir.async_get(hass)
+    issue_id = f"no_devices_{entry.entry_id}"
+    issue = issues.async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.translation_key == "no_devices"
+    assert issue.is_fixable is False
+
+    # Adding a device clears the hint.
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_DEVICE), context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            CONF_NAME: "Heat pump",
+            CONF_KIND: "device",
+            CONF_ENERGY_ENTITY: "sensor.heat_pump_energy",
+        },
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_ERE_MODE: "none"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    assert issues.async_get_issue(DOMAIN, issue_id) is None
