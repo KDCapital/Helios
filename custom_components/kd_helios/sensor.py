@@ -35,7 +35,6 @@ from .const import (
     NAME,
     SLOT_MINUTES,
     SUBENTRY_TYPE_BATTERY,
-    SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_GRID,
     UNIT_ERE,
     UNIT_EUR_PER_KWH,
@@ -44,7 +43,7 @@ from .const import (
 )
 from .coordinator import HeliosEngine
 from .grid import GridSnapshot
-from .models import BatteryConfig, DeviceConfig, GridConfig
+from .models import BatteryConfig, DeviceConfig, GridConfig, device_subentries
 from .prices import PriceSeries
 
 _LOGGER = logging.getLogger(__name__)
@@ -844,7 +843,7 @@ async def async_setup_entry(
     valid_unique_ids = {entity.unique_id for entity in hub_entities}
     async_add_entities(hub_entities)
 
-    for subentry in entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE):
+    for subentry in device_subentries(entry):
         config = DeviceConfig.from_subentry(subentry)
         entities = [
             HeliosDeviceSensor(runtime.engine, config, description)

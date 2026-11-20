@@ -66,9 +66,22 @@ contract settles **per quarter hour** (most dynamic contracts) or **per hour**.
 The provider and interval can be changed later through **Reconfigure**; devices
 and their totals are kept.
 
-### 2. Add a device
+### 2. Add a device or an EV charger
 
-Open the KD Helios entry and choose **Add device**.
+Open the KD Helios entry and pick the entry point that matches what you are
+metering:
+
+- **Add device** (in Dutch: *Apparaat toevoegen*) — an appliance or a circuit.
+  Name, power entity, energy entity. Done. It is **never** asked about employer
+  reimbursement or ERE certificates, because neither applies to a heat pump.
+- **Add EV charger** (in Dutch: *Laadpaal toevoegen*) — the same fields, then
+  reimbursement and ERE in two more steps.
+
+Both appear under the same **Add** menu on the integration page, and they are
+separate subentry types (`device` and `ev_charger`), so the list of devices and
+the edit forms stay short and specific.
+
+#### Add device
 
 | Field | Meaning |
 |---|---|
@@ -82,6 +95,10 @@ only feeds the live `Power` sensor. Mixing the two mid-flight would double
 count, so KD Helios never switches between them — and pointing a device at a
 different meter rebases the counters instead of billing the difference between
 the old and the new reading.
+
+#### Add EV charger
+
+The following two sections are part of the charger workflow only.
 
 ### 3. Employer reimbursement (EV chargers)
 
@@ -535,7 +552,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 199 tests
+.venv/bin/python -m pytest        # 203 tests
 .venv/bin/ruff check custom_components tests
 ```
 
@@ -551,8 +568,9 @@ The battery planner is covered separately: which hours it buys, how capacity and
 charge power cap the plan, when it declines to cycle at all, and the exact
 register payload written to the inverter, plus that the applied plan and its
 predicted saving survive a restart. The panel payload is covered by rendering
-`build_dashboard()` directly, which is the same data the browser receives.
-Coverage is 95%.
+`build_dashboard()` directly, which is the same data the browser receives. There
+is also a test that a device-typed entry created before the split keeps its
+reimbursement when edited through the short form. Coverage is 95%.
 
 ---
 

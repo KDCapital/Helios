@@ -45,97 +45,36 @@
       "step": {
         "user": {
           "title": "Add a device",
-          "description": "Track what one appliance, circuit or charger actually costs by attaching an existing power or energy entity.\n\nAn energy entity (kWh) is preferred because it is exact. A power entity (W) is integrated over time and is a good fallback for plugs that only report power.",
+          "description": "Track what one appliance or circuit actually costs by attaching an existing power or energy entity.\n\nAn energy entity (kWh) is preferred because it is exact. A power entity (W) is integrated over time and is a good fallback for plugs that only report power.\n\nUse **Add EV charger** instead when the device is a charger: that workflow also asks about employer reimbursement and ERE certificates.",
           "data": {
             "name": "Name",
-            "kind": "Device type",
             "power_entity": "Power entity",
             "energy_entity": "Energy entity"
           },
           "data_description": {
-            "name": "The name shown in Home Assistant, for example \"EV charger\" or \"Heat pump\".",
-            "kind": "EV chargers can also get an employer reimbursement and ERE certificates.",
+            "name": "The name shown in Home Assistant, for example \"Heat pump\" or \"Washing machine\".",
             "power_entity": "A sensor in W or kW that reports current power.",
             "energy_entity": "A cumulative sensor in kWh. Takes precedence over the power entity."
           }
         },
-        "reimbursement": {
-          "title": "Employer reimbursement",
-          "description": "When your employer pays for charging, every kWh earns money back.\n\n**Fixed** pays a set amount per kWh.\n\n**Dynamic** follows the formula `(market price + fixed surcharge) × surcharge percentage`. With a percentage of 100 that is simply `market price + surcharge`.",
-          "data": {
-            "reimbursement_mode": "Reimbursement type",
-            "reimbursement_rate": "Fixed reimbursement",
-            "reimbursement_surcharge": "Fixed surcharge",
-            "reimbursement_percent": "Surcharge percentage",
-            "reimbursement_basis": "Market price",
-            "reimbursement_interval": "Reimbursement price interval"
-          },
-          "data_description": {
-            "reimbursement_mode": "No reimbursement, a fixed rate, or the dynamic formula.",
-            "reimbursement_rate": "Amount your employer pays per kWh, in euros.",
-            "reimbursement_surcharge": "Fixed amount added to the market price, in euros per kWh.",
-            "reimbursement_percent": "Multiplier applied after the surcharge. 100 means no extra margin, 105 adds five percent.",
-            "reimbursement_basis": "EPEX spot excludes VAT and energy tax. All-in is what you pay at home.",
-            "reimbursement_interval": "How often the tariff your employer uses changes. Choose per hour when the reimbursement settles hourly while your own contract settles per quarter; the reimbursement then uses the hour average instead of the quarter hour price."
-          }
-        },
-        "ere": {
-          "title": "ERE certificates",
-          "description": "ERE certificates add value to every kWh you charge.\n\n**Fixed** values each kWh at `ERE per kWh × price per ERE`.\n\n**Joulo** derives the ERE per kWh from the cumulative Joulo counters, so it follows what the charger actually earns.",
-          "data": {
-            "ere_mode": "ERE source",
-            "ere_per_kwh": "ERE per kWh",
-            "ere_price": "Price per ERE",
-            "ere_price_entity": "Live ERE price entity",
-            "ere_credits_entity": "Joulo ERE credits entity",
-            "ere_kwh_entity": "Joulo total kWh entity"
-          },
-          "data_description": {
-            "ere_mode": "No ERE value, a fixed ratio, or the Joulo integration.",
-            "ere_per_kwh": "Also used as the fallback while a Joulo ratio is not available yet.",
-            "ere_price": "Value of one ERE certificate in euros.",
-            "ere_price_entity": "Optional sensor with the live price per ERE, for example the Joulo market price sensor.",
-            "ere_credits_entity": "Cumulative ERE credits, for example sensor.joulo_total_ere_credits.",
-            "ere_kwh_entity": "Cumulative charged energy, for example sensor.joulo_total_all_kwh."
-          }
-        },
         "reconfigure": {
           "title": "Edit device",
-          "description": "Change any setting of this device. Its totals, including the energy already priced, are preserved.",
+          "description": "Change the name or the entity this device is metered from. Its totals are preserved.",
           "data": {
             "name": "Name",
-            "kind": "Device type",
             "power_entity": "Power entity",
-            "energy_entity": "Energy entity",
-            "reimbursement_mode": "Reimbursement type",
-            "reimbursement_rate": "Fixed reimbursement",
-            "reimbursement_surcharge": "Fixed surcharge",
-            "reimbursement_percent": "Surcharge percentage",
-            "reimbursement_basis": "Market price",
-            "reimbursement_interval": "Reimbursement price interval",
-            "ere_mode": "ERE source",
-            "ere_per_kwh": "ERE per kWh",
-            "ere_price": "Price per ERE",
-            "ere_price_entity": "Live ERE price entity",
-            "ere_credits_entity": "Joulo ERE credits entity",
-            "ere_kwh_entity": "Joulo total kWh entity"
+            "energy_entity": "Energy entity"
           },
           "data_description": {
-            "reimbursement_basis": "EPEX spot excludes VAT and energy tax. All-in is what you pay at home.",
-            "reimbursement_interval": "How often the tariff your employer uses changes, independently of your own contract.",
-            "ere_per_kwh": "Also used as the fallback while a Joulo ratio is not available yet."
+            "power_entity": "A sensor in W or kW that reports current power.",
+            "energy_entity": "A cumulative sensor in kWh. Takes precedence over the power entity."
           }
         }
       },
       "error": {
         "name_required": "Give the device a name.",
         "no_source": "Attach a power entity, an energy entity, or both.",
-        "duplicate_source": "The power and energy entity must be different sensors.",
-        "rate_required": "A fixed reimbursement needs an amount above zero.",
-        "percent_required": "The surcharge percentage must be above zero.",
-        "ere_per_kwh_required": "A fixed ERE ratio needs a value above zero.",
-        "ere_price_required": "A fixed ERE price needs a value above zero. Enter one, or select a live price entity.",
-        "entity_required": "Select the Joulo entity for this field."
+        "duplicate_source": "The power and energy entity must be different sensors."
       },
       "abort": {
         "reconfigure_successful": "The device was updated."
@@ -315,6 +254,107 @@
         "single_instance": "A battery is already configured.",
         "reconfigure_successful": "The battery settings were updated."
       }
+    },
+    "ev_charger": {
+      "entry_type": "EV charger",
+      "initiate_flow": {
+        "user": "Add EV charger"
+      },
+      "step": {
+        "user": {
+          "title": "Add an EV charger",
+          "description": "Attach the power or energy entity of the charger. An energy entity (kWh) is preferred because it is exact.\n\nThe next two steps ask about employer reimbursement and ERE certificates, which only apply to charging.",
+          "data": {
+            "name": "Name",
+            "power_entity": "Power entity",
+            "energy_entity": "Energy entity"
+          },
+          "data_description": {
+            "name": "The name shown in Home Assistant, for example \"EV charger\".",
+            "power_entity": "A sensor in W or kW that reports current power.",
+            "energy_entity": "A cumulative sensor in kWh. Takes precedence over the power entity."
+          }
+        },
+        "reimbursement": {
+          "title": "Employer reimbursement",
+          "description": "When your employer pays for charging, every kWh earns money back.\n\n**Fixed** pays a set amount per kWh.\n\n**Dynamic** follows the formula `(market price + fixed surcharge) × surcharge percentage`. With a percentage of 100 that is simply `market price + surcharge`.",
+          "data": {
+            "reimbursement_mode": "Reimbursement type",
+            "reimbursement_rate": "Fixed reimbursement",
+            "reimbursement_surcharge": "Fixed surcharge",
+            "reimbursement_percent": "Surcharge percentage",
+            "reimbursement_basis": "Market price",
+            "reimbursement_interval": "Reimbursement price interval"
+          },
+          "data_description": {
+            "reimbursement_mode": "No reimbursement, a fixed rate, or the dynamic formula.",
+            "reimbursement_rate": "Amount your employer pays per kWh, in euros.",
+            "reimbursement_surcharge": "Fixed amount added to the market price, in euros per kWh.",
+            "reimbursement_percent": "Multiplier applied after the surcharge. 100 means no extra margin, 105 adds five percent.",
+            "reimbursement_basis": "EPEX spot excludes VAT and energy tax. All-in is what you pay at home.",
+            "reimbursement_interval": "How often the tariff your employer uses changes. Choose per hour when the reimbursement settles hourly while your own contract settles per quarter; the reimbursement then uses the hour average instead of the quarter hour price."
+          }
+        },
+        "ere": {
+          "title": "ERE certificates",
+          "description": "ERE certificates add value to every kWh you charge.\n\n**Fixed** values each kWh at `ERE per kWh × price per ERE`.\n\n**Joulo** derives the ERE per kWh from the cumulative Joulo counters, so it follows what the charger actually earns.",
+          "data": {
+            "ere_mode": "ERE source",
+            "ere_per_kwh": "ERE per kWh",
+            "ere_price": "Price per ERE",
+            "ere_price_entity": "Live ERE price entity",
+            "ere_credits_entity": "Joulo ERE credits entity",
+            "ere_kwh_entity": "Joulo total kWh entity"
+          },
+          "data_description": {
+            "ere_mode": "No ERE value, a fixed ratio, or the Joulo integration.",
+            "ere_per_kwh": "Also used as the fallback while a Joulo ratio is not available yet.",
+            "ere_price": "Value of one ERE certificate in euros.",
+            "ere_price_entity": "Optional sensor with the live price per ERE, for example the Joulo market price sensor.",
+            "ere_credits_entity": "Cumulative ERE credits, for example sensor.joulo_total_ere_credits.",
+            "ere_kwh_entity": "Cumulative charged energy, for example sensor.joulo_total_all_kwh."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit EV charger",
+          "description": "Change any setting of this charger. Its totals, including the energy already priced, are preserved.",
+          "data": {
+            "name": "Name",
+            "power_entity": "Power entity",
+            "energy_entity": "Energy entity",
+            "reimbursement_mode": "Reimbursement type",
+            "reimbursement_rate": "Fixed reimbursement",
+            "reimbursement_surcharge": "Fixed surcharge",
+            "reimbursement_percent": "Surcharge percentage",
+            "reimbursement_basis": "Market price",
+            "reimbursement_interval": "Reimbursement price interval",
+            "ere_mode": "ERE source",
+            "ere_per_kwh": "ERE per kWh",
+            "ere_price": "Price per ERE",
+            "ere_price_entity": "Live ERE price entity",
+            "ere_credits_entity": "Joulo ERE credits entity",
+            "ere_kwh_entity": "Joulo total kWh entity"
+          },
+          "data_description": {
+            "reimbursement_basis": "EPEX spot excludes VAT and energy tax. All-in is what you pay at home.",
+            "reimbursement_interval": "How often the tariff your employer uses changes, independently of your own contract.",
+            "ere_per_kwh": "Also used as the fallback while a Joulo ratio is not available yet."
+          }
+        }
+      },
+      "error": {
+        "name_required": "Give the charger a name.",
+        "no_source": "Attach a power entity, an energy entity, or both.",
+        "duplicate_source": "The power and energy entity must be different sensors.",
+        "rate_required": "A fixed reimbursement needs an amount above zero.",
+        "percent_required": "The surcharge percentage must be above zero.",
+        "ere_per_kwh_required": "A fixed ERE ratio needs a value above zero.",
+        "ere_price_required": "A fixed ERE price needs a value above zero. Enter one, or select a live price entity.",
+        "entity_required": "Select the Joulo entity for this field."
+      },
+      "abort": {
+        "reconfigure_successful": "The EV charger was updated."
+      }
     }
   },
   "entity": {
@@ -418,12 +458,6 @@
       "options": {
         "quarterly": "Per quarter hour",
         "hourly": "Per hour"
-      }
-    },
-    "device_kind": {
-      "options": {
-        "device": "Appliance or circuit",
-        "ev_charger": "EV charger"
       }
     },
     "reimbursement_mode": {

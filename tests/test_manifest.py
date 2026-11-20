@@ -114,8 +114,17 @@ def test_every_subentry_type_has_translations() -> None:
     device = subentries["device"]
     assert device["initiate_flow"]["user"]
     assert device["entry_type"]
-    for step in ("user", "reimbursement", "ere", "reconfigure"):
+    # A plain device never asks about reimbursement or ERE.
+    for step in ("user", "reconfigure"):
         assert step in device["step"], step
+    assert "reimbursement" not in device["step"]
+    assert "ere" not in device["step"]
+
+    assert "ev_charger" in subentries
+    charger = subentries["ev_charger"]
+    assert charger["initiate_flow"]["user"]
+    for step in ("user", "reimbursement", "ere", "reconfigure"):
+        assert step in charger["step"], step
 
     assert "grid" in subentries
     grid = subentries["grid"]

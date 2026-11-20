@@ -45,97 +45,36 @@
       "step": {
         "user": {
           "title": "Apparaat toevoegen",
-          "description": "Meet wat één apparaat, groep of lader echt kost door een bestaande vermogens- of energiesensor te koppelen.\n\nEen energiesensor (kWh) heeft de voorkeur, want die is exact. Een vermogenssensor (W) wordt over de tijd geïntegreerd en is een goede terugvaloptie voor stekkers die alleen vermogen meten.",
+          "description": "Meet wat één apparaat of groep echt kost door een bestaande vermogens- of energiesensor te koppelen.\n\nEen energiesensor (kWh) heeft de voorkeur, want die is exact. Een vermogenssensor (W) wordt over de tijd geïntegreerd en is een goede terugvaloptie voor stekkers die alleen vermogen meten.\n\nGebruik **Laadpaal toevoegen** als het om een lader gaat: die workflow vraagt ook naar de werkgeversvergoeding en ERE-certificaten.",
           "data": {
             "name": "Naam",
-            "kind": "Soort apparaat",
             "power_entity": "Vermogenssensor",
             "energy_entity": "Energiesensor"
           },
           "data_description": {
-            "name": "De naam in Home Assistant, bijvoorbeeld \"Laadpaal\" of \"Warmtepomp\".",
-            "kind": "Laadpalen kunnen ook een werkgeversvergoeding en ERE-certificaten krijgen.",
+            "name": "De naam in Home Assistant, bijvoorbeeld \"Warmtepomp\" of \"Wasmachine\".",
             "power_entity": "Een sensor in W of kW met het actuele vermogen.",
             "energy_entity": "Een cumulatieve sensor in kWh. Gaat voor op de vermogenssensor."
           }
         },
-        "reimbursement": {
-          "title": "Werkgeversvergoeding",
-          "description": "Als je werkgever het laden betaalt, levert elke kWh geld op.\n\n**Vast** vergoedt een vast bedrag per kWh.\n\n**Dynamisch** volgt de formule `(marktprijs + vaste toeslag) × toeslagpercentage`. Bij 100 procent is dat simpelweg `marktprijs + toeslag`.",
-          "data": {
-            "reimbursement_mode": "Soort vergoeding",
-            "reimbursement_rate": "Vaste vergoeding",
-            "reimbursement_surcharge": "Vaste toeslag",
-            "reimbursement_percent": "Toeslagpercentage",
-            "reimbursement_basis": "Marktprijs",
-            "reimbursement_interval": "Prijsinterval vergoeding"
-          },
-          "data_description": {
-            "reimbursement_mode": "Geen vergoeding, een vast tarief, of de dynamische formule.",
-            "reimbursement_rate": "Bedrag dat je werkgever per kWh betaalt, in euro.",
-            "reimbursement_surcharge": "Vast bedrag bovenop de marktprijs, in euro per kWh.",
-            "reimbursement_percent": "Vermenigvuldiger na de toeslag. 100 betekent geen extra marge, 105 voegt vijf procent toe.",
-            "reimbursement_basis": "EPEX spot is exclusief btw en energiebelasting. All-in is wat je thuis betaalt.",
-            "reimbursement_interval": "Hoe vaak het tarief van je werkgever wisselt. Kies per uur als de vergoeding per uur wordt afgerekend terwijl je eigen contract per kwartier rekent; de vergoeding gebruikt dan het uurgemiddelde in plaats van de kwartierprijs."
-          }
-        },
-        "ere": {
-          "title": "ERE-certificaten",
-          "description": "ERE-certificaten geven elke geladen kWh een waarde.\n\n**Vast** waardeert elke kWh op `ERE per kWh × prijs per ERE`.\n\n**Joulo** leidt het aantal ERE per kWh af uit de cumulatieve Joulo-tellers, zodat het volgt wat de lader echt oplevert.",
-          "data": {
-            "ere_mode": "ERE-bron",
-            "ere_per_kwh": "ERE per kWh",
-            "ere_price": "Prijs per ERE",
-            "ere_price_entity": "Sensor met actuele ERE-prijs",
-            "ere_credits_entity": "Joulo ERE-tegoedsensor",
-            "ere_kwh_entity": "Joulo totaal kWh-sensor"
-          },
-          "data_description": {
-            "ere_mode": "Geen ERE-waarde, een vaste verhouding, of de Joulo-integratie.",
-            "ere_per_kwh": "Wordt ook gebruikt als terugvalwaarde zolang er nog geen Joulo-verhouding is.",
-            "ere_price": "Waarde van één ERE-certificaat in euro.",
-            "ere_price_entity": "Optionele sensor met de actuele prijs per ERE, bijvoorbeeld de Joulo-marktprijssensor.",
-            "ere_credits_entity": "Cumulatief ERE-tegoed, bijvoorbeeld sensor.joulo_total_ere_credits.",
-            "ere_kwh_entity": "Cumulatief geladen energie, bijvoorbeeld sensor.joulo_total_all_kwh."
-          }
-        },
         "reconfigure": {
           "title": "Apparaat bewerken",
-          "description": "Wijzig elke instelling van dit apparaat. De totalen, inclusief de al afgerekende energie, blijven behouden.",
+          "description": "Wijzig de naam of de sensor waarop dit apparaat wordt gemeten. De totalen blijven behouden.",
           "data": {
             "name": "Naam",
-            "kind": "Soort apparaat",
             "power_entity": "Vermogenssensor",
-            "energy_entity": "Energiesensor",
-            "reimbursement_mode": "Soort vergoeding",
-            "reimbursement_rate": "Vaste vergoeding",
-            "reimbursement_surcharge": "Vaste toeslag",
-            "reimbursement_percent": "Toeslagpercentage",
-            "reimbursement_basis": "Marktprijs",
-            "reimbursement_interval": "Prijsinterval vergoeding",
-            "ere_mode": "ERE-bron",
-            "ere_per_kwh": "ERE per kWh",
-            "ere_price": "Prijs per ERE",
-            "ere_price_entity": "Sensor met actuele ERE-prijs",
-            "ere_credits_entity": "Joulo ERE-tegoedsensor",
-            "ere_kwh_entity": "Joulo totaal kWh-sensor"
+            "energy_entity": "Energiesensor"
           },
           "data_description": {
-            "reimbursement_basis": "EPEX spot is exclusief btw en energiebelasting. All-in is wat je thuis betaalt.",
-            "reimbursement_interval": "Hoe vaak het tarief van je werkgever wisselt, onafhankelijk van je eigen contract.",
-            "ere_per_kwh": "Wordt ook gebruikt als terugvalwaarde zolang er nog geen Joulo-verhouding is."
+            "power_entity": "Een sensor in W of kW met het actuele vermogen.",
+            "energy_entity": "Een cumulatieve sensor in kWh. Gaat voor op de vermogenssensor."
           }
         }
       },
       "error": {
         "name_required": "Geef het apparaat een naam.",
         "no_source": "Koppel een vermogenssensor, een energiesensor, of allebei.",
-        "duplicate_source": "De vermogens- en energiesensor moeten verschillende sensoren zijn.",
-        "rate_required": "Een vaste vergoeding heeft een bedrag boven nul nodig.",
-        "percent_required": "Het toeslagpercentage moet boven nul liggen.",
-        "ere_per_kwh_required": "Een vaste ERE-verhouding heeft een waarde boven nul nodig.",
-        "ere_price_required": "Een vaste ERE-prijs heeft een waarde boven nul nodig. Vul er een in, of kies een sensor met de actuele prijs.",
-        "entity_required": "Selecteer de Joulo-sensor voor dit veld."
+        "duplicate_source": "De vermogens- en energiesensor moeten verschillende sensoren zijn."
       },
       "abort": {
         "reconfigure_successful": "Het apparaat is bijgewerkt."
@@ -315,6 +254,107 @@
         "single_instance": "Er is al een batterij ingesteld.",
         "reconfigure_successful": "De batterijinstellingen zijn bijgewerkt."
       }
+    },
+    "ev_charger": {
+      "entry_type": "Laadpaal",
+      "initiate_flow": {
+        "user": "Laadpaal toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "Laadpaal toevoegen",
+          "description": "Koppel de vermogens- of energiesensor van de lader. Een energiesensor (kWh) heeft de voorkeur, want die is exact.\n\nDe volgende twee stappen vragen naar de werkgeversvergoeding en ERE-certificaten; die gelden alleen voor laden.",
+          "data": {
+            "name": "Naam",
+            "power_entity": "Vermogenssensor",
+            "energy_entity": "Energiesensor"
+          },
+          "data_description": {
+            "name": "De naam in Home Assistant, bijvoorbeeld \"Laadpaal\".",
+            "power_entity": "Een sensor in W of kW met het actuele vermogen.",
+            "energy_entity": "Een cumulatieve sensor in kWh. Gaat voor op de vermogenssensor."
+          }
+        },
+        "reimbursement": {
+          "title": "Werkgeversvergoeding",
+          "description": "Als je werkgever het laden betaalt, levert elke kWh geld op.\n\n**Vast** vergoedt een vast bedrag per kWh.\n\n**Dynamisch** volgt de formule `(marktprijs + vaste toeslag) × toeslagpercentage`. Bij 100 procent is dat simpelweg `marktprijs + toeslag`.",
+          "data": {
+            "reimbursement_mode": "Soort vergoeding",
+            "reimbursement_rate": "Vaste vergoeding",
+            "reimbursement_surcharge": "Vaste toeslag",
+            "reimbursement_percent": "Toeslagpercentage",
+            "reimbursement_basis": "Marktprijs",
+            "reimbursement_interval": "Prijsinterval vergoeding"
+          },
+          "data_description": {
+            "reimbursement_mode": "Geen vergoeding, een vast tarief, of de dynamische formule.",
+            "reimbursement_rate": "Bedrag dat je werkgever per kWh betaalt, in euro.",
+            "reimbursement_surcharge": "Vast bedrag bovenop de marktprijs, in euro per kWh.",
+            "reimbursement_percent": "Vermenigvuldiger na de toeslag. 100 betekent geen extra marge, 105 voegt vijf procent toe.",
+            "reimbursement_basis": "EPEX spot is exclusief btw en energiebelasting. All-in is wat je thuis betaalt.",
+            "reimbursement_interval": "Hoe vaak het tarief van je werkgever wisselt. Kies per uur als de vergoeding per uur wordt afgerekend terwijl je eigen contract per kwartier rekent; de vergoeding gebruikt dan het uurgemiddelde in plaats van de kwartierprijs."
+          }
+        },
+        "ere": {
+          "title": "ERE-certificaten",
+          "description": "ERE-certificaten geven elke geladen kWh een waarde.\n\n**Vast** waardeert elke kWh op `ERE per kWh × prijs per ERE`.\n\n**Joulo** leidt het aantal ERE per kWh af uit de cumulatieve Joulo-tellers, zodat het volgt wat de lader echt oplevert.",
+          "data": {
+            "ere_mode": "ERE-bron",
+            "ere_per_kwh": "ERE per kWh",
+            "ere_price": "Prijs per ERE",
+            "ere_price_entity": "Sensor met actuele ERE-prijs",
+            "ere_credits_entity": "Joulo ERE-tegoedsensor",
+            "ere_kwh_entity": "Joulo totaal kWh-sensor"
+          },
+          "data_description": {
+            "ere_mode": "Geen ERE-waarde, een vaste verhouding, of de Joulo-integratie.",
+            "ere_per_kwh": "Wordt ook gebruikt als terugvalwaarde zolang er nog geen Joulo-verhouding is.",
+            "ere_price": "Waarde van één ERE-certificaat in euro.",
+            "ere_price_entity": "Optionele sensor met de actuele prijs per ERE, bijvoorbeeld de Joulo-marktprijssensor.",
+            "ere_credits_entity": "Cumulatief ERE-tegoed, bijvoorbeeld sensor.joulo_total_ere_credits.",
+            "ere_kwh_entity": "Cumulatief geladen energie, bijvoorbeeld sensor.joulo_total_all_kwh."
+          }
+        },
+        "reconfigure": {
+          "title": "Laadpaal bewerken",
+          "description": "Wijzig elke instelling van deze lader. De totalen, inclusief de al afgerekende energie, blijven behouden.",
+          "data": {
+            "name": "Naam",
+            "power_entity": "Vermogenssensor",
+            "energy_entity": "Energiesensor",
+            "reimbursement_mode": "Soort vergoeding",
+            "reimbursement_rate": "Vaste vergoeding",
+            "reimbursement_surcharge": "Vaste toeslag",
+            "reimbursement_percent": "Toeslagpercentage",
+            "reimbursement_basis": "Marktprijs",
+            "reimbursement_interval": "Prijsinterval vergoeding",
+            "ere_mode": "ERE-bron",
+            "ere_per_kwh": "ERE per kWh",
+            "ere_price": "Prijs per ERE",
+            "ere_price_entity": "Sensor met actuele ERE-prijs",
+            "ere_credits_entity": "Joulo ERE-tegoedsensor",
+            "ere_kwh_entity": "Joulo totaal kWh-sensor"
+          },
+          "data_description": {
+            "reimbursement_basis": "EPEX spot is exclusief btw en energiebelasting. All-in is wat je thuis betaalt.",
+            "reimbursement_interval": "Hoe vaak het tarief van je werkgever wisselt, onafhankelijk van je eigen contract.",
+            "ere_per_kwh": "Wordt ook gebruikt als terugvalwaarde zolang er nog geen Joulo-verhouding is."
+          }
+        }
+      },
+      "error": {
+        "name_required": "Geef de lader een naam.",
+        "no_source": "Koppel een vermogenssensor, een energiesensor, of allebei.",
+        "duplicate_source": "De vermogens- en energiesensor moeten verschillende sensoren zijn.",
+        "rate_required": "Een vaste vergoeding heeft een bedrag boven nul nodig.",
+        "percent_required": "Het toeslagpercentage moet boven nul liggen.",
+        "ere_per_kwh_required": "Een vaste ERE-verhouding heeft een waarde boven nul nodig.",
+        "ere_price_required": "Een vaste ERE-prijs heeft een waarde boven nul nodig. Vul er een in, of kies een sensor met de actuele prijs.",
+        "entity_required": "Selecteer de Joulo-sensor voor dit veld."
+      },
+      "abort": {
+        "reconfigure_successful": "De laadpaal is bijgewerkt."
+      }
     }
   },
   "entity": {
@@ -418,12 +458,6 @@
       "options": {
         "quarterly": "Per kwartier",
         "hourly": "Per uur"
-      }
-    },
-    "device_kind": {
-      "options": {
-        "device": "Apparaat of groep",
-        "ev_charger": "Laadpaal"
       }
     },
     "reimbursement_mode": {

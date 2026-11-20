@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, TypeVar
 
-from homeassistant.config_entries import ConfigSubentry
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 
 from .battery import BatterySettings
 from .const import (
@@ -53,6 +53,8 @@ from .const import (
     DEFAULT_REIMBURSEMENT_INTERVAL,
     DEFAULT_REIMBURSEMENT_MODE,
     DEFAULT_REIMBURSEMENT_PERCENT,
+    SUBENTRY_TYPE_DEVICE,
+    SUBENTRY_TYPE_EV_CHARGER,
     DeviceKind,
     EreMode,
     ExportPriceSource,
@@ -244,10 +246,17 @@ class DeviceConfig:
         """Build the config from a config subentry."""
         data = subentry.data
         name = as_entity_id(data.get(CONF_NAME)) or subentry.title or "Device"
+        # The subentry type decides the kind. Older entries kept it in the data
+        # instead, so that is still honoured.
+        kind = (
+            DeviceKind.EV_CHARGER
+            if subentry.subentry_type == SUBENTRY_TYPE_EV_CHARGER
+            else _as_enum(DeviceKind, data.get(CONF_KIND), DEFAULT_DEVICE_KIND)
+        )
         return cls(
             subentry_id=subentry.subentry_id,
             name=name,
-            kind=_as_enum(DeviceKind, data.get(CONF_KIND), DEFAULT_DEVICE_KIND),
+            kind=kind,
             power_entity=as_entity_id(data.get(CONF_POWER_ENTITY)),
             energy_entity=as_entity_id(data.get(CONF_ENERGY_ENTITY)),
             reimbursement=ReimbursementConfig.from_mapping(data),
@@ -385,3 +394,11 @@ class BatteryConfig:
             inverter_device_id=as_entity_id(data.get(CONF_INVERTER_DEVICE)),
             allow_writes=as_bool(data.get(CONF_ALLOW_INVERTER_WRITES)),
         )
+
+
+def device_subentries(entry: ConfigEntry) -> list[ConfigSubentry]:
+    """Return the device and EV charger subentries of an entry."""
+    return [
+        *entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE),
+        *entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER),
+    ]

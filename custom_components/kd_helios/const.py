@@ -20,6 +20,7 @@ CONF_PRICE_INTERVAL: Final = "price_interval"
 # Subentries
 # ---------------------------------------------------------------------------
 SUBENTRY_TYPE_DEVICE: Final = "device"
+SUBENTRY_TYPE_EV_CHARGER: Final = "ev_charger"
 SUBENTRY_TYPE_GRID: Final = "grid"
 SUBENTRY_TYPE_BATTERY: Final = "battery"
 

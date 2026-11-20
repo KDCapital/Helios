@@ -30,6 +30,7 @@ from custom_components.kd_helios.const import (
     CONF_POWER_ENTITY,
     CONF_PRICE_INTERVAL,
     CONF_PROVIDER,
+    CONF_REIMBURSEMENT_INTERVAL,
     CONF_REIMBURSEMENT_MODE,
     CONF_REIMBURSEMENT_RATE,
     CONF_REIMBURSEMENT_SURCHARGE,
@@ -37,6 +38,7 @@ from custom_components.kd_helios.const import (
     CONF_SUPPLY_COST_MONTHLY,
     DOMAIN,
     SUBENTRY_TYPE_DEVICE,
+    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_GRID,
 )
 from custom_components.kd_helios.prices import PriceApiError, UnknownProviderError
@@ -46,14 +48,12 @@ USER_INPUT = {CONF_PROVIDER: "zonneplan", CONF_PRICE_INTERVAL: "quarterly"}
 
 EV_INPUT = {
     CONF_NAME: "EV charger",
-    CONF_KIND: "ev_charger",
     CONF_ENERGY_ENTITY: "sensor.ev_energy",
     CONF_POWER_ENTITY: "sensor.ev_power",
 }
 
 PLAIN_INPUT = {
     CONF_NAME: "Heat pump",
-    CONF_KIND: "device",
     CONF_POWER_ENTITY: "sensor.heat_pump_power",
 }
 
@@ -170,11 +170,11 @@ async def test_reconfigure_changes_the_interval(hass) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Device subentry flow
+# Device and EV charger subentry flows
 # ---------------------------------------------------------------------------
 @pytest.fixture(name="loaded_entry")
 async def loaded_entry_fixture(hass) -> MockConfigEntry:
-    """Return a set up config entry without any devices."""
+    """Return a set up config entry without any subentries."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         data=USER_INPUT,
@@ -187,71 +187,79 @@ async def loaded_entry_fixture(hass) -> MockConfigEntry:
     return entry
 
 
-async def test_add_ev_charger_walks_all_steps(hass, loaded_entry) -> None:
-    """An EV charger collects reimbursement and ERE settings."""
-    result = await _start_subentry_flow(hass, loaded_entry)
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "user"
+async def _start_flow(hass, entry: MockConfigEntry, subentry_type: str) -> dict:
+    """Start a subentry flow of a given type."""
+    return await hass.config_entries.subentries.async_init(
+        (entry.entry_id, subentry_type), context={"source": SOURCE_USER}
+    )
 
+
+async def _add_ev_charger(
+    hass, entry: MockConfigEntry, reimbursement: dict, ere: dict
+) -> dict:
+    """Walk the EV charger flow to the end."""
+    result = await _start_flow(hass, entry, SUBENTRY_TYPE_EV_CHARGER)
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], EV_INPUT
     )
-    assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reimbursement"
-
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"],
-        {
-            CONF_REIMBURSEMENT_MODE: "dynamic",
-            CONF_REIMBURSEMENT_RATE: 0.0,
-            CONF_REIMBURSEMENT_SURCHARGE: 0.025,
-        },
+        result["flow_id"], reimbursement
     )
-    assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "ere"
-
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"],
-        {
-            CONF_ERE_MODE: "fixed",
-            CONF_ERE_PER_KWH: 0.25,
-            CONF_ERE_PRICE: 4.0,
-        },
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-
-    subentries = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)
-    assert len(subentries) == 1
-    subentry = subentries[0]
-    assert subentry.title == "EV charger"
-    assert subentry.data[CONF_KIND] == "ev_charger"
-    assert subentry.data[CONF_REIMBURSEMENT_SURCHARGE] == pytest.approx(0.025)
-    assert subentry.data[CONF_ERE_PER_KWH] == pytest.approx(0.25)
+    return await hass.config_entries.subentries.async_configure(result["flow_id"], ere)
 
 
-async def test_plain_device_skips_reimbursement(hass, loaded_entry) -> None:
-    """A normal appliance goes straight to the ERE step."""
-    result = await _start_subentry_flow(hass, loaded_entry)
+async def test_plain_device_is_added_in_one_step(hass, loaded_entry) -> None:
+    """A normal device is never asked about reimbursement or ERE."""
+    result = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_DEVICE)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+    # No kind question any more: the entry point decides it.
+    assert CONF_KIND not in result["data_schema"].schema
+
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], PLAIN_INPUT
-    )
-    assert result["step_id"] == "ere"
-
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_ERE_MODE: "none"}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
     subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0]
     assert subentry.data[CONF_KIND] == "device"
     assert subentry.data[CONF_NAME] == "Heat pump"
+    assert CONF_ERE_MODE not in subentry.data
+    assert CONF_REIMBURSEMENT_MODE not in subentry.data
+
+
+async def test_ev_charger_walks_all_three_steps(hass, loaded_entry) -> None:
+    """An EV charger is its own entry point and collects both extras."""
+    result = await _add_ev_charger(
+        hass,
+        loaded_entry,
+        {
+            CONF_REIMBURSEMENT_MODE: "dynamic",
+            CONF_REIMBURSEMENT_SURCHARGE: 0.025,
+            CONF_REIMBURSEMENT_INTERVAL: "hourly",
+        },
+        {CONF_ERE_MODE: "fixed", CONF_ERE_PER_KWH: 0.25, CONF_ERE_PRICE: 4.0},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentries = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)
+    assert len(subentries) == 1
+    subentry = subentries[0]
+    assert subentry.title == "EV charger"
+    assert subentry.data[CONF_KIND] == "ev_charger"
+    assert subentry.data[CONF_REIMBURSEMENT_SURCHARGE] == pytest.approx(0.025)
+    assert subentry.data[CONF_ERE_PER_KWH] == pytest.approx(0.25)
+    # And nothing of it leaks into the plain device list.
+    assert loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE) == []
 
 
 async def test_device_needs_a_source_entity(hass, loaded_entry) -> None:
     """A device without any source entity is rejected."""
-    result = await _start_subentry_flow(hass, loaded_entry)
+    result = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_DEVICE)
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_NAME: "Ghost", CONF_KIND: "device"}
+        result["flow_id"], {CONF_NAME: "Ghost"}
     )
 
     assert result["type"] is FlowResultType.FORM
@@ -260,7 +268,7 @@ async def test_device_needs_a_source_entity(hass, loaded_entry) -> None:
 
 async def test_device_needs_a_name(hass, loaded_entry) -> None:
     """A blank name is rejected."""
-    result = await _start_subentry_flow(hass, loaded_entry)
+    result = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_DEVICE)
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], {**PLAIN_INPUT, CONF_NAME: "   "}
     )
@@ -271,7 +279,7 @@ async def test_device_needs_a_name(hass, loaded_entry) -> None:
 
 async def test_fixed_reimbursement_needs_a_rate(hass, loaded_entry) -> None:
     """A fixed reimbursement without an amount is rejected."""
-    result = await _start_subentry_flow(hass, loaded_entry)
+    result = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_EV_CHARGER)
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], EV_INPUT
     )
@@ -280,45 +288,33 @@ async def test_fixed_reimbursement_needs_a_rate(hass, loaded_entry) -> None:
         {CONF_REIMBURSEMENT_MODE: "fixed", CONF_REIMBURSEMENT_RATE: 0.0},
     )
 
-    assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reimbursement"
     assert result["errors"] == {CONF_REIMBURSEMENT_RATE: "rate_required"}
 
 
 async def test_joulo_needs_both_counters(hass, loaded_entry) -> None:
     """Joulo mode requires the credits and the energy counter."""
-    result = await _start_subentry_flow(hass, loaded_entry)
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], EV_INPUT
-    )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_REIMBURSEMENT_MODE: "none"}
-    )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_ERE_MODE: "joulo"}
+    result = await _add_ev_charger(
+        hass,
+        loaded_entry,
+        {CONF_REIMBURSEMENT_MODE: "none"},
+        {CONF_ERE_MODE: "joulo"},
     )
 
-    assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "ere"
     assert result["errors"] == {
         CONF_ERE_CREDITS_ENTITY: "entity_required",
         CONF_ERE_KWH_ENTITY: "entity_required",
-        # Without a price the credits would silently be worth nothing.
         CONF_ERE_PRICE: "ere_price_required",
     }
 
 
 async def test_joulo_accepts_a_live_price_entity(hass, loaded_entry) -> None:
     """Joulo mode works with a live price sensor instead of a fixed price."""
-    result = await _start_subentry_flow(hass, loaded_entry)
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], EV_INPUT
-    )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_REIMBURSEMENT_MODE: "none"}
-    )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"],
+    result = await _add_ev_charger(
+        hass,
+        loaded_entry,
+        {CONF_REIMBURSEMENT_MODE: "none"},
         {
             CONF_ERE_MODE: "joulo",
             CONF_ERE_CREDITS_ENTITY: "sensor.joulo_total_ere_credits",
@@ -328,18 +324,49 @@ async def test_joulo_accepts_a_live_price_entity(hass, loaded_entry) -> None:
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
-    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0]
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[0]
     assert subentry.data[CONF_ERE_KWH_ENTITY] == "sensor.joulo_total_all_kwh"
 
 
+async def test_ev_reimbursement_interval_is_stored(hass, loaded_entry) -> None:
+    """An EV can reimburse hourly while the contract settles per quarter."""
+    result = await _add_ev_charger(
+        hass,
+        loaded_entry,
+        {
+            CONF_REIMBURSEMENT_MODE: "dynamic",
+            CONF_REIMBURSEMENT_INTERVAL: "hourly",
+            CONF_REIMBURSEMENT_SURCHARGE: 0.02,
+        },
+        {CONF_ERE_MODE: "none"},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[0]
+    assert subentry.data[CONF_REIMBURSEMENT_INTERVAL] == "hourly"
+
+
+async def test_ev_reimbursement_interval_defaults_to_quarterly(
+    hass, loaded_entry
+) -> None:
+    """The default matches the quarter hour contract."""
+    result = await _add_ev_charger(
+        hass,
+        loaded_entry,
+        {CONF_REIMBURSEMENT_MODE: "fixed", CONF_REIMBURSEMENT_RATE: 0.35},
+        {CONF_ERE_MODE: "none"},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[0]
+    assert subentry.data[CONF_REIMBURSEMENT_INTERVAL] == "quarterly"
+
+
 async def test_reconfigure_updates_a_device(hass, loaded_entry) -> None:
-    """An existing device can be edited in a single form."""
-    result = await _start_subentry_flow(hass, loaded_entry)
+    """A plain device keeps a single, short form."""
+    result = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_DEVICE)
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], PLAIN_INPUT
-    )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_ERE_MODE: "none"}
     )
     subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0]
 
@@ -347,23 +374,71 @@ async def test_reconfigure_updates_a_device(hass, loaded_entry) -> None:
         (loaded_entry.entry_id, SUBENTRY_TYPE_DEVICE),
         context={"source": SOURCE_RECONFIGURE, "subentry_id": subentry.subentry_id},
     )
-    assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reconfigure"
+    assert CONF_ERE_MODE not in result["data_schema"].schema
 
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"],
-        {
-            **PLAIN_INPUT,
-            CONF_NAME: "Heat pump (basement)",
-            CONF_ERE_MODE: "none",
-        },
+        result["flow_id"], {**PLAIN_INPUT, CONF_NAME: "Heat pump (basement)"}
     )
     assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "reconfigure_successful"
     await hass.async_block_till_done()
 
     subentries = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)
     assert subentries[0].title == "Heat pump (basement)"
+
+
+async def test_legacy_ev_device_keeps_its_reimbursement(hass, loaded_entry) -> None:
+    """An EV charger stored as a plain device before the split is not wiped.
+
+    Reconfiguring it through the short device form must preserve the keys that
+    form does not show.
+    """
+    legacy = {
+        "subentry_type": SUBENTRY_TYPE_DEVICE,
+        "data": {
+            CONF_NAME: "Old charger",
+            CONF_KIND: "ev_charger",
+            CONF_ENERGY_ENTITY: "sensor.old_energy",
+            CONF_REIMBURSEMENT_MODE: "fixed",
+            CONF_REIMBURSEMENT_RATE: 0.35,
+            CONF_ERE_MODE: "fixed",
+            CONF_ERE_PER_KWH: 0.2,
+            CONF_ERE_PRICE: 4.0,
+        },
+        "title": "Old charger",
+        "unique_id": None,
+    }
+    hass.config_entries.async_add_subentry(
+        loaded_entry,
+        __import__(
+            "homeassistant.config_entries", fromlist=["ConfigSubentry"]
+        ).ConfigSubentry(
+            data=dict(legacy["data"]),
+            subentry_type=legacy["subentry_type"],
+            title=legacy["title"],
+            unique_id=None,
+        ),
+    )
+    await hass.async_block_till_done()
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0]
+
+    result = await hass.config_entries.subentries.async_init(
+        (loaded_entry.entry_id, SUBENTRY_TYPE_DEVICE),
+        context={"source": SOURCE_RECONFIGURE, "subentry_id": subentry.subentry_id},
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            CONF_NAME: "Old charger renamed",
+            CONF_ENERGY_ENTITY: "sensor.old_energy",
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    await hass.async_block_till_done()
+
+    updated = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0]
+    assert updated.data[CONF_REIMBURSEMENT_RATE] == pytest.approx(0.35)
+    assert updated.data[CONF_ERE_PRICE] == pytest.approx(4.0)
 
 
 # ---------------------------------------------------------------------------

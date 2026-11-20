@@ -39,11 +39,13 @@ from custom_components.kd_helios.const import (
     DOMAIN,
     SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_DEVICE,
+    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_GRID,
 )
 from custom_components.kd_helios.diagnostics import (
     async_get_config_entry_diagnostics,
 )
+from custom_components.kd_helios.models import device_subentries
 from custom_components.kd_helios.prices import PriceApiError
 from tests.helpers import load_fixture
 
@@ -61,7 +63,7 @@ EV_DATA = {
 }
 
 EV_SUBENTRY = {
-    "subentry_type": SUBENTRY_TYPE_DEVICE,
+    "subentry_type": SUBENTRY_TYPE_EV_CHARGER,
     "data": EV_DATA,
     "title": "EV charger",
     "unique_id": None,
@@ -125,7 +127,7 @@ async def test_setup_creates_hub_and_device_entities(hass, entry) -> None:
     }
     assert hub == HUB_KEYS
 
-    subentry_id = entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0].subentry_id
+    subentry_id = entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[0].subentry_id
     device = {
         item.translation_key
         for item in registry_entries
@@ -157,7 +159,9 @@ async def test_totals_survive_a_reload(hass, entry) -> None:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-        subentry_id = entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0].subentry_id
+        subentry_id = entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[
+            0
+        ].subentry_id
         engine = entry.runtime_data.engine
 
         hass.states.async_set(
@@ -202,13 +206,8 @@ async def test_adding_a_device_reloads_the_entry(hass, entry) -> None:
         result["flow_id"],
         {
             CONF_NAME: "Heat pump",
-            CONF_KIND: "device",
             CONF_ENERGY_ENTITY: "sensor.heat_pump_energy",
         },
-    )
-    assert result["step_id"] == "ere"
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_ERE_MODE: "none"}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
@@ -216,7 +215,7 @@ async def test_adding_a_device_reloads_the_entry(hass, entry) -> None:
     assert entry.state is ConfigEntryState.LOADED
     after = len(_registry_entries(hass, entry))
     assert after > before
-    assert len(entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)) == 2
+    assert len(device_subentries(entry)) == 2
 
 
 async def test_setup_retries_when_the_price_api_is_down(hass) -> None:
@@ -328,7 +327,7 @@ async def test_removing_a_device_drops_its_entities(hass, entry) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    subentry_id = entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0].subentry_id
+    subentry_id = entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[0].subentry_id
     assert hass.config_entries.async_remove_subentry(entry, subentry_id)
     await hass.async_block_till_done()
 
@@ -364,9 +363,9 @@ async def test_disabling_reimbursement_removes_its_entities(hass, entry) -> None
     before = {item.translation_key for item in _registry_entries(hass, entry)}
     assert {"reimbursement", "reimbursement_rate", "net_cost"} <= before
 
-    subentry_id = entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0].subentry_id
+    subentry_id = entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[0].subentry_id
     result = await hass.config_entries.subentries.async_init(
-        (entry.entry_id, SUBENTRY_TYPE_DEVICE),
+        (entry.entry_id, SUBENTRY_TYPE_EV_CHARGER),
         context={"source": SOURCE_RECONFIGURE, "subentry_id": subentry_id},
     )
     assert result["type"] is FlowResultType.FORM
@@ -374,7 +373,6 @@ async def test_disabling_reimbursement_removes_its_entities(hass, entry) -> None
         result["flow_id"],
         {
             CONF_NAME: "EV charger",
-            CONF_KIND: "ev_charger",
             CONF_ENERGY_ENTITY: "sensor.ev_energy",
             CONF_REIMBURSEMENT_MODE: "none",
             CONF_ERE_MODE: "none",
@@ -397,6 +395,7 @@ async def test_subentry_type_is_exposed_to_the_frontend(hass, entry) -> None:
 
     expected = {
         SUBENTRY_TYPE_DEVICE: {"supports_reconfigure": True},
+        SUBENTRY_TYPE_EV_CHARGER: {"supports_reconfigure": True},
         SUBENTRY_TYPE_GRID: {"supports_reconfigure": True},
         SUBENTRY_TYPE_BATTERY: {"supports_reconfigure": True},
     }
@@ -436,12 +435,8 @@ async def test_repair_hint_points_at_adding_a_device(hass) -> None:
         result["flow_id"],
         {
             CONF_NAME: "Heat pump",
-            CONF_KIND: "device",
             CONF_ENERGY_ENTITY: "sensor.heat_pump_energy",
         },
-    )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_ERE_MODE: "none"}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()

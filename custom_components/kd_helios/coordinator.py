@@ -23,11 +23,10 @@ from .const import (
     DOMAIN,
     PRICE_UPDATE_INTERVAL,
     SUBENTRY_TYPE_BATTERY,
-    SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_GRID,
 )
 from .grid import GridSnapshot, GridTracker
-from .models import BatteryConfig, DeviceConfig, GridConfig
+from .models import BatteryConfig, DeviceConfig, GridConfig, device_subentries
 from .prices import (
     PriceApiError,
     PriceSeries,
@@ -127,7 +126,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.prices = prices
         self.storage = storage
         self.trackers: dict[str, DeviceTracker] = {}
-        for subentry in entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE):
+        for subentry in device_subentries(entry):
             config = DeviceConfig.from_subentry(subentry)
             self.trackers[config.subentry_id] = DeviceTracker(
                 hass,

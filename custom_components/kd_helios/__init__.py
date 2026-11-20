@@ -22,10 +22,10 @@ from .const import (
     DEFAULT_PRICE_INTERVAL,
     DOMAIN,
     ISSUE_NO_DEVICES,
-    SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_GRID,
 )
 from .coordinator import HeliosEngine, PriceCoordinator
+from .models import device_subentries
 from .panel import async_register_panel
 from .services import async_setup_services
 from .storage import HeliosStorage
@@ -125,9 +125,9 @@ def _async_sync_no_device_issue(hass: HomeAssistant, entry: HeliosConfigEntry) -
     install looks finished but tracks nothing.
     """
     issue_id = _no_device_issue_id(entry)
-    tracks_something = entry.get_subentries_of_type(
-        SUBENTRY_TYPE_DEVICE
-    ) or entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)
+    tracks_something = device_subentries(entry) or entry.get_subentries_of_type(
+        SUBENTRY_TYPE_GRID
+    )
     if tracks_something:
         ir.async_delete_issue(hass, DOMAIN, issue_id)
         return

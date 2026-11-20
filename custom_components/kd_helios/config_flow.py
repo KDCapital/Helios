@@ -81,6 +81,7 @@ from .const import (
     SALDERING_END_DATE,
     SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_DEVICE,
+    SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_GRID,
     UNIT_EUR_PER_KWH,
     UNIT_KWH,
@@ -181,15 +182,6 @@ def _device_schema() -> vol.Schema:
     return vol.Schema(
         {
             vol.Required(CONF_NAME): selector.TextSelector(),
-            vol.Required(
-                CONF_KIND, default=DeviceKind.DEVICE.value
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[kind.value for kind in DeviceKind],
-                    mode=selector.SelectSelectorMode.LIST,
-                    translation_key="device_kind",
-                )
-            ),
             vol.Optional(CONF_POWER_ENTITY): _optional_entity(SensorDeviceClass.POWER),
             vol.Optional(CONF_ENERGY_ENTITY): _optional_entity(
                 SensorDeviceClass.ENERGY
@@ -269,8 +261,8 @@ def _ere_schema() -> vol.Schema:
     )
 
 
-def _device_settings_schema() -> vol.Schema:
-    """Schema for a device with every optional section expanded."""
+def _ev_settings_schema() -> vol.Schema:
+    """Schema for an EV charger with reimbursement and ERE expanded."""
     return vol.Schema(
         {
             **_device_schema().schema,
@@ -566,6 +558,7 @@ class HeliosConfigFlow(ConfigFlow, domain=DOMAIN):
         """Return the subentry types this integration supports."""
         return {
             SUBENTRY_TYPE_DEVICE: DeviceSubentryFlow,
+            SUBENTRY_TYPE_EV_CHARGER: EvChargerSubentryFlow,
             SUBENTRY_TYPE_GRID: GridSubentryFlow,
             SUBENTRY_TYPE_BATTERY: BatterySubentryFlow,
         }
@@ -642,7 +635,70 @@ class HeliosConfigFlow(ConfigFlow, domain=DOMAIN):
 # Device subentry flow
 # ---------------------------------------------------------------------------
 class DeviceSubentryFlow(ConfigSubentryFlow):
-    """Add or edit a tracked device."""
+    """Add or edit a plain device: an appliance, a circuit, anything metered.
+
+    No reimbursement and no ERE here: those only make sense for an EV charger,
+    which has its own entry in the Add menu.
+    """
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle the device step."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_device(user_input)
+            if not errors:
+                data = dict(user_input)
+                data[CONF_KIND] = DeviceKind.DEVICE.value
+                return self.async_create_entry(title=data[CONF_NAME], data=data)
+
+        return self.async_show_form(
+            step_id="user", data_schema=_device_schema(), errors=errors
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Edit an existing device."""
+        entry = self._get_entry()
+        subentry = self._get_reconfigure_subentry()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_device(user_input)
+            if not errors:
+                # Merge over the stored data: keys this form does not show, such
+                # as an EV charger's reimbursement from before the split, stay.
+                data = {**subentry.data, **user_input}
+                data[CONF_KIND] = DeviceKind.DEVICE.value
+                return self.async_update_and_abort(
+                    entry,
+                    subentry,
+                    title=str(user_input[CONF_NAME]).strip(),
+                    data=data,
+                )
+
+        schema = _device_schema()
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                schema,
+                {
+                    key: value
+                    for key, value in subentry.data.items()
+                    if key in schema.schema
+                },
+            ),
+            errors=errors,
+        )
+
+
+# ---------------------------------------------------------------------------
+# EV charger subentry flow
+# ---------------------------------------------------------------------------
+class EvChargerSubentryFlow(ConfigSubentryFlow):
+    """Add or edit an EV charger, including its reimbursement and ERE value."""
 
     def __init__(self) -> None:
         """Initialise the flow state."""
@@ -651,15 +707,13 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Handle the basic device step."""
+        """Handle the basic charger step."""
         errors: dict[str, str] = {}
         if user_input is not None:
             errors = _validate_device(user_input)
             if not errors:
                 self._device = dict(user_input)
-                if user_input[CONF_KIND] == DeviceKind.EV_CHARGER:
-                    return await self.async_step_reimbursement()
-                return await self.async_step_ere()
+                return await self.async_step_reimbursement()
 
         return self.async_show_form(
             step_id="user", data_schema=_device_schema(), errors=errors
@@ -683,12 +737,13 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
     async def async_step_ere(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Handle the ERE certificate step and create the device."""
+        """Handle the ERE certificate step and create the charger."""
         errors: dict[str, str] = {}
         if user_input is not None:
             errors = _validate_ere(user_input)
             if not errors:
                 data = {**self._device, **user_input}
+                data[CONF_KIND] = DeviceKind.EV_CHARGER.value
                 return self.async_create_entry(title=data[CONF_NAME], data=data)
 
         return self.async_show_form(
@@ -698,7 +753,7 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Edit every setting of an existing device."""
+        """Edit every setting of an existing charger."""
         entry = self._get_entry()
         subentry = self._get_reconfigure_subentry()
 
@@ -710,14 +765,16 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
                 **_validate_ere(user_input),
             }
             if not errors:
+                data = dict(user_input)
+                data[CONF_KIND] = DeviceKind.EV_CHARGER.value
                 return self.async_update_and_abort(
                     entry,
                     subentry,
                     title=str(user_input[CONF_NAME]).strip(),
-                    data=dict(user_input),
+                    data=data,
                 )
 
-        schema = _device_settings_schema()
+        schema = _ev_settings_schema()
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(
