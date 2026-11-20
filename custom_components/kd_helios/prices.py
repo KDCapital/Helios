@@ -257,6 +257,20 @@ class PriceSeries:
             cursor = chunk_end
         return segments
 
+    def points_between(
+        self, start: datetime, end: datetime
+    ) -> list[tuple[datetime, float | None, float | None]]:
+        """Return grid points inside a window, for charts."""
+        from_key = _grid_floor(dt_util.as_utc(start))
+        to_key = dt_util.as_utc(end)
+        points: list[tuple[datetime, float | None, float | None]] = []
+        for key in self._keys:
+            if key < from_key or key >= to_key:
+                continue
+            point = self._grid[key]
+            points.append((key, point.all_in, point.spot))
+        return points
+
     def priced_slots(
         self, start: datetime, end: datetime
     ) -> list[tuple[datetime, datetime, float]]:

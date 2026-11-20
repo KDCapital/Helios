@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import EVENT_HOMEASSISTANT_STARTED, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 
 from .const import (
@@ -26,8 +26,10 @@ from .const import (
     SUBENTRY_TYPE_GRID,
 )
 from .coordinator import HeliosEngine, PriceCoordinator
+from .panel import async_register_panel
 from .services import async_setup_services
 from .storage import HeliosStorage
+from .websocket import async_register_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,8 +49,19 @@ type HeliosConfigEntry = ConfigEntry[HeliosRuntimeData]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register the integration's actions."""
+    """Register the actions, the panel API and the sidebar panel."""
     async_setup_services(hass)
+    async_register_websocket_api(hass)
+
+    async def _register_panel(_event: object = None) -> None:
+        await async_register_panel(hass)
+
+    if "frontend" in hass.config.components:
+        await _register_panel()
+    else:
+        # The panel needs the frontend; in a normal install it is set up before
+        # startup completes, so this covers a cold start.
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _register_panel)
     return True
 
 

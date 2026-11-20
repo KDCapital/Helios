@@ -321,6 +321,37 @@ rather than a fire-and-forget write.
 
 ---
 
+## Sidebar panel
+
+KD Helios adds a **Helios** entry to the sidebar, registered the same way other
+integrations add a panel (`panel_custom` plus a static module). It is one plain
+custom element — no build step, no external imports — served from
+`/kd_helios/kd-helios-panel.js`, so it works offline and survives Home Assistant
+upgrades.
+
+It shows, in one screen:
+
+- **Now** — the all-in price, the spot price, the next slot, today's average and
+  the 24 hour range.
+- **Price chart** — 24 hours of quarter-hour prices coloured from cheap to
+  expensive, with the planned charging windows shaded and a marker for now.
+- **Grid connection** — year-to-date import, export, credit, fixed costs and the
+  net bill, with the saldering state.
+- **Home battery** — state of charge, planned versus applied saving, the planned
+  windows and the six time-of-use programs, plus a button that writes them to
+  the inverter (behind a confirmation prompt, and disabled unless writes are
+  enabled).
+- **Devices** — energy, cost, cost today and net cost per tracked device.
+
+Everything comes from one WebSocket command, `kd_helios/dashboard`, which is
+also what `build_dashboard()` returns, so the payload is tested without a
+browser. The panel refreshes every minute.
+
+The panel needs the frontend: it registers on setup when the frontend is
+already loaded, and otherwise waits for Home Assistant to finish starting.
+
+---
+
 ## Worked example
 
 A home EV charger on Zonneplan, midday on 20 November 2026, 10 kWh charged.
@@ -504,7 +535,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 191 tests
+.venv/bin/python -m pytest        # 199 tests
 .venv/bin/ruff check custom_components tests
 ```
 
@@ -519,7 +550,9 @@ also a guard that no translation contains an unresolved ``%key`` reference.
 The battery planner is covered separately: which hours it buys, how capacity and
 charge power cap the plan, when it declines to cycle at all, and the exact
 register payload written to the inverter, plus that the applied plan and its
-predicted saving survive a restart. Coverage is 95%.
+predicted saving survive a restart. The panel payload is covered by rendering
+`build_dashboard()` directly, which is the same data the browser receives.
+Coverage is 95%.
 
 ---
 
@@ -533,6 +566,8 @@ the heating/energy management platform without a rewrite:
 - `accounting.py` — energy integration and per-device accumulators
 - `grid.py` — grid import/export and the annual saldering ledger
 - `battery.py` — the charge optimiser and the Deye time-of-use mapping
+- `websocket.py` — the one payload the panel renders
+- `frontend/kd-helios-panel.js` — the sidebar panel itself
 - `coordinator.py` — orchestration and polling
 - `sensor.py` — presentation only
 
