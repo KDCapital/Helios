@@ -369,6 +369,22 @@ class HeliosDeviceSensor(CoordinatorEntity[HeliosEngine], SensorEntity):
         return self.entity_description.value_fn(snapshot)
 
     @property
+    def last_reset(self) -> datetime | None:
+        """Return the local midnight that the daily cost counter restarts at.
+
+        Without this the statistics engine would read every daily reset as a
+        loss, so the long term sum of ``cost today`` would drift.
+        """
+        if self.entity_description.key != "cost_today":
+            return None
+        snapshot = self._snapshot
+        if snapshot is None:
+            return None
+        return dt_util.as_local(snapshot.last_update).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
+    @property
     def extra_state_attributes(self) -> dict[str, str | float | None] | None:
         """Expose accounting health on the cost sensor."""
         if self.entity_description.key != "cost":

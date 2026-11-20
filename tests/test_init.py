@@ -291,3 +291,30 @@ async def test_setup_without_devices_only_creates_tariff_sensors(hass) -> None:
     registry_entries = _registry_entries(hass, entry)
     assert {item.translation_key for item in registry_entries} == HUB_KEYS
     assert entry.runtime_data.engine.trackers == {}
+
+
+async def test_cost_today_declares_its_daily_reset_point(hass, entry) -> None:
+    """The daily cost sensor tells statistics where its cycle restarts."""
+    with freeze_time("2026-11-20 12:00:00+00:00"):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        state = hass.states.get("sensor.ev_charger_cost_today")
+
+    assert state is not None
+    assert "last_reset" in state.attributes
+    assert state.attributes["last_reset"].startswith("2026-11-20T00:00:00")
+
+
+async def test_removing_a_device_drops_its_entities(hass, entry) -> None:
+    """Deleting a device removes its entities and its tracker."""
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    subentry_id = entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0].subentry_id
+    assert hass.config_entries.async_remove_subentry(entry, subentry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    remaining = _registry_entries(hass, entry)
+    assert {item.translation_key for item in remaining} == HUB_KEYS
+    assert entry.runtime_data.engine.trackers == {}
