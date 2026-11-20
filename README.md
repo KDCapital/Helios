@@ -39,7 +39,7 @@ charge.
 ### HACS (recommended)
 
 1. HACS → **Integrations** → ⋮ → **Custom repositories**.
-2. Add this repository URL, category **Integration**.
+2. Add `https://github.com/KDCapital/Helios`, category **Integration**.
 3. Install **KD Helios** and restart Home Assistant.
 
 ### Manual

@@ -1,12 +1,14 @@
 {
   "domain": "kd_helios",
   "name": "KD Helios",
-  "codeowners": ["@kd-helios"],
+  "codeowners": [
+    "@KDCapital"
+  ],
   "config_flow": true,
-  "documentation": "https://github.com/kd-helios/kd-helios",
+  "documentation": "https://github.com/KDCapital/Helios",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/kd-helios/kd-helios/issues",
+  "issue_tracker": "https://github.com/KDCapital/Helios/issues",
   "requirements": [],
   "version": "0.1.0"
 }
