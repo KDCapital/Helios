@@ -22,6 +22,7 @@ from .const import (
     CONF_EXPORT_POWER_ENTITY,
     CONF_EXPORT_PRICE_SOURCE,
     CONF_GRID_FEE_MONTHLY,
+    CONF_GRID_POWER_ENTITY,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
     CONF_KIND,
@@ -255,6 +256,8 @@ class GridConfig:
     export_entity: str | None = None
     import_power_entity: str | None = None
     export_power_entity: str | None = None
+    #: A single signed power sensor: positive imports, negative exports.
+    grid_power_entity: str | None = None
     saldering: bool = False
     export_deduction: float = 0.0
     supply_cost_monthly: float = 0.0
@@ -265,6 +268,32 @@ class GridConfig:
     def model_name(self) -> str:
         """Return the model shown in the device registry."""
         return "Grid connection"
+
+    @property
+    def signed_power_entity(self) -> str | None:
+        """Return the sensor that carries net power as one signed value.
+
+        A P1 meter reports import as positive and export as negative in a single
+        sensor. The same entity selected for both power fields is treated the
+        same way, which is what a user does when they only have that one sensor.
+        """
+        if self.grid_power_entity:
+            return self.grid_power_entity
+        if (
+            self.import_power_entity
+            and self.import_power_entity == self.export_power_entity
+        ):
+            return self.import_power_entity
+        return None
+
+    @property
+    def has_power(self) -> bool:
+        """Return True when any power sensor is configured."""
+        return bool(
+            self.grid_power_entity
+            or self.import_power_entity
+            or self.export_power_entity
+        )
 
     @property
     def fixed_monthly(self) -> float:
@@ -283,6 +312,7 @@ class GridConfig:
             export_entity=as_entity_id(data.get(CONF_EXPORT_ENTITY)),
             import_power_entity=as_entity_id(data.get(CONF_IMPORT_POWER_ENTITY)),
             export_power_entity=as_entity_id(data.get(CONF_EXPORT_POWER_ENTITY)),
+            grid_power_entity=as_entity_id(data.get(CONF_GRID_POWER_ENTITY)),
             saldering=as_bool(data.get(CONF_SALDERING)),
             export_deduction=as_float(data.get(CONF_EXPORT_DEDUCTION)),
             supply_cost_monthly=as_float(data.get(CONF_SUPPLY_COST_MONTHLY)),

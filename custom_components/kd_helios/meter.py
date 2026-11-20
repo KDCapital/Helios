@@ -24,6 +24,7 @@ from homeassistant.helpers import entity_registry as er
 from .const import (
     CONF_EXPORT_ENTITY,
     CONF_EXPORT_POWER_ENTITY,
+    CONF_GRID_POWER_ENTITY,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
 )
@@ -46,6 +47,10 @@ class MeterSignature:
     export_energy: tuple[str, ...] = ()
     import_power: tuple[str, ...] = ()
     export_power: tuple[str, ...] = ()
+    #: Translation keys of a single signed net power sensor.
+    signed_power: tuple[str, ...] = ()
+    #: True when the net power sensor carries no translation key (HomeWizard).
+    signed_power_without_key: bool = False
 
 
 #: HomeWizard Wi-Fi P1 meter. Its combined counters are enabled by default, so
@@ -53,6 +58,8 @@ class MeterSignature:
 HOME_WIZARD = MeterSignature(
     import_energy=("total_energy_import_kwh",),
     export_energy=("total_energy_export_kwh",),
+    # ``active_power_w`` is one signed sensor and has no translation key.
+    signed_power_without_key=True,
 )
 
 SIGNATURES: dict[str, MeterSignature] = {"homewizard": HOME_WIZARD}
@@ -66,6 +73,7 @@ class MeterDetection:
     export_entity: str | None = None
     import_power_entity: str | None = None
     export_power_entity: str | None = None
+    power_entity: str | None = None
     matched_by: str = "none"
 
     @property
@@ -78,6 +86,7 @@ class MeterDetection:
                 self.export_entity,
                 self.import_power_entity,
                 self.export_power_entity,
+                self.power_entity,
             )
             if entity_id
         )
@@ -94,6 +103,7 @@ class MeterDetection:
             CONF_EXPORT_ENTITY: self.export_entity,
             CONF_IMPORT_POWER_ENTITY: self.import_power_entity,
             CONF_EXPORT_POWER_ENTITY: self.export_power_entity,
+            CONF_GRID_POWER_ENTITY: self.power_entity,
         }
         return {key: value for key, value in candidates.items() if value}
 
@@ -145,15 +155,33 @@ def _pick(candidates: list[_Candidate], keys: tuple[str, ...]) -> str | None:
     return None
 
 
+def _signed_power_without_key(candidates: list[_Candidate]) -> str | None:
+    """Return the only power sensor that has no translation key, if any.
+
+    HomeWizard's ``active_power_w`` is such an entity: one signed value, no
+    translation key, and the per-phase sensors do carry one.
+    """
+    unsigned = [
+        candidate
+        for candidate in candidates
+        if candidate.device_class == _POWER and candidate.translation_key is None
+    ]
+    return unsigned[0].entity_id if len(unsigned) == 1 else None
+
+
 def _from_signature(
     candidates: list[_Candidate], signature: MeterSignature
 ) -> MeterDetection:
     """Match a known meter by its translation keys."""
+    power_entity = _pick(candidates, signature.signed_power)
+    if power_entity is None and signature.signed_power_without_key:
+        power_entity = _signed_power_without_key(candidates)
     return MeterDetection(
         import_entity=_pick(candidates, signature.import_energy),
         export_entity=_pick(candidates, signature.export_energy),
         import_power_entity=_pick(candidates, signature.import_power),
         export_power_entity=_pick(candidates, signature.export_power),
+        power_entity=power_entity,
         matched_by="signature",
     )
 
@@ -179,11 +207,22 @@ def _from_heuristic(candidates: list[_Candidate]) -> MeterDetection:
             return None
         return min(matches, key=_rank).entity_id
 
+    signed = [
+        candidate
+        for candidate in candidates
+        if candidate.device_class == _POWER
+        and "power" in candidate.entity_id.lower()
+        and "import" not in candidate.entity_id.lower()
+        and "export" not in candidate.entity_id.lower()
+        and not re.search(r"l[1-3](?:$|[_\\.])", candidate.entity_id)
+    ]
+
     detection = MeterDetection(
         import_entity=find(_ENERGY, direction="import"),
         export_entity=find(_ENERGY, direction="export"),
         import_power_entity=find(_POWER, direction="import"),
         export_power_entity=find(_POWER, direction="export"),
+        power_entity=signed[0].entity_id if len(signed) == 1 else None,
         matched_by="heuristic",
     )
     return detection if not detection.is_empty else MeterDetection()

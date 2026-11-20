@@ -44,6 +44,7 @@ CONF_ERE_KWH_ENTITY: Final = "ere_kwh_entity"
 # Grid connection
 CONF_IMPORT_ENTITY: Final = "import_entity"
 CONF_EXPORT_ENTITY: Final = "export_entity"
+CONF_GRID_POWER_ENTITY: Final = "grid_power_entity"
 CONF_IMPORT_POWER_ENTITY: Final = "import_power_entity"
 CONF_EXPORT_POWER_ENTITY: Final = "export_power_entity"
 CONF_SALDERING: Final = "saldering"

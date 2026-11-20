@@ -166,13 +166,15 @@
             "import_entity": "Energiesensor import",
             "export_entity": "Energiesensor export",
             "import_power_entity": "Vermogenssensor import",
-            "export_power_entity": "Vermogenssensor export"
+            "export_power_entity": "Vermogenssensor export",
+            "grid_power_entity": "Netto vermogen sensor"
           },
           "data_description": {
             "import_entity": "Cumulatieve kWh die je van het net haalt.",
             "export_entity": "Cumulatieve kWh die je teruglevert. Laat leeg als je nooit teruglevert.",
             "import_power_entity": "Optioneel actueel vermogen, in W of kW.",
-            "export_power_entity": "Optioneel actueel terugleververmogen, in W of kW."
+            "export_power_entity": "Optioneel actueel terugleververmogen, in W of kW.",
+            "grid_power_entity": "Eén sensor met het netto vermogen: positief bij afname, negatief bij teruglevering. De import- en exportvermogenssensoren worden afgeleid uit het teken. Een P1-meter heeft er meestal precies één."
           }
         },
         "tariff": {
@@ -210,13 +212,15 @@
             "import_entity": "Energiesensor import",
             "export_entity": "Energiesensor export",
             "import_power_entity": "Vermogenssensor import",
-            "export_power_entity": "Vermogenssensor export"
+            "export_power_entity": "Vermogenssensor export",
+            "grid_power_entity": "Netto vermogen sensor"
           },
           "data_description": {
             "import_entity": "Cumulatieve kWh die je van het net haalt.",
             "export_entity": "Cumulatieve kWh die je teruglevert.",
             "import_power_entity": "Optioneel actueel vermogen, in W of kW.",
-            "export_power_entity": "Optioneel actueel terugleververmogen, in W of kW."
+            "export_power_entity": "Optioneel actueel terugleververmogen, in W of kW.",
+            "grid_power_entity": "Eén sensor met het netto vermogen: positief bij afname, negatief bij teruglevering. De import- en exportvermogenssensoren worden afgeleid uit het teken. Een P1-meter heeft er meestal precies één."
           }
         },
         "reconfigure_tariff": {
@@ -321,6 +325,9 @@
       },
       "grid_export_power": {
         "name": "Terugleververmogen"
+      },
+      "grid_net_power": {
+        "name": "Netto vermogen"
       }
     },
     "binary_sensor": {

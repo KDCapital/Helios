@@ -155,7 +155,8 @@ menu (**Grid connection** / *Netwerkaansluiting*). It is three short steps:
 | **Meter device** | Optional. Detection is best effort; you always confirm the result on the next screen. |
 | **Import energy entity** | Cumulative kWh taken from the grid. Required. |
 | **Export energy entity** | Cumulative kWh returned. Optional. |
-| **Import / export power entity** | Optional, feeds the live power sensors. |
+| **Import / export power entity** | Optional separate power sensors, in W. |
+| **Signed grid power entity** | Optional single sensor where positive imports and negative exports, as a P1 meter reports it. |
 | **Net metering (saldering)** | On by default while it is still legal. |
 | **Feed-in deduction** | Deducted from the spot price for exported kWh. Prefilled, and you must confirm it. |
 | **Supply costs / grid operator costs per month** | Your fixed costs. Both are required; enter 0 if you have none. |
@@ -167,7 +168,15 @@ Only one connection can exist per installation.
 Picking a meter is friendlier than hunting for four entity ids, so the device is
 matched by the entity registry's integration platform and translation key
 rather than by entity names. HomeWizard's P1 meter is recognised out of the box;
-unknown meters fall back to a device-class and naming heuristic. Detection only
+unknown meters fall back to a device-class and naming heuristic.
+
+A P1 meter reports live power as **one signed value**: positive when importing,
+negative when exporting. That sensor has no translation key on HomeWizard, so it
+is recognised as the only power sensor without one. Selecting it fills a single
+*signed* power field, from which the import and export power sensors are derived
+(and a net power sensor shows the signed value). Choosing the same sensor in
+both the import and the export field is treated the same way. A negative reading
+on a dedicated import or export sensor is clamped away as a sign error. Detection only
 ever *suggests* values — guessing wrong would silently meter the wrong counter,
 so the next step always shows what was found and what will be used.
 
@@ -281,7 +290,8 @@ A plain cost tracker would have reported €3.82 and missed the entire story.
 | `sensor.<grid>_fixed_costs` | Accrued supply and grid operator costs |
 | `sensor.<grid>_grid_cost` | `import cost − export credit + fixed costs` |
 | `sensor.<grid>_feed_in_price` | Feed-in price right now |
-| `sensor.<grid>_grid_import_power` / `_grid_export_power` | Live power, when configured |
+| `sensor.<grid>_grid_import_power` / `_grid_export_power` | Live power, split by direction |
+| `sensor.<grid>_grid_net_power` | Signed net power, when a signed sensor is configured |
 | `binary_sensor.<grid>_net_metering_active` | Whether saldering still applies |
 
 The `grid_cost` sensor exposes `billing_year`, `saldering_active`,
@@ -391,7 +401,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 148 tests
+.venv/bin/python -m pytest        # 153 tests
 .venv/bin/ruff check custom_components tests
 ```
 

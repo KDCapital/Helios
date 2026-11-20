@@ -22,6 +22,7 @@ from custom_components.kd_helios.const import (
     CONF_EXPORT_ENTITY,
     CONF_EXPORT_PRICE_SOURCE,
     CONF_GRID_FEE_MONTHLY,
+    CONF_GRID_POWER_ENTITY,
     CONF_IMPORT_ENTITY,
     CONF_KIND,
     CONF_METER_DEVICE,
@@ -458,6 +459,13 @@ async def test_homewizard_p1_meter_prefills_the_counters(hass, loaded_entry) -> 
         "p1_meter_energy_export",
         translation_key="total_energy_export_kwh",
     )
+    add_meter_sensor(
+        hass,
+        device,
+        "p1_meter_active_power",
+        device_class="power",
+        unit="W",
+    )
 
     result = await _start_grid_flow(hass, loaded_entry)
     result = await hass.config_entries.subentries.async_configure(
@@ -470,6 +478,10 @@ async def test_homewizard_p1_meter_prefills_the_counters(hass, loaded_entry) -> 
     )
     assert _suggested(result["data_schema"], CONF_EXPORT_ENTITY) == (
         "sensor.p1_meter_energy_export"
+    )
+    # The P1 meter's signed power sensor drives both live power sensors.
+    assert _suggested(result["data_schema"], CONF_GRID_POWER_ENTITY) == (
+        "sensor.p1_meter_active_power"
     )
     # The user is told what was recognised on the meter.
     assert result["description_placeholders"]["meter"] == "P1 meter"

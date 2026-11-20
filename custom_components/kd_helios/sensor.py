@@ -366,6 +366,16 @@ GRID_SENSORS: tuple[HeliosGridSensorDescription, ...] = (
         icon="mdi:flash-outline",
         value_fn=lambda snapshot: snapshot.export_power,
     ),
+    HeliosGridSensorDescription(
+        key="grid_net_power",
+        translation_key="grid_net_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UNIT_W,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        icon="mdi:transmission-tower",
+        value_fn=lambda snapshot: snapshot.net_power,
+    ),
 )
 
 
@@ -373,9 +383,16 @@ def _grid_descriptions_for(config: GridConfig) -> list[HeliosGridSensorDescripti
     """Return the grid sensors that apply to this connection."""
     descriptions: list[HeliosGridSensorDescription] = []
     for description in GRID_SENSORS:
-        if description.key == "grid_import_power" and not config.import_power_entity:
+        if (
+            description.key
+            in (
+                "grid_import_power",
+                "grid_export_power",
+            )
+            and not config.has_power
+        ):
             continue
-        if description.key == "grid_export_power" and not config.export_power_entity:
+        if description.key == "grid_net_power" and not config.signed_power_entity:
             continue
         descriptions.append(description)
     return descriptions

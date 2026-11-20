@@ -169,6 +169,7 @@ class GridSnapshot:
     open_export_kwh: float
     import_power: float | None
     export_power: float | None
+    net_power: float | None
     import_price: float | None
     spot_price: float | None
     export_price: float | None
@@ -197,6 +198,7 @@ class GridTracker:
         self.acc = GridAccumulators.from_dict(state or {})
         self._import_power: float | None = None
         self._export_power: float | None = None
+        self._net_power: float | None = None
         self._import_price: float | None = None
         self._spot: float | None = None
         self._export_price: float | None = None
@@ -380,6 +382,29 @@ class GridTracker:
             if not priced:
                 self.acc.unpriced_kwh += kwh
 
+    def _read_power(self) -> tuple[float | None, float | None, float | None]:
+        """Return import power, export power and signed net power.
+
+        A P1 meter reports one signed value: positive imports, negative
+        exports. Separate import and export sensors are used as they are, with
+        negative readings clamped away because they would be a sign error.
+        """
+        signed_entity = self.config.signed_power_entity
+        if signed_entity is not None:
+            raw = read_power(self.hass, signed_entity)
+            if raw is None:
+                return None, None, None
+            return max(0.0, raw), max(0.0, -raw), raw
+
+        raw_import = read_power(self.hass, self.config.import_power_entity)
+        raw_export = read_power(self.hass, self.config.export_power_entity)
+        import_power = max(0.0, raw_import) if raw_import is not None else None
+        export_power = max(0.0, raw_export) if raw_export is not None else None
+        net_power: float | None = None
+        if import_power is not None and export_power is not None:
+            net_power = import_power - export_power
+        return import_power, export_power, net_power
+
     # -- tick --------------------------------------------------------------
     def update(self, now: datetime, series: PriceSeries | None) -> None:
         """Run one accounting tick for the grid connection."""
@@ -392,8 +417,7 @@ class GridTracker:
             self._spot = point.spot if point else None
             self._export_price = feed_in_price(self._spot, self.config.export_deduction)
 
-        self._import_power = read_power(self.hass, self.config.import_power_entity)
-        self._export_power = read_power(self.hass, self.config.export_power_entity)
+        self._import_power, self._export_power, self._net_power = self._read_power()
 
         self._accrue_fixed(now)
 
@@ -440,6 +464,7 @@ class GridTracker:
             open_export_kwh=open_export_kwh,
             import_power=self._import_power,
             export_power=self._export_power,
+            net_power=self._net_power,
             import_price=self._import_price,
             spot_price=self._spot,
             export_price=self._export_price,

@@ -15,7 +15,13 @@ from custom_components.kd_helios.grid import (
     feed_in_price,
 )
 from custom_components.kd_helios.models import GridConfig
-from tests.helpers import FROZEN_TIME, UTC, flat_series, set_energy_state
+from tests.helpers import (
+    FROZEN_TIME,
+    UTC,
+    flat_series,
+    set_energy_state,
+    set_power_state,
+)
 
 IMPORT = "sensor.grid_import"
 EXPORT = "sensor.grid_export"
@@ -325,3 +331,61 @@ async def test_unpriced_export_is_flagged(hass) -> None:
 def test_saldering_end_date_is_january_2027() -> None:
     """The legal end of net metering is 1 January 2027."""
     assert SALDERING_END_DATE.isoformat() == "2027-01-01"
+
+
+async def test_signed_power_splits_into_import_and_export(hass) -> None:
+    """A P1 power sensor is one signed value: positive in, negative out."""
+    tracker = make_grid(hass, grid_power_entity="sensor.grid_power")
+    series = flat_series(FROZEN_TIME, all_in=0.30)
+
+    set_power_state(hass, "sensor.grid_power", 1500.0)
+    tracker.update(FROZEN_TIME, series)
+    importing = tracker.snapshot(FROZEN_TIME, series)
+
+    assert importing.import_power == pytest.approx(1500.0)
+    assert importing.export_power == pytest.approx(0.0)
+    assert importing.net_power == pytest.approx(1500.0)
+
+    set_power_state(hass, "sensor.grid_power", -800.0)
+    tracker.update(FROZEN_TIME + timedelta(seconds=5), series)
+    exporting = tracker.snapshot(FROZEN_TIME + timedelta(seconds=5), series)
+
+    assert exporting.import_power == pytest.approx(0.0)
+    assert exporting.export_power == pytest.approx(800.0)
+    assert exporting.net_power == pytest.approx(-800.0)
+
+
+async def test_same_sensor_in_both_fields_is_treated_as_signed(hass) -> None:
+    """Selecting one sensor for both power fields means "signed", not "both"."""
+    tracker = make_grid(
+        hass,
+        import_power_entity="sensor.grid_power",
+        export_power_entity="sensor.grid_power",
+    )
+    series = flat_series(FROZEN_TIME, all_in=0.30)
+
+    set_power_state(hass, "sensor.grid_power", -500.0)
+    tracker.update(FROZEN_TIME, series)
+    snapshot = tracker.snapshot(FROZEN_TIME, series)
+
+    assert snapshot.import_power == pytest.approx(0.0)
+    assert snapshot.export_power == pytest.approx(500.0)
+
+
+async def test_separate_power_sensors_are_clamped(hass) -> None:
+    """A negative reading on a dedicated export sensor is a sign error."""
+    tracker = make_grid(
+        hass,
+        import_power_entity="sensor.import_power",
+        export_power_entity="sensor.export_power",
+    )
+    series = flat_series(FROZEN_TIME, all_in=0.30)
+
+    set_power_state(hass, "sensor.import_power", -300.0)
+    set_power_state(hass, "sensor.export_power", 200.0)
+    tracker.update(FROZEN_TIME, series)
+    snapshot = tracker.snapshot(FROZEN_TIME, series)
+
+    assert snapshot.import_power == pytest.approx(0.0)
+    assert snapshot.export_power == pytest.approx(200.0)
+    assert snapshot.net_power == pytest.approx(-200.0)

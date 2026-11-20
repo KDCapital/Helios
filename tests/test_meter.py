@@ -7,6 +7,7 @@ from homeassistant.components.sensor import SensorDeviceClass
 
 from custom_components.kd_helios.const import (
     CONF_EXPORT_ENTITY,
+    CONF_GRID_POWER_ENTITY,
     CONF_IMPORT_ENTITY,
 )
 from custom_components.kd_helios.meter import async_detect_meter_entities
@@ -146,3 +147,58 @@ async def test_power_sensors_are_detected_too(hass) -> None:
 async def test_missing_device_is_empty(hass, device_id) -> None:
     """An unknown device id does not raise."""
     assert async_detect_meter_entities(hass, device_id).is_empty
+
+
+async def test_homewizard_signed_power_is_detected(hass) -> None:
+    """The P1 meter's single signed power sensor is offered as net power."""
+    device = add_device(hass)
+    add_sensor(
+        hass,
+        device,
+        "p1_meter_energy_import",
+        translation_key="total_energy_import_kwh",
+    )
+    # active_power_w carries no translation key; the per-phase sensors do.
+    add_sensor(
+        hass,
+        device,
+        "p1_meter_active_power",
+        device_class=SensorDeviceClass.POWER,
+        unit="W",
+    )
+    add_sensor(
+        hass,
+        device,
+        "p1_meter_active_power_l1",
+        device_class=SensorDeviceClass.POWER,
+        unit="W",
+        translation_key="active_power_phase_w",
+    )
+
+    detection = async_detect_meter_entities(hass, device.id)
+
+    assert detection.power_entity == "sensor.p1_meter_active_power"
+    assert detection.as_suggestions()[CONF_GRID_POWER_ENTITY] == (
+        "sensor.p1_meter_active_power"
+    )
+
+
+async def test_ambiguous_signed_power_is_not_guessed(hass) -> None:
+    """Two unkeyed power sensors means no safe choice."""
+    device = add_device(hass)
+    add_sensor(
+        hass,
+        device,
+        "meter_power_a",
+        device_class=SensorDeviceClass.POWER,
+        unit="W",
+    )
+    add_sensor(
+        hass,
+        device,
+        "meter_power_b",
+        device_class=SensorDeviceClass.POWER,
+        unit="W",
+    )
+
+    assert async_detect_meter_entities(hass, device.id).power_entity is None

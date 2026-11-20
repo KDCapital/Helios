@@ -166,13 +166,15 @@
             "import_entity": "Import energy entity",
             "export_entity": "Export energy entity",
             "import_power_entity": "Import power entity",
-            "export_power_entity": "Export power entity"
+            "export_power_entity": "Export power entity",
+            "grid_power_entity": "Signed grid power entity"
           },
           "data_description": {
             "import_entity": "Cumulative kWh taken from the grid.",
             "export_entity": "Cumulative kWh returned to the grid. Leave empty if you never export.",
             "import_power_entity": "Optional live power, in W or kW.",
-            "export_power_entity": "Optional live export power, in W or kW."
+            "export_power_entity": "Optional live export power, in W or kW.",
+            "grid_power_entity": "One sensor that reports net power: positive when importing, negative when exporting. The import and export power sensors are derived from its sign. A P1 meter usually has exactly one of these."
           }
         },
         "tariff": {
@@ -210,13 +212,15 @@
             "import_entity": "Import energy entity",
             "export_entity": "Export energy entity",
             "import_power_entity": "Import power entity",
-            "export_power_entity": "Export power entity"
+            "export_power_entity": "Export power entity",
+            "grid_power_entity": "Signed grid power entity"
           },
           "data_description": {
             "import_entity": "Cumulative kWh taken from the grid.",
             "export_entity": "Cumulative kWh returned to the grid.",
             "import_power_entity": "Optional live power, in W or kW.",
-            "export_power_entity": "Optional live export power, in W or kW."
+            "export_power_entity": "Optional live export power, in W or kW.",
+            "grid_power_entity": "One sensor that reports net power: positive when importing, negative when exporting. The import and export power sensors are derived from its sign. A P1 meter usually has exactly one of these."
           }
         },
         "reconfigure_tariff": {
@@ -321,6 +325,9 @@
       },
       "grid_export_power": {
         "name": "Grid export power"
+      },
+      "grid_net_power": {
+        "name": "Grid net power"
       }
     },
     "binary_sensor": {

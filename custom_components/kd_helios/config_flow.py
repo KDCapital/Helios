@@ -33,6 +33,7 @@ from .const import (
     CONF_EXPORT_POWER_ENTITY,
     CONF_EXPORT_PRICE_SOURCE,
     CONF_GRID_FEE_MONTHLY,
+    CONF_GRID_POWER_ENTITY,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
     CONF_KIND,
@@ -327,6 +328,9 @@ def _grid_entities_schema() -> vol.Schema:
                 SensorDeviceClass.POWER
             ),
             vol.Optional(CONF_EXPORT_POWER_ENTITY): _optional_entity(
+                SensorDeviceClass.POWER
+            ),
+            vol.Optional(CONF_GRID_POWER_ENTITY): _optional_entity(
                 SensorDeviceClass.POWER
             ),
         }
