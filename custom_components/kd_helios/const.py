@@ -68,6 +68,9 @@ CONF_BATTERY_HORIZON_HOURS: Final = "battery_horizon_hours"
 CONF_INVERTER_DEVICE: Final = "inverter_device"
 CONF_ALLOW_INVERTER_WRITES: Final = "allow_inverter_writes"
 CONF_RESTORE_WORK_MODE: Final = "restore_work_mode"
+CONF_BATTERY_MODE: Final = "battery_mode"
+CONF_MAX_DISCHARGE_KW: Final = "max_discharge_kw"
+CONF_ASSUME_SALDERED: Final = "assume_saldered"
 
 
 class DeviceKind(StrEnum):
@@ -99,6 +102,16 @@ class MarketPriceBasis(StrEnum):
     SPOT = "spot"
     # Provider all-in price, including VAT and energy tax.
     ALL_IN = "all_in"
+
+
+class BatteryMode(StrEnum):
+    """What the battery is optimised for."""
+
+    #: Charge in the cheap hours and use that energy in the house.
+    SELF_CONSUMPTION = "self_consumption"
+    #: Charge cheap and return it to the grid in the expensive hours, which is
+    #: worth the full import tariff while saldering still applies.
+    ARBITRAGE = "arbitrage"
 
 
 class ExportPriceSource(StrEnum):

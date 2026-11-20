@@ -209,7 +209,10 @@
             "battery_horizon_hours": "Planningshorizon",
             "inverter_device": "Omvormerapparaat",
             "allow_inverter_writes": "Schrijven naar de omvormer toestaan",
-            "restore_work_mode": "Bij loslaten: werkmodus"
+            "restore_work_mode": "Bij loslaten: werkmodus",
+            "battery_mode": "Batterijmodus",
+            "max_discharge_kw": "Maximaal ontlaadvermogen",
+            "assume_saldered": "Mijn leverancier saldeert batterijstroom van het net"
           },
           "data_description": {
             "soc_entity": "De laadtoestand van de batterij, bijvoorbeeld de Solarman batterij-SOC-sensor.",
@@ -221,7 +224,10 @@
             "battery_horizon_hours": "Hoe ver vooruit wordt gezocht naar een duurder uur om in te ontladen. Prijzen dekken vandaag en morgen.",
             "inverter_device": "Het Solarman-omvormerapparaat, nodig voordat schrijven aangezet kan worden.",
             "allow_inverter_writes": "Standaard uit. Schrijven verandert het gedrag van je batterij en moet bewust worden gestart.",
-            "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net."
+            "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net.",
+            "battery_mode": "**Eigen verbruik** laadt in de goedkope uren en houdt die energie voor het huis. **Salderingsarbitrage** koopt in het goedkoopste uur en levert de energie terug in het duurste uur, wat het volle importtarief oplevert zolang salderen nog geldt (tot 1 januari 2027).",
+            "max_discharge_kw": "Wordt gebruikt bij terugleveren aan het net. Laat leeg om het laadvermogen te gebruiken.",
+            "assume_saldered": "Salderen streept teruggeleverde energie weg tegen je verbruik, ook als de batterij die energie van het net haalde. Laat dit aan voor leveranciers die dat doen; zet het uit en arbitrage draait niet, omdat teruggeleverde energie dan alleen de terugleverprijs oplevert."
           }
         },
         "reconfigure": {
@@ -237,13 +243,19 @@
             "battery_horizon_hours": "Planningshorizon",
             "inverter_device": "Omvormerapparaat",
             "allow_inverter_writes": "Schrijven naar de omvormer toestaan",
-            "restore_work_mode": "Bij loslaten: werkmodus"
+            "restore_work_mode": "Bij loslaten: werkmodus",
+            "battery_mode": "Batterijmodus",
+            "max_discharge_kw": "Maximaal ontlaadvermogen",
+            "assume_saldered": "Mijn leverancier saldeert batterijstroom van het net"
           },
           "data_description": {
             "reserve_soc": "Hieronder wordt nooit ontladen gepland.",
             "target_soc": "Koop alleen energie tot deze laadtoestand.",
             "allow_inverter_writes": "Standaard uit. Schrijven moet bewust worden gestart.",
-            "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net."
+            "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net.",
+            "battery_mode": "**Eigen verbruik** laadt in de goedkope uren en houdt die energie voor het huis. **Salderingsarbitrage** koopt in het goedkoopste uur en levert de energie terug in het duurste uur, wat het volle importtarief oplevert zolang salderen nog geldt (tot 1 januari 2027).",
+            "max_discharge_kw": "Wordt gebruikt bij terugleveren aan het net. Laat leeg om het laadvermogen te gebruiken.",
+            "assume_saldered": "Salderen streept teruggeleverde energie weg tegen je verbruik, ook als de batterij die energie van het net haalde. Laat dit aan voor leveranciers die dat doen; zet het uit en arbitrage draait niet, omdat teruggeleverde energie dan alleen de terugleverprijs oplevert."
           }
         }
       },
@@ -500,6 +512,12 @@
         "0": "Verkopen eerst",
         "1": "Geen export naar belasting",
         "2": "Geen export naar CT"
+      }
+    },
+    "battery_mode": {
+      "options": {
+        "self_consumption": "Eigen verbruik",
+        "arbitrage": "Salderingsarbitrage"
       }
     }
   },

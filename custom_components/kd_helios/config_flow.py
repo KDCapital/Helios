@@ -22,8 +22,10 @@ from homeassistant.util import dt as dt_util
 from .battery import WorkMode
 from .const import (
     CONF_ALLOW_INVERTER_WRITES,
+    CONF_ASSUME_SALDERED,
     CONF_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_HORIZON_HOURS,
+    CONF_BATTERY_MODE,
     CONF_EFFICIENCY,
     CONF_ENERGY_ENTITY,
     CONF_ERE_CREDITS_ENTITY,
@@ -44,6 +46,7 @@ from .const import (
     CONF_INVERTER_DEVICE,
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
+    CONF_MAX_DISCHARGE_KW,
     CONF_METER_DEVICE,
     CONF_NAME,
     CONF_POWER_ENTITY,
@@ -87,6 +90,7 @@ from .const import (
     SUBENTRY_TYPE_GRID,
     UNIT_EUR_PER_KWH,
     UNIT_KWH,
+    BatteryMode,
     DeviceKind,
     EreMode,
     ExportPriceSource,
@@ -424,6 +428,27 @@ def _battery_schema() -> vol.Schema:
             ),
             vol.Required(
                 CONF_ALLOW_INVERTER_WRITES, default=False
+            ): selector.BooleanSelector(),
+            vol.Required(
+                CONF_BATTERY_MODE, default=BatteryMode.SELF_CONSUMPTION.value
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[mode.value for mode in BatteryMode],
+                    mode=selector.SelectSelectorMode.LIST,
+                    translation_key="battery_mode",
+                )
+            ),
+            vol.Optional(CONF_MAX_DISCHARGE_KW): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.1,
+                    max=MAX_CHARGE_POWER_KW,
+                    step=0.1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="kW",
+                )
+            ),
+            vol.Required(
+                CONF_ASSUME_SALDERED, default=True
             ): selector.BooleanSelector(),
             vol.Required(
                 CONF_RESTORE_WORK_MODE,

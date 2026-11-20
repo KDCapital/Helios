@@ -209,7 +209,10 @@
             "battery_horizon_hours": "Planning horizon",
             "inverter_device": "Inverter device",
             "allow_inverter_writes": "Allow writing to the inverter",
-            "restore_work_mode": "On release: work mode"
+            "restore_work_mode": "On release: work mode",
+            "battery_mode": "Battery mode",
+            "max_discharge_kw": "Maximum discharge power",
+            "assume_saldered": "My provider nets grid-charged battery energy"
           },
           "data_description": {
             "soc_entity": "The battery state of charge, for example the Solarman battery SOC sensor.",
@@ -221,7 +224,10 @@
             "battery_horizon_hours": "How far ahead to look for a cheaper hour to discharge into. Battery prices cover today and tomorrow.",
             "inverter_device": "The Solarman inverter device, required before writes can be enabled.",
             "allow_inverter_writes": "Off by default. Writes change how your battery behaves and must be triggered explicitly.",
-            "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid."
+            "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid.",
+            "battery_mode": "**Self-consumption** charges in the cheap hours and keeps that energy for the house. **Saldering arbitrage** buys in the cheapest hour and returns the energy to the grid in the most expensive one, which pays the full import tariff while saldering still applies (until 1 January 2027).",
+            "max_discharge_kw": "Used when selling back to the grid. Leave empty to use the charge power.",
+            "assume_saldered": "Saldering nets energy returned to the grid against your consumption, including energy the battery took from the grid. Leave this on for providers that do; turn it off and arbitrage will not run, because exported energy would only earn the feed-in price."
           }
         },
         "reconfigure": {
@@ -237,13 +243,19 @@
             "battery_horizon_hours": "Planning horizon",
             "inverter_device": "Inverter device",
             "allow_inverter_writes": "Allow writing to the inverter",
-            "restore_work_mode": "On release: work mode"
+            "restore_work_mode": "On release: work mode",
+            "battery_mode": "Battery mode",
+            "max_discharge_kw": "Maximum discharge power",
+            "assume_saldered": "My provider nets grid-charged battery energy"
           },
           "data_description": {
             "reserve_soc": "Never plan to discharge below this.",
             "target_soc": "Only buy energy up to this state of charge.",
             "allow_inverter_writes": "Off by default. Writes must be triggered explicitly.",
-            "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid."
+            "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid.",
+            "battery_mode": "**Self-consumption** charges in the cheap hours and keeps that energy for the house. **Saldering arbitrage** buys in the cheapest hour and returns the energy to the grid in the most expensive one, which pays the full import tariff while saldering still applies (until 1 January 2027).",
+            "max_discharge_kw": "Used when selling back to the grid. Leave empty to use the charge power.",
+            "assume_saldered": "Saldering nets energy returned to the grid against your consumption, including energy the battery took from the grid. Leave this on for providers that do; turn it off and arbitrage will not run, because exported energy would only earn the feed-in price."
           }
         }
       },
@@ -500,6 +512,12 @@
         "0": "Selling first",
         "1": "Zero export to load",
         "2": "Zero export to CT"
+      }
+    },
+    "battery_mode": {
+      "options": {
+        "self_consumption": "Self-consumption",
+        "arbitrage": "Saldering arbitrage"
       }
     }
   },
