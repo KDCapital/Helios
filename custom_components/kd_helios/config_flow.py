@@ -40,6 +40,7 @@ from .const import (
     CONF_PRICE_INTERVAL,
     CONF_PROVIDER,
     CONF_REIMBURSEMENT_BASIS,
+    CONF_REIMBURSEMENT_INTERVAL,
     CONF_REIMBURSEMENT_MODE,
     CONF_REIMBURSEMENT_PERCENT,
     CONF_REIMBURSEMENT_RATE,
@@ -49,6 +50,7 @@ from .const import (
     DEFAULT_ERE_MODE,
     DEFAULT_MARKET_PRICE_BASIS,
     DEFAULT_PRICE_INTERVAL,
+    DEFAULT_REIMBURSEMENT_INTERVAL,
     DEFAULT_REIMBURSEMENT_MODE,
     DEFAULT_REIMBURSEMENT_PERCENT,
     DOMAIN,
@@ -69,6 +71,7 @@ from .const import (
     EreMode,
     ExportPriceSource,
     MarketPriceBasis,
+    PriceInterval,
     ReimbursementMode,
 )
 from .feedin import FEED_IN_SNAPSHOT_DATE, feed_in_deduction
@@ -206,6 +209,16 @@ def _reimbursement_schema() -> vol.Schema:
                     options=[basis.value for basis in MarketPriceBasis],
                     mode=selector.SelectSelectorMode.LIST,
                     translation_key="market_price_basis",
+                )
+            ),
+            vol.Required(
+                CONF_REIMBURSEMENT_INTERVAL,
+                default=DEFAULT_REIMBURSEMENT_INTERVAL.value,
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[interval.value for interval in PriceInterval],
+                    mode=selector.SelectSelectorMode.LIST,
+                    translation_key="reimbursement_interval",
                 )
             ),
         }

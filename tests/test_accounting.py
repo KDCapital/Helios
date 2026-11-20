@@ -13,6 +13,7 @@ from custom_components.kd_helios.const import (
     DeviceKind,
     EreMode,
     MarketPriceBasis,
+    PriceInterval,
     ReimbursementMode,
 )
 from custom_components.kd_helios.models import (
@@ -661,3 +662,84 @@ async def test_clock_stays_open_while_prices_are_missing(hass) -> None:
     assert snapshot.energy_kwh == pytest.approx(1.0)
     assert snapshot.cost == pytest.approx(PRICE)
     assert snapshot.unpriced_kwh == 0.0
+
+
+async def test_hourly_reimbursement_uses_the_hour_average(hass) -> None:
+    """An hourly reimbursement ignores the quarter the car happened to charge in."""
+    hour = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
+    step = timedelta(minutes=15)
+    series = build_series(
+        {
+            hour: (0.30, 0.10),
+            hour + step: (0.32, 0.20),
+            hour + 2 * step: (0.34, 0.30),
+            hour + 3 * step: (0.36, 0.40),
+        }
+    )
+
+    def tracker_for(interval: PriceInterval) -> DeviceTracker:
+        return make_tracker(
+            hass,
+            kind=DeviceKind.EV_CHARGER,
+            reimbursement=ReimbursementConfig(
+                mode=ReimbursementMode.DYNAMIC,
+                surcharge=0.0,
+                percent=100.0,
+                basis=MarketPriceBasis.SPOT,
+                interval=interval,
+            ),
+        )
+
+    hourly = tracker_for(PriceInterval.HOURLY)
+    quarterly = tracker_for(PriceInterval.QUARTERLY)
+
+    # Charge during the second quarter of the hour, where the spot is 0.20.
+    start = hour + step
+    for tracker in (hourly, quarterly):
+        set_energy_state(hass, "sensor.device_energy", 10.0)
+        tracker.update(start, series)
+        set_energy_state(hass, "sensor.device_energy", 11.0)
+        tracker.update(start + timedelta(minutes=1), series)
+
+    hourly_snapshot = hourly.snapshot(start + timedelta(minutes=1), series)
+    quarterly_snapshot = quarterly.snapshot(start + timedelta(minutes=1), series)
+
+    # Hourly settles on the hour average, quarterly on the quarter's own price.
+    assert hourly_snapshot.reimbursement_rate == pytest.approx(0.25)
+    assert hourly_snapshot.reimbursement == pytest.approx(0.25)
+    assert quarterly_snapshot.reimbursement_rate == pytest.approx(0.20)
+    assert quarterly_snapshot.reimbursement == pytest.approx(0.20)
+
+
+async def test_hourly_reimbursement_can_use_the_all_in_price(hass) -> None:
+    """The all-in basis is averaged per hour too."""
+    hour = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
+    step = timedelta(minutes=15)
+    series = build_series(
+        {
+            hour: (0.30, 0.10),
+            hour + step: (0.32, 0.20),
+            hour + 2 * step: (0.34, 0.30),
+            hour + 3 * step: (0.36, 0.40),
+        }
+    )
+    tracker = make_tracker(
+        hass,
+        kind=DeviceKind.EV_CHARGER,
+        reimbursement=ReimbursementConfig(
+            mode=ReimbursementMode.DYNAMIC,
+            surcharge=0.02,
+            percent=100.0,
+            basis=MarketPriceBasis.ALL_IN,
+            interval=PriceInterval.HOURLY,
+        ),
+    )
+
+    start = hour + 2 * step
+    set_energy_state(hass, "sensor.device_energy", 10.0)
+    tracker.update(start, series)
+    set_energy_state(hass, "sensor.device_energy", 11.0)
+    tracker.update(start + timedelta(minutes=1), series)
+
+    snapshot = tracker.snapshot(start + timedelta(minutes=1), series)
+    assert snapshot.reimbursement_rate == pytest.approx(0.33 + 0.02)

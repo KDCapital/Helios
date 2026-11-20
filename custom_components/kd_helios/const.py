@@ -32,6 +32,7 @@ CONF_REIMBURSEMENT_RATE: Final = "reimbursement_rate"
 CONF_REIMBURSEMENT_SURCHARGE: Final = "reimbursement_surcharge"
 CONF_REIMBURSEMENT_PERCENT: Final = "reimbursement_percent"
 CONF_REIMBURSEMENT_BASIS: Final = "reimbursement_basis"
+CONF_REIMBURSEMENT_INTERVAL: Final = "reimbursement_interval"
 
 CONF_ERE_MODE: Final = "ere_mode"
 CONF_ERE_PER_KWH: Final = "ere_per_kwh"
@@ -68,6 +69,13 @@ class ReimbursementMode(StrEnum):
     DYNAMIC = "dynamic"
 
 
+class PriceInterval(StrEnum):
+    """Price resolution used to value energy."""
+
+    QUARTERLY = "quarterly"
+    HOURLY = "hourly"
+
+
 class MarketPriceBasis(StrEnum):
     """Market price used by the dynamic reimbursement formula."""
 
@@ -98,6 +106,7 @@ DEFAULT_DEVICE_KIND: Final = DeviceKind.DEVICE
 DEFAULT_REIMBURSEMENT_MODE: Final = ReimbursementMode.NONE
 DEFAULT_REIMBURSEMENT_PERCENT: Final = 100.0
 DEFAULT_MARKET_PRICE_BASIS: Final = MarketPriceBasis.SPOT
+DEFAULT_REIMBURSEMENT_INTERVAL: Final = PriceInterval.QUARTERLY
 DEFAULT_ERE_MODE: Final = EreMode.NONE
 
 MAX_REIMBURSEMENT_PERCENT: Final = 500.0

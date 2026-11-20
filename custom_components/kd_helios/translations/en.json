@@ -67,14 +67,16 @@
             "reimbursement_rate": "Fixed reimbursement",
             "reimbursement_surcharge": "Fixed surcharge",
             "reimbursement_percent": "Surcharge percentage",
-            "reimbursement_basis": "Market price"
+            "reimbursement_basis": "Market price",
+            "reimbursement_interval": "Reimbursement price interval"
           },
           "data_description": {
             "reimbursement_mode": "No reimbursement, a fixed rate, or the dynamic formula.",
             "reimbursement_rate": "Amount your employer pays per kWh, in euros.",
             "reimbursement_surcharge": "Fixed amount added to the market price, in euros per kWh.",
             "reimbursement_percent": "Multiplier applied after the surcharge. 100 means no extra margin, 105 adds five percent.",
-            "reimbursement_basis": "EPEX spot excludes VAT and energy tax. All-in is what you pay at home."
+            "reimbursement_basis": "EPEX spot excludes VAT and energy tax. All-in is what you pay at home.",
+            "reimbursement_interval": "How often the tariff your employer uses changes. Choose per hour when the reimbursement settles hourly while your own contract settles per quarter; the reimbursement then uses the hour average instead of the quarter hour price."
           }
         },
         "ere": {
@@ -115,7 +117,8 @@
             "ere_price": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_price%]",
             "ere_price_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_price_entity%]",
             "ere_credits_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_credits_entity%]",
-            "ere_kwh_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_kwh_entity%]"
+            "ere_kwh_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_kwh_entity%]",
+            "reimbursement_interval": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_interval%]"
           }
         }
       },
@@ -310,6 +313,12 @@
         "none": "No ERE value",
         "fixed": "Fixed ERE per kWh",
         "joulo": "From the Joulo integration"
+      }
+    },
+    "reimbursement_interval": {
+      "options": {
+        "quarterly": "Per quarter hour",
+        "hourly": "Per hour"
       }
     }
   },

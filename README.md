@@ -26,7 +26,7 @@ charge.
 |---|---|
 | **Real provider tariffs** | Pick your own provider from the 34 that epexprijzen.nl publishes, per quarter hour or per hour. |
 | **Per-device metering** | Attach an existing power (W) or energy (kWh) entity to a device and get energy, cost, cost today and current price. |
-| **Employer reimbursement** | A fixed amount per kWh, or the dynamic formula `(market price + fixed surcharge) × surcharge percentage`. |
+| **Employer reimbursement** | A fixed amount per kWh, or the dynamic formula `(market price + fixed surcharge) × surcharge percentage`, settled per quarter hour or per hour independently of your own contract. |
 | **ERE certificates** | A fixed `ERE per kWh × price per ERE`, or the ratio derived from the [Joulo integration](https://github.com/boronz/joulo-hacs-integratie). |
 | **Honest net cost** | `net cost = cost − reimbursement − ERE value`, and it may go negative. |
 | **Grid connection** | Import and export metered at the real tariff, with an annual **saldering** ledger and your fixed monthly costs. |
@@ -108,6 +108,14 @@ The **market price** can be either:
   what a company tariff is usually based on.
 - **All-in price** — what you pay at home, including VAT and energy tax. Use
   this if your employer reimburses you at the same rate you pay.
+
+**Interval** — the reimbursement has its own price interval, independent of your
+contract: **per quarter hour** (default) or **per hour**. Dynamic tariffs do not
+always line up: an employer or charging platform may settle hourly while your
+own contract settles per quarter. An hourly reimbursement must use the hour
+average, not the quarter hour price at the moment the car happened to charge, so
+set it to *per hour* and the four quarters of each hour are averaged for the
+reimbursement while your cost keeps following the contract.
 
 ### 4. ERE certificates
 
@@ -364,7 +372,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 131 tests
+.venv/bin/python -m pytest        # 138 tests
 .venv/bin/ruff check custom_components tests
 ```
 
@@ -372,8 +380,9 @@ The test suite covers the tariff math, price normalisation against recorded
 API payloads, the accounting engine (price boundaries, gaps, meter resets and
 source swaps, implausible deltas, reimbursement and ERE), the HTTP client error
 paths, both config flows, periodic price polling, persistence across a reload,
-grid import/export with both saldering modes, the 2027 cut-over, and entity
-cleanup when a device loses a feature. Coverage is 94%.
+grid import/export with both saldering modes, the 2027 cut-over, hourly versus
+quarterly reimbursement of the same energy, and entity cleanup when a device
+loses a feature. Coverage is 95%.
 
 ---
 

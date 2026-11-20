@@ -23,6 +23,7 @@ from .const import (
     MAX_PLAUSIBLE_POWER_KW,
     MAX_TRACKING_GAP,
     MIN_ERE_RATIO_WINDOW_KWH,
+    PriceInterval,
 )
 from .models import DeviceConfig
 from .prices import PriceSeries
@@ -163,6 +164,9 @@ class DeviceTracker:
         self._ere_rate: float | None = None
         self._ere_price: float | None = None
         self._cached_ere_rate: float | None = None
+        self._hourly_series: PriceSeries | None = None
+        self._hourly_source: PriceSeries | None = None
+        self._reimb_series: PriceSeries | None = None
         self._source_ok = True
 
     # -- source reading ----------------------------------------------------
@@ -236,6 +240,22 @@ class DeviceTracker:
                 return live
         return ere.ere_price
 
+    def _reimbursement_series(self, series: PriceSeries | None) -> PriceSeries | None:
+        """Return the price series the reimbursement is valued against.
+
+        A reimbursement that settles hourly must not see quarter hour prices,
+        even when the household contract is quarterly: the two tariffs are
+        simply different.
+        """
+        if series is None:
+            return None
+        if self.config.reimbursement.interval is not PriceInterval.HOURLY:
+            return series
+        if self._hourly_source is not series:
+            self._hourly_series = series.hourly_average()
+            self._hourly_source = series
+        return self._hourly_series
+
     # -- accounting --------------------------------------------------------
     def _roll_day(self, now: datetime) -> None:
         """Reset the daily counters when the local date changes."""
@@ -249,6 +269,7 @@ class DeviceTracker:
         """Sample the source, integrate energy and price it."""
         now = dt_util.as_utc(now)
         self._roll_day(now)
+        self._reimb_series = self._reimbursement_series(series)
 
         power = self._read_power()
         self._power = power
@@ -336,7 +357,7 @@ class DeviceTracker:
             )
             return
 
-        self._accrue(previous_tick, now, delta_kwh, series)
+        self._accrue(previous_tick, now, delta_kwh, series, self._reimb_series)
 
     def _accrue(
         self,
@@ -344,6 +365,7 @@ class DeviceTracker:
         window_end: datetime,
         delta_kwh: float,
         series: PriceSeries,
+        reimb_series: PriceSeries | None = None,
     ) -> None:
         """Price ``delta_kwh`` over the window it was consumed in."""
         total_seconds = (window_end - window_start).total_seconds()
@@ -364,7 +386,9 @@ class DeviceTracker:
             else:
                 acc.unpriced_kwh += kwh
 
-            rate = self.config.reimbursement.rate(point)
+            rate = self.config.reimbursement.rate(
+                reimb_series.point_at(seg_start) if reimb_series is not None else None
+            )
             if rate is not None:
                 acc.total_reimbursement += kwh * rate
 
@@ -382,6 +406,9 @@ class DeviceTracker:
     def snapshot(self, now: datetime, series: PriceSeries | None) -> DeviceSnapshot:
         """Return the current device values."""
         point = series.point_at(now) if series is not None else None
+        rate_point = (
+            self._reimb_series.point_at(now) if self._reimb_series is not None else None
+        )
         acc = self.acc
         ere_rate = self._ere_rate if self.config.ere.enabled else None
         return DeviceSnapshot(
@@ -392,7 +419,7 @@ class DeviceTracker:
             price=point.all_in if point else None,
             spot=point.spot if point else None,
             reimbursement=acc.total_reimbursement,
-            reimbursement_rate=self.config.reimbursement.rate(point),
+            reimbursement_rate=self.config.reimbursement.rate(rate_point),
             ere_value=acc.total_ere_value,
             ere_credits=acc.total_ere_credits,
             ere_rate=ere_rate,

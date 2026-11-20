@@ -194,3 +194,36 @@ def test_empty_series_is_falsy() -> None:
     """Empty series are falsy so callers can fall back cleanly."""
     assert not PriceSeries.empty("zonneplan", "quarterly")
     assert PriceMeta() == PriceMeta(0.0, 0.0, 1.0)
+
+
+def test_hourly_average_flattens_an_hour() -> None:
+    """An hourly reimbursement must see one price per hour, not four."""
+    hour = FROZEN_TIME
+    step = timedelta(minutes=15)
+    series = build_series(
+        {
+            hour: (0.30, 0.10),
+            hour + step: (0.32, 0.20),
+            hour + 2 * step: (0.34, 0.30),
+            hour + 3 * step: (0.36, 0.40),
+        }
+    )
+
+    hourly = series.hourly_average()
+
+    for index in range(4):
+        point = hourly.point_at(hour + index * step)
+        assert point is not None
+        assert point.all_in == pytest.approx(0.33)
+        assert point.spot == pytest.approx(0.25)
+
+    # The original series is untouched.
+    original = series.point_at(hour + step)
+    assert original is not None
+    assert original.spot == pytest.approx(0.20)
+
+
+def test_hourly_average_of_an_empty_series() -> None:
+    """Averaging nothing yields nothing."""
+    empty = PriceSeries.empty("zonneplan", "quarterly")
+    assert not empty.hourly_average()

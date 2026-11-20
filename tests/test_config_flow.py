@@ -28,6 +28,7 @@ from custom_components.kd_helios.const import (
     CONF_POWER_ENTITY,
     CONF_PRICE_INTERVAL,
     CONF_PROVIDER,
+    CONF_REIMBURSEMENT_INTERVAL,
     CONF_REIMBURSEMENT_MODE,
     CONF_REIMBURSEMENT_RATE,
     CONF_REIMBURSEMENT_SURCHARGE,
@@ -488,3 +489,48 @@ async def test_only_one_grid_connection(hass, loaded_entry) -> None:
     result = await _start_grid_flow(hass, loaded_entry)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "single_instance"
+
+
+async def test_ev_reimbursement_interval_is_stored(hass, loaded_entry) -> None:
+    """An EV can reimburse hourly while the contract settles per quarter."""
+    result = await _start_subentry_flow(hass, loaded_entry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], EV_INPUT
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            CONF_REIMBURSEMENT_MODE: "dynamic",
+            CONF_REIMBURSEMENT_INTERVAL: "hourly",
+            CONF_REIMBURSEMENT_SURCHARGE: 0.02,
+        },
+    )
+    assert result["step_id"] == "ere"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_ERE_MODE: "none"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0]
+    assert subentry.data[CONF_REIMBURSEMENT_INTERVAL] == "hourly"
+
+
+async def test_ev_reimbursement_interval_defaults_to_quarterly(
+    hass, loaded_entry
+) -> None:
+    """The default matches the quarter hour contract."""
+    result = await _start_subentry_flow(hass, loaded_entry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], EV_INPUT
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {CONF_REIMBURSEMENT_MODE: "fixed", CONF_REIMBURSEMENT_RATE: 0.35},
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_ERE_MODE: "none"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0]
+    assert subentry.data[CONF_REIMBURSEMENT_INTERVAL] == "quarterly"

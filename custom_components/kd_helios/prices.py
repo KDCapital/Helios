@@ -257,6 +257,36 @@ class PriceSeries:
             cursor = chunk_end
         return segments
 
+    def hourly_average(self) -> PriceSeries:
+        """Return a series where every point holds its hour average.
+
+        Used when a reimbursement settles per hour while the contract settles
+        per quarter: the reimbursement then sees one price per hour instead of
+        the quarter hour price at the moment of charging.
+        """
+        if not self._keys:
+            return self
+
+        buckets: dict[datetime, list[PricePoint]] = {}
+        for key in self._keys:
+            hour = key.replace(minute=0, second=0, microsecond=0)
+            buckets.setdefault(hour, []).append(self._grid[key])
+
+        averages: dict[datetime, PricePoint] = {}
+        for hour, points in buckets.items():
+            all_in = [point.all_in for point in points if point.all_in is not None]
+            spot = [point.spot for point in points if point.spot is not None]
+            averages[hour] = PricePoint(
+                all_in=sum(all_in) / len(all_in) if all_in else None,
+                spot=sum(spot) / len(spot) if spot else None,
+            )
+
+        grid = {
+            key: averages[key.replace(minute=0, second=0, microsecond=0)]
+            for key in self._keys
+        }
+        return PriceSeries(grid, self._meta, self.provider, self.interval)
+
     def average_all_in(self, start: datetime, end: datetime) -> float | None:
         """Return the time weighted average all-in price over a period."""
         total_weight = 0.0

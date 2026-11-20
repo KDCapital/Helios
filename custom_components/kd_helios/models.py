@@ -28,6 +28,7 @@ from .const import (
     CONF_NAME,
     CONF_POWER_ENTITY,
     CONF_REIMBURSEMENT_BASIS,
+    CONF_REIMBURSEMENT_INTERVAL,
     CONF_REIMBURSEMENT_MODE,
     CONF_REIMBURSEMENT_PERCENT,
     CONF_REIMBURSEMENT_RATE,
@@ -37,12 +38,14 @@ from .const import (
     DEFAULT_DEVICE_KIND,
     DEFAULT_ERE_MODE,
     DEFAULT_MARKET_PRICE_BASIS,
+    DEFAULT_REIMBURSEMENT_INTERVAL,
     DEFAULT_REIMBURSEMENT_MODE,
     DEFAULT_REIMBURSEMENT_PERCENT,
     DeviceKind,
     EreMode,
     ExportPriceSource,
     MarketPriceBasis,
+    PriceInterval,
     ReimbursementMode,
 )
 from .prices import PricePoint
@@ -99,6 +102,7 @@ class ReimbursementConfig:
     surcharge: float = 0.0
     percent: float = DEFAULT_REIMBURSEMENT_PERCENT
     basis: MarketPriceBasis = MarketPriceBasis.SPOT
+    interval: PriceInterval = DEFAULT_REIMBURSEMENT_INTERVAL
 
     @property
     def enabled(self) -> bool:
@@ -139,6 +143,11 @@ class ReimbursementConfig:
                 MarketPriceBasis,
                 data.get(CONF_REIMBURSEMENT_BASIS),
                 DEFAULT_MARKET_PRICE_BASIS,
+            ),
+            interval=_as_enum(
+                PriceInterval,
+                data.get(CONF_REIMBURSEMENT_INTERVAL),
+                DEFAULT_REIMBURSEMENT_INTERVAL,
             ),
         )
 

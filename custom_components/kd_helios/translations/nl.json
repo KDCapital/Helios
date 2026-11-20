@@ -67,14 +67,16 @@
             "reimbursement_rate": "Vaste vergoeding",
             "reimbursement_surcharge": "Vaste toeslag",
             "reimbursement_percent": "Toeslagpercentage",
-            "reimbursement_basis": "Marktprijs"
+            "reimbursement_basis": "Marktprijs",
+            "reimbursement_interval": "Prijsinterval vergoeding"
           },
           "data_description": {
             "reimbursement_mode": "Geen vergoeding, een vast tarief, of de dynamische formule.",
             "reimbursement_rate": "Bedrag dat je werkgever per kWh betaalt, in euro.",
             "reimbursement_surcharge": "Vast bedrag bovenop de marktprijs, in euro per kWh.",
             "reimbursement_percent": "Vermenigvuldiger na de toeslag. 100 betekent geen extra marge, 105 voegt vijf procent toe.",
-            "reimbursement_basis": "EPEX spot is exclusief btw en energiebelasting. All-in is wat je thuis betaalt."
+            "reimbursement_basis": "EPEX spot is exclusief btw en energiebelasting. All-in is wat je thuis betaalt.",
+            "reimbursement_interval": "Hoe vaak het tarief van je werkgever wisselt. Kies per uur als de vergoeding per uur wordt afgerekend terwijl je eigen contract per kwartier rekent; de vergoeding gebruikt dan het uurgemiddelde in plaats van de kwartierprijs."
           }
         },
         "ere": {
@@ -115,7 +117,8 @@
             "ere_price": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_price%]",
             "ere_price_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_price_entity%]",
             "ere_credits_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_credits_entity%]",
-            "ere_kwh_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_kwh_entity%]"
+            "ere_kwh_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_kwh_entity%]",
+            "reimbursement_interval": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_interval%]"
           }
         }
       },
@@ -310,6 +313,12 @@
         "none": "Geen ERE-waarde",
         "fixed": "Vast ERE per kWh",
         "joulo": "Uit de Joulo-integratie"
+      }
+    },
+    "reimbursement_interval": {
+      "options": {
+        "quarterly": "Per kwartier",
+        "hourly": "Per uur"
       }
     }
   },
