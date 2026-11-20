@@ -20,6 +20,10 @@ from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_ALLOW_INVERTER_WRITES,
+    CONF_BATTERY_CAPACITY_KWH,
+    CONF_BATTERY_HORIZON_HOURS,
+    CONF_EFFICIENCY,
     CONF_ENERGY_ENTITY,
     CONF_ERE_CREDITS_ENTITY,
     CONF_ERE_KWH_ENTITY,
@@ -36,7 +40,9 @@ from .const import (
     CONF_GRID_POWER_ENTITY,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
+    CONF_INVERTER_DEVICE,
     CONF_KIND,
+    CONF_MAX_CHARGE_KW,
     CONF_METER_DEVICE,
     CONF_NAME,
     CONF_POWER_ENTITY,
@@ -48,8 +54,11 @@ from .const import (
     CONF_REIMBURSEMENT_PERCENT,
     CONF_REIMBURSEMENT_RATE,
     CONF_REIMBURSEMENT_SURCHARGE,
+    CONF_RESERVE_SOC,
     CONF_SALDERING,
+    CONF_SOC_ENTITY,
     CONF_SUPPLY_COST_MONTHLY,
+    CONF_TARGET_SOC,
     DEFAULT_ERE_MODE,
     DEFAULT_MARKET_PRICE_BASIS,
     DEFAULT_PRICE_INTERVAL,
@@ -57,6 +66,9 @@ from .const import (
     DEFAULT_REIMBURSEMENT_MODE,
     DEFAULT_REIMBURSEMENT_PERCENT,
     DOMAIN,
+    MAX_BATTERY_CAPACITY_KWH,
+    MAX_BATTERY_HORIZON_HOURS,
+    MAX_CHARGE_POWER_KW,
     MAX_ERE_PER_KWH,
     MAX_ERE_PRICE,
     MAX_EXPORT_DEDUCTION,
@@ -67,9 +79,11 @@ from .const import (
     PRICE_INTERVALS,
     PROVIDERS,
     SALDERING_END_DATE,
+    SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_GRID,
     UNIT_EUR_PER_KWH,
+    UNIT_KWH,
     DeviceKind,
     EreMode,
     ExportPriceSource,
@@ -356,6 +370,71 @@ def _grid_tariff_schema(suggested: float | None) -> vol.Schema:
     )
 
 
+def _percent_field(minimum: float, maximum: float) -> selector.NumberSelector:
+    """Return a whole-percent selector."""
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=minimum,
+            max=maximum,
+            step=1,
+            mode=selector.NumberSelectorMode.BOX,
+            unit_of_measurement="%",
+        )
+    )
+
+
+def _battery_schema() -> vol.Schema:
+    """Schema for the home battery and its inverter."""
+    return vol.Schema(
+        {
+            vol.Optional(CONF_SOC_ENTITY): _optional_entity(),
+            vol.Required(
+                CONF_BATTERY_CAPACITY_KWH, default=10.0
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=MAX_BATTERY_CAPACITY_KWH,
+                    step=0.1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement=UNIT_KWH,
+                )
+            ),
+            vol.Required(CONF_MAX_CHARGE_KW, default=3.0): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.1,
+                    max=MAX_CHARGE_POWER_KW,
+                    step=0.1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="kW",
+                )
+            ),
+            vol.Required(CONF_RESERVE_SOC, default=10.0): _percent_field(0, 100),
+            vol.Required(CONF_TARGET_SOC, default=100.0): _percent_field(1, 100),
+            vol.Required(CONF_EFFICIENCY, default=90.0): _percent_field(50, 100),
+            vol.Required(
+                CONF_BATTERY_HORIZON_HOURS, default=36
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=6,
+                    max=MAX_BATTERY_HORIZON_HOURS,
+                    step=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="h",
+                )
+            ),
+            vol.Optional(CONF_INVERTER_DEVICE): vol.Any(
+                None,
+                selector.DeviceSelector(
+                    selector.DeviceSelectorConfig(integration="solarman")
+                ),
+            ),
+            vol.Required(
+                CONF_ALLOW_INVERTER_WRITES, default=False
+            ): selector.BooleanSelector(),
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -444,6 +523,28 @@ def _export_price_source(submitted: Any, suggested: float | None) -> str:
     return ExportPriceSource.MANUAL.value
 
 
+def _validate_battery(user_input: Mapping[str, Any]) -> dict[str, str]:
+    """Validate the battery settings."""
+    errors: dict[str, str] = {}
+    if as_entity_id(user_input.get(CONF_SOC_ENTITY)) is None:
+        errors[CONF_SOC_ENTITY] = "soc_required"
+
+    reserve = as_float(user_input.get(CONF_RESERVE_SOC))
+    target = as_float(user_input.get(CONF_TARGET_SOC))
+    if target <= reserve:
+        errors[CONF_TARGET_SOC] = "target_above_reserve"
+
+    if as_float(user_input.get(CONF_BATTERY_CAPACITY_KWH)) <= 0:
+        errors[CONF_BATTERY_CAPACITY_KWH] = "capacity_required"
+    if as_float(user_input.get(CONF_MAX_CHARGE_KW)) <= 0:
+        errors[CONF_MAX_CHARGE_KW] = "charge_power_required"
+
+    writes = as_bool(user_input.get(CONF_ALLOW_INVERTER_WRITES))
+    if writes and as_entity_id(user_input.get(CONF_INVERTER_DEVICE)) is None:
+        errors[CONF_INVERTER_DEVICE] = "inverter_required"
+    return errors
+
+
 def _unique_id(provider: str, interval: str) -> str:
     """Return the config entry unique id for a provider and interval."""
     return f"{provider}_{interval}"
@@ -466,6 +567,7 @@ class HeliosConfigFlow(ConfigFlow, domain=DOMAIN):
         return {
             SUBENTRY_TYPE_DEVICE: DeviceSubentryFlow,
             SUBENTRY_TYPE_GRID: GridSubentryFlow,
+            SUBENTRY_TYPE_BATTERY: BatterySubentryFlow,
         }
 
     async def _async_validate(self, provider: str, interval: str) -> dict[str, str]:
@@ -835,4 +937,64 @@ class GridSubentryFlow(ConfigSubentryFlow):
             ),
             errors=errors,
             description_placeholders=self._placeholders(provider, suggested),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Battery subentry flow
+# ---------------------------------------------------------------------------
+class BatterySubentryFlow(ConfigSubentryFlow):
+    """Add or edit the home battery planner.
+
+    Writes stay off until the user enables them and points at the inverter
+    device, because writing time-of-use registers changes real behaviour.
+    """
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle the battery step."""
+        entry = self._get_entry()
+        if entry.get_subentries_of_type(SUBENTRY_TYPE_BATTERY):
+            return self.async_abort(reason="single_instance")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_battery(user_input)
+            if not errors:
+                return self.async_create_entry(
+                    title="Home battery", data=dict(user_input)
+                )
+
+        return self.async_show_form(
+            step_id="user", data_schema=_battery_schema(), errors=errors
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Edit the battery settings."""
+        entry = self._get_entry()
+        subentry = self._get_reconfigure_subentry()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_battery(user_input)
+            if not errors:
+                return self.async_update_and_abort(
+                    entry, subentry, data=dict(user_input)
+                )
+
+        schema = _battery_schema()
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                schema,
+                {
+                    key: value
+                    for key, value in subentry.data.items()
+                    if key in schema.schema
+                },
+            ),
+            errors=errors,
         )

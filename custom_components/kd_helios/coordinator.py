@@ -11,15 +11,17 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .accounting import DeviceSnapshot, DeviceTracker
+from .battery import ChargePlan, TouPlan, build_tou_programs, plan_charge
 from .const import (
     ACCOUNTING_UPDATE_INTERVAL,
     DOMAIN,
     PRICE_UPDATE_INTERVAL,
+    SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_GRID,
 )
 from .grid import GridSnapshot, GridTracker
-from .models import DeviceConfig, GridConfig
+from .models import BatteryConfig, DeviceConfig, GridConfig
 from .prices import (
     PriceApiError,
     PriceSeries,
@@ -28,6 +30,7 @@ from .prices import (
     async_fetch_spot_prices,
     build_price_series,
 )
+from .sources import read_number
 from .storage import HeliosStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -95,6 +98,7 @@ class EngineData:
 
     devices: dict[str, DeviceSnapshot]
     grid: GridSnapshot | None
+    battery: ChargePlan | None = None
 
 
 class HeliosEngine(DataUpdateCoordinator[EngineData]):
@@ -124,6 +128,15 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 config,
                 storage.device_state(config.subentry_id),
             )
+
+        battery_subentries = entry.get_subentries_of_type(SUBENTRY_TYPE_BATTERY)
+        self.battery_config: BatteryConfig | None = (
+            BatteryConfig.from_subentry(battery_subentries[0])
+            if battery_subentries
+            else None
+        )
+        self.battery_plan: ChargePlan | None = None
+        self.tou_plan: TouPlan | None = None
 
         grid_subentries = entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)
         self.grid_tracker: GridTracker | None = (
@@ -173,4 +186,20 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             grid_snapshot = self.grid_tracker.snapshot(now, available_series)
             self.storage.async_set_grid(self.grid_tracker.acc.as_dict())
 
-        return EngineData(devices=snapshots, grid=grid_snapshot)
+        battery_plan: ChargePlan | None = None
+        if self.battery_config is not None:
+            series_for_plan = available_series or PriceSeries.empty(
+                self.prices.provider, self.prices.interval
+            )
+            battery_plan = plan_charge(
+                series_for_plan,
+                self.battery_config.settings,
+                now,
+                read_number(self.hass, self.battery_config.soc_entity),
+            )
+            self.battery_plan = battery_plan
+            self.tou_plan = build_tou_programs(
+                battery_plan, self.battery_config.settings, now
+            )
+
+        return EngineData(devices=snapshots, grid=grid_snapshot, battery=battery_plan)

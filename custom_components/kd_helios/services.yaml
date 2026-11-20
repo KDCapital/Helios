@@ -1,0 +1,24 @@
+apply_tou_programs:
+  name: Write time-of-use programs
+  description: >-
+    Write the currently planned charging windows as the inverter's six
+    time-of-use programs, through the Solarman integration. Requires writes to
+    be enabled in the battery settings and an explicit confirmation.
+  fields:
+    entry_id:
+      name: Config entry
+      description: >-
+        The KD Helios entry whose battery plan should be written.
+      required: true
+      example: 01ARZ3NDEKTSV4RRFFQ69G5FAV
+      selector:
+        config_entry:
+          integration: kd_helios
+    confirm:
+      name: Confirm
+      description: >-
+        Must be true. Writing changes how the battery behaves.
+      required: true
+      example: true
+      selector:
+        boolean:

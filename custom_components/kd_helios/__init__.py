@@ -26,6 +26,7 @@ from .const import (
     SUBENTRY_TYPE_GRID,
 )
 from .coordinator import HeliosEngine, PriceCoordinator
+from .services import async_setup_services
 from .storage import HeliosStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,6 +44,12 @@ class HeliosRuntimeData:
 
 
 type HeliosConfigEntry = ConfigEntry[HeliosRuntimeData]
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register the integration's actions."""
+    async_setup_services(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HeliosConfigEntry) -> bool:

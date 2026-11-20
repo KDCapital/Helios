@@ -37,6 +37,7 @@ from custom_components.kd_helios.const import (
     CONF_SALDERING,
     CONF_SUPPLY_COST_MONTHLY,
     DOMAIN,
+    SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_GRID,
 )
@@ -397,6 +398,7 @@ async def test_subentry_type_is_exposed_to_the_frontend(hass, entry) -> None:
     expected = {
         SUBENTRY_TYPE_DEVICE: {"supports_reconfigure": True},
         SUBENTRY_TYPE_GRID: {"supports_reconfigure": True},
+        SUBENTRY_TYPE_BATTERY: {"supports_reconfigure": True},
     }
     assert entry.supported_subentry_types == expected
     # The same value is serialised into the WebSocket payload the UI reads.

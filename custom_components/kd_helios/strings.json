@@ -250,6 +250,71 @@
         "single_instance": "A grid connection is already configured.",
         "reconfigure_successful": "The grid connection was updated."
       }
+    },
+    "battery": {
+      "entry_type": "Home battery",
+      "initiate_flow": {
+        "user": "Add home battery"
+      },
+      "step": {
+        "user": {
+          "title": "Home battery",
+          "description": "KD Helios works out **when** charging your battery is most profitable, using the same tariff it already tracks: buy in the cheap hours, and let the battery discharge into the expensive ones.\n\nGive it the battery's SOC sensor plus its real capacity and charge power. With writes enabled it can also program the six time-of-use slots of a Deye inverter through the Solarman integration.",
+          "data": {
+            "soc_entity": "Battery SOC sensor",
+            "battery_capacity_kwh": "Battery capacity",
+            "max_charge_kw": "Maximum charge power",
+            "reserve_soc": "Reserve SOC",
+            "target_soc": "Target SOC",
+            "efficiency": "Round-trip efficiency",
+            "battery_horizon_hours": "Planning horizon",
+            "inverter_device": "Inverter device",
+            "allow_inverter_writes": "Allow writing to the inverter"
+          },
+          "data_description": {
+            "soc_entity": "The battery state of charge, for example the Solarman battery SOC sensor.",
+            "battery_capacity_kwh": "Total usable battery capacity in kWh, not the inverter's rating.",
+            "max_charge_kw": "How fast the battery can charge. Used to spread a window over several slots.",
+            "reserve_soc": "Never plan to discharge below this. The inverter's idle slots use it too.",
+            "target_soc": "Only buy energy up to this state of charge.",
+            "efficiency": "Round-trip efficiency. 90 percent means a stored kWh returns 0.9 kWh.",
+            "battery_horizon_hours": "How far ahead to look for a cheaper hour to discharge into. Battery prices cover today and tomorrow.",
+            "inverter_device": "The Solarman inverter device, required before writes can be enabled.",
+            "allow_inverter_writes": "Off by default. Writes change how your battery behaves and must be triggered explicitly."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit home battery",
+          "description": "Change the battery parameters or the write settings.",
+          "data": {
+            "soc_entity": "Battery SOC sensor",
+            "battery_capacity_kwh": "Battery capacity",
+            "max_charge_kw": "Maximum charge power",
+            "reserve_soc": "Reserve SOC",
+            "target_soc": "Target SOC",
+            "efficiency": "Round-trip efficiency",
+            "battery_horizon_hours": "Planning horizon",
+            "inverter_device": "Inverter device",
+            "allow_inverter_writes": "Allow writing to the inverter"
+          },
+          "data_description": {
+            "reserve_soc": "Never plan to discharge below this.",
+            "target_soc": "Only buy energy up to this state of charge.",
+            "allow_inverter_writes": "Off by default. Writes must be triggered explicitly."
+          }
+        }
+      },
+      "error": {
+        "soc_required": "Select the battery state of charge sensor.",
+        "target_above_reserve": "The target SOC must be above the reserve SOC.",
+        "capacity_required": "Enter the battery capacity in kWh.",
+        "charge_power_required": "Enter the maximum charge power in kW.",
+        "inverter_required": "Select the inverter device before enabling writes."
+      },
+      "abort": {
+        "single_instance": "A battery is already configured.",
+        "reconfigure_successful": "The battery settings were updated."
+      }
     }
   },
   "entity": {
@@ -328,6 +393,15 @@
       },
       "grid_net_power": {
         "name": "Grid net power"
+      },
+      "battery_charge_energy": {
+        "name": "Planned charge"
+      },
+      "battery_plan_saving": {
+        "name": "Planned saving"
+      },
+      "battery_next_charge": {
+        "name": "Next charge start"
       }
     },
     "binary_sensor": {
@@ -380,6 +454,45 @@
     "no_devices": {
       "title": "KD Helios is not tracking any device yet",
       "description": "The tariff is loaded, but nothing is being metered yet.\n\nGo to **Settings → Devices & services → KD Helios** and choose **Add device** to attach a power or energy entity to an appliance, a circuit or an EV charger.\n\nUntil you do, KD Helios only shows the current energy prices."
+    }
+  },
+  "services": {
+    "apply_tou_programs": {
+      "name": "Write time-of-use programs",
+      "description": "Write the currently planned charging windows as the inverter's six time-of-use programs, through the Solarman integration.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry",
+          "description": "The KD Helios entry whose battery plan should be written."
+        },
+        "confirm": {
+          "name": "Confirm",
+          "description": "Must be true. Writing changes how the battery behaves."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_entry": {
+      "message": "Unknown KD Helios config entry: {entry_id}."
+    },
+    "no_battery": {
+      "message": "This entry has no battery configured."
+    },
+    "writes_disabled": {
+      "message": "Writing to the inverter is disabled. Enable it in the battery settings first."
+    },
+    "confirm_required": {
+      "message": "Pass confirm: true to write time-of-use programs to the inverter."
+    },
+    "no_inverter_device": {
+      "message": "No inverter device is configured for this battery."
+    },
+    "no_plan": {
+      "message": "There is no charge plan to write yet."
+    },
+    "solarman_unavailable": {
+      "message": "The Solarman integration is not loaded, so the registers cannot be written."
     }
   }
 }

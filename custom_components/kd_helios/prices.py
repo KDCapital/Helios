@@ -257,6 +257,22 @@ class PriceSeries:
             cursor = chunk_end
         return segments
 
+    def priced_slots(
+        self, start: datetime, end: datetime
+    ) -> list[tuple[datetime, datetime, float]]:
+        """Return contiguous slices that all have a known all-in price."""
+        slots: list[tuple[datetime, datetime, float]] = []
+        for seg_start, seg_end, point in self.segments(start, end):
+            if point is None or point.all_in is None:
+                continue
+            slots.append((seg_start, seg_end, point.all_in))
+        return slots
+
+    def highest_all_in(self, start: datetime, end: datetime) -> float | None:
+        """Return the highest all-in price in a window."""
+        prices = [price for _, _, price in self.priced_slots(start, end)]
+        return max(prices) if prices else None
+
     def hourly_average(self) -> PriceSeries:
         """Return a series where every point holds its hour average.
 

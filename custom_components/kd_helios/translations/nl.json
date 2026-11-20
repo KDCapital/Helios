@@ -250,6 +250,71 @@
         "single_instance": "Er is al een netwerkaansluiting ingesteld.",
         "reconfigure_successful": "De netwerkaansluiting is bijgewerkt."
       }
+    },
+    "battery": {
+      "entry_type": "Thuisbatterij",
+      "initiate_flow": {
+        "user": "Thuisbatterij toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "Thuisbatterij",
+          "description": "KD Helios rekent uit **wanneer** laden het meest oplevert, met hetzelfde tarief dat het al volgt: koop in de goedkope uren en laat de batterij ontladen in de dure uren.\n\nGeef de SOC-sensor van de batterij op, plus de echte capaciteit en laadcapaciteit. Met schrijven ingeschakeld kan het ook de zes tijdvensters van een Deye-omvormer programmeren via de Solarman-integratie.",
+          "data": {
+            "soc_entity": "Batterij-SOC-sensor",
+            "battery_capacity_kwh": "Batterijcapaciteit",
+            "max_charge_kw": "Maximaal laadvermogen",
+            "reserve_soc": "Reserve-SOC",
+            "target_soc": "Doel-SOC",
+            "efficiency": "Rendement heen en terug",
+            "battery_horizon_hours": "Planningshorizon",
+            "inverter_device": "Omvormerapparaat",
+            "allow_inverter_writes": "Schrijven naar de omvormer toestaan"
+          },
+          "data_description": {
+            "soc_entity": "De laadtoestand van de batterij, bijvoorbeeld de Solarman batterij-SOC-sensor.",
+            "battery_capacity_kwh": "Totale bruikbare capaciteit in kWh, niet het vermogen van de omvormer.",
+            "max_charge_kw": "Hoe snel de batterij kan laden. Hiermee wordt een venster over meerdere tijdvakken verdeeld.",
+            "reserve_soc": "Hieronder wordt nooit ontladen gepland. De inactieve tijdvakken van de omvormer gebruiken deze waarde ook.",
+            "target_soc": "Koop alleen energie tot deze laadtoestand.",
+            "efficiency": "Rendement heen en terug. 90 procent betekent dat een opgeslagen kWh 0,9 kWh teruggeeft.",
+            "battery_horizon_hours": "Hoe ver vooruit wordt gezocht naar een duurder uur om in te ontladen. Prijzen dekken vandaag en morgen.",
+            "inverter_device": "Het Solarman-omvormerapparaat, nodig voordat schrijven aangezet kan worden.",
+            "allow_inverter_writes": "Standaard uit. Schrijven verandert het gedrag van je batterij en moet bewust worden gestart."
+          }
+        },
+        "reconfigure": {
+          "title": "Thuisbatterij bewerken",
+          "description": "Wijzig de batterijgegevens of de schrijfinstellingen.",
+          "data": {
+            "soc_entity": "Batterij-SOC-sensor",
+            "battery_capacity_kwh": "Batterijcapaciteit",
+            "max_charge_kw": "Maximaal laadvermogen",
+            "reserve_soc": "Reserve-SOC",
+            "target_soc": "Doel-SOC",
+            "efficiency": "Rendement heen en terug",
+            "battery_horizon_hours": "Planningshorizon",
+            "inverter_device": "Omvormerapparaat",
+            "allow_inverter_writes": "Schrijven naar de omvormer toestaan"
+          },
+          "data_description": {
+            "reserve_soc": "Hieronder wordt nooit ontladen gepland.",
+            "target_soc": "Koop alleen energie tot deze laadtoestand.",
+            "allow_inverter_writes": "Standaard uit. Schrijven moet bewust worden gestart."
+          }
+        }
+      },
+      "error": {
+        "soc_required": "Kies de sensor met de laadtoestand van de batterij.",
+        "target_above_reserve": "De doel-SOC moet hoger zijn dan de reserve-SOC.",
+        "capacity_required": "Vul de batterijcapaciteit in kWh in.",
+        "charge_power_required": "Vul het maximale laadvermogen in kW in.",
+        "inverter_required": "Kies het omvormerapparaat voordat je schrijven aanzet."
+      },
+      "abort": {
+        "single_instance": "Er is al een batterij ingesteld.",
+        "reconfigure_successful": "De batterijinstellingen zijn bijgewerkt."
+      }
     }
   },
   "entity": {
@@ -328,6 +393,15 @@
       },
       "grid_net_power": {
         "name": "Netto vermogen"
+      },
+      "battery_charge_energy": {
+        "name": "Geplande lading"
+      },
+      "battery_plan_saving": {
+        "name": "Geplande besparing"
+      },
+      "battery_next_charge": {
+        "name": "Volgende laadstart"
       }
     },
     "binary_sensor": {
@@ -380,6 +454,45 @@
     "no_devices": {
       "title": "KD Helios meet nog geen enkel apparaat",
       "description": "Het tarief is geladen, maar er wordt nog niets gemeten.\n\nGa naar **Instellingen → Apparaten & diensten → KD Helios** en kies **Apparaat toevoegen** om een vermogens- of energiesensor te koppelen aan een apparaat, een groep of een laadpaal.\n\nTot die tijd toont KD Helios alleen de actuele energieprijzen."
+    }
+  },
+  "services": {
+    "apply_tou_programs": {
+      "name": "Tijdvensters schrijven",
+      "description": "Schrijf de geplande laadvensters als de zes tijdvensters van de omvormer, via de Solarman-integratie.",
+      "fields": {
+        "entry_id": {
+          "name": "Configuratie-item",
+          "description": "Het KD Helios-item waarvan het batterijplan geschreven moet worden."
+        },
+        "confirm": {
+          "name": "Bevestigen",
+          "description": "Moet true zijn. Schrijven verandert het gedrag van de batterij."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_entry": {
+      "message": "Onbekend KD Helios-item: {entry_id}."
+    },
+    "no_battery": {
+      "message": "Dit item heeft geen batterij ingesteld."
+    },
+    "writes_disabled": {
+      "message": "Schrijven naar de omvormer staat uit. Zet dit eerst aan in de batterijinstellingen."
+    },
+    "confirm_required": {
+      "message": "Geef confirm: true mee om tijdvensters naar de omvormer te schrijven."
+    },
+    "no_inverter_device": {
+      "message": "Er is geen omvormerapparaat ingesteld voor deze batterij."
+    },
+    "no_plan": {
+      "message": "Er is nog geen laadplan om te schrijven."
+    },
+    "solarman_unavailable": {
+      "message": "De Solarman-integratie is niet geladen, dus de registers kunnen niet worden geschreven."
     }
   }
 }

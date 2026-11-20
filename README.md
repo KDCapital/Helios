@@ -30,6 +30,7 @@ charge.
 | **ERE certificates** | A fixed `ERE per kWh × price per ERE`, or the ratio derived from the [Joulo integration](https://github.com/boronz/joulo-hacs-integratie). |
 | **Honest net cost** | `net cost = cost − reimbursement − ERE value`, and it may go negative. |
 | **Grid connection** | Import and export metered at the real tariff, with an annual **saldering** ledger and your fixed monthly costs. |
+| **Battery charging** | Works out when charging a home battery is most profitable, and can program the six time-of-use slots of a Deye inverter through Solarman. |
 | **Survives restarts** | Totals, integration baselines and daily counters are persisted. |
 | **Exact price boundaries** | Energy consumed across a tariff change is split at the boundary, not priced at a single rate. |
 
@@ -232,6 +233,77 @@ over the days of the month, so the yearly total grows smoothly instead of
 jumping on the first of the month. They are **not** prefilled from provider
 data: only you know your contract.
 
+### 6. Add the home battery (optional)
+
+Tells you **when** to buy energy for the battery, using the same tariff the rest
+of the integration already tracks: charge in the cheap hours, and let the
+battery discharge into the expensive ones.
+
+| Field | Meaning |
+|---|---|
+| **Battery SOC sensor** | State of charge, for example the Solarman battery SOC sensor. |
+| **Battery capacity / max charge power** | Real kWh and kW, used to spread a window over several slots. |
+| **Reserve / target SOC** | Never discharge below the reserve; never buy above the target. |
+| **Round-trip efficiency** | A stored kWh returns this fraction, so a spread has to beat the losses. |
+| **Planning horizon** | How far ahead to look for a cheaper hour to charge from and a dearer one to discharge into. |
+| **Inverter device** | The Solarman inverter, needed before writes can be enabled. |
+| **Allow writing to the inverter** | Off by default. |
+
+`Planned charge`, `Planned saving` and `Next charge start` appear on the battery
+device. The plan sensor carries the windows and the exact six programs that
+would be written as attributes.
+
+#### Reading the market, not just the price list
+
+Each candidate quarter hour is valued against the **highest price that comes
+after it** within the horizon, times the round-trip efficiency. Slots whose
+spread does not cover the losses are not bought at all — with a flat tariff the
+plan is simply "do nothing", which is the honest answer.
+
+Six slots is a hard limit of the inverter, so at most three windows survive
+(each needs an idle slot after it). If the plan wants more, it says so through
+`tou_truncated` instead of quietly dropping the difference.
+
+#### Deye time-of-use mapping
+
+The six programs are written to the holding registers documented in Deye's
+three-phase energy-storage protocol for the **SG04LP3/SG05LP3 family**:
+
+| Block | Registers | Value |
+|---|---|---|
+| TOU Time 1–6 | 148–153 | start, `HHMM` |
+| TOU Power 1–6 | 154–159 | watts |
+| TOU SOC 1–6 | 166–171 | percent |
+| TOU Charge Source 1–6 | 172–177 | 0 off, 1 grid, 2 generator, 3 both |
+
+A charging slot starts at the window start with source **grid** and the target
+SOC. It is followed by an idle slot at the window's end with the reserve SOC,
+which is what lets the battery discharge into the expensive hours.
+
+#### Why writing needs two confirmations
+
+Solarman is the right tool for *reading* this inverter, but two limits matter:
+
+- its Deye definitions do not expose the time-of-use block as entities, so there
+  is nothing to bind to, and
+- its entities are read-only.
+
+It does expose generic register services, so KD Helios writes through
+`solarman.write_multiple_holding_registers`, in four blocks with a short pause
+between them. Because that changes how a real battery behaves, the action
+refuses to run unless writes are enabled in the battery settings **and** the
+call passes `confirm: true`:
+
+```yaml
+action: kd_helios.apply_tou_programs
+data:
+  entry_id: 01ARZ3NDEKTSV4RRFFQ69G5FAV
+  confirm: true
+```
+
+It returns the programs and registers it wrote, so the result is auditable
+rather than a fire-and-forget write.
+
 ---
 
 ## Worked example
@@ -300,6 +372,14 @@ A plain cost tracker would have reported €3.82 and missed the entire story.
 | `sensor.<grid>_grid_import_power` / `_grid_export_power` | Live power, split by direction |
 | `sensor.<grid>_grid_net_power` | Signed net power, when a signed sensor is configured |
 | `binary_sensor.<grid>_net_metering_active` | Whether saldering still applies |
+
+### Home battery
+
+| Entity | Description |
+|---|---|
+| `sensor.<battery>_planned_charge` | kWh the plan wants to buy, with the windows and programs as attributes |
+| `sensor.<battery>_planned_saving` | Expected profit of that plan, in euros |
+| `sensor.<battery>_next_charge_start` | When the next planned window begins |
 
 The `grid_cost` sensor exposes `billing_year`, `saldering_active`,
 `netted_kwh`, `open_export_kwh`, `export_deduction`, `fixed_monthly` and the
@@ -408,7 +488,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 160 tests
+.venv/bin/python -m pytest        # 186 tests
 .venv/bin/ruff check custom_components tests
 ```
 
@@ -420,7 +500,9 @@ grid import/export with both saldering modes, the 2027 cut-over, hourly versus
 quarterly reimbursement of the same energy, P1 meter recognition, both grid
 flows end to end, and entity cleanup when a device loses a feature. There is
 also a guard that no translation contains an unresolved ``%key`` reference.
-Coverage is 96%.
+The battery planner is covered separately: which hours it buys, how capacity and
+charge power cap the plan, when it declines to cycle at all, and the exact
+register payload written to the inverter. Coverage is 95%.
 
 ---
 
@@ -433,6 +515,7 @@ the heating/energy management platform without a rewrite:
 - `tariff.py` — pure money math, no Home Assistant imports
 - `accounting.py` — energy integration and per-device accumulators
 - `grid.py` — grid import/export and the annual saldering ledger
+- `battery.py` — the charge optimiser and the Deye time-of-use mapping
 - `coordinator.py` — orchestration and polling
 - `sensor.py` — presentation only
 

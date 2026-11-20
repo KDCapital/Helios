@@ -21,6 +21,7 @@ CONF_PRICE_INTERVAL: Final = "price_interval"
 # ---------------------------------------------------------------------------
 SUBENTRY_TYPE_DEVICE: Final = "device"
 SUBENTRY_TYPE_GRID: Final = "grid"
+SUBENTRY_TYPE_BATTERY: Final = "battery"
 
 CONF_NAME: Final = "name"
 CONF_KIND: Final = "kind"
@@ -54,6 +55,17 @@ CONF_SUPPLY_COST_MONTHLY: Final = "supply_cost_monthly"
 CONF_GRID_FEE_MONTHLY: Final = "grid_fee_monthly"
 CONF_EXPORT_PRICE_SOURCE: Final = "export_price_source"
 CONF_METER_DEVICE: Final = "meter_device"
+
+# Battery charge planning
+CONF_SOC_ENTITY: Final = "soc_entity"
+CONF_BATTERY_CAPACITY_KWH: Final = "battery_capacity_kwh"
+CONF_MAX_CHARGE_KW: Final = "max_charge_kw"
+CONF_RESERVE_SOC: Final = "reserve_soc"
+CONF_TARGET_SOC: Final = "target_soc"
+CONF_EFFICIENCY: Final = "efficiency"
+CONF_BATTERY_HORIZON_HOURS: Final = "battery_horizon_hours"
+CONF_INVERTER_DEVICE: Final = "inverter_device"
+CONF_ALLOW_INVERTER_WRITES: Final = "allow_inverter_writes"
 
 
 class DeviceKind(StrEnum):
@@ -118,6 +130,14 @@ MAX_ERE_PRICE: Final = 1000.0
 MAX_FIXED_REIMBURSEMENT_RATE: Final = 10.0
 MAX_EXPORT_DEDUCTION: Final = 5.0
 MAX_MONTHLY_FIXED_COST: Final = 500.0
+MAX_BATTERY_CAPACITY_KWH: Final = 200.0
+MAX_CHARGE_POWER_KW: Final = 100.0
+MAX_BATTERY_HORIZON_HOURS: Final = 72
+
+#: Service that writes the time-of-use programs, and the Solarman service used
+#: to talk to the inverter.
+SERVICE_APPLY_TOU: Final = "apply_tou_programs"
+SOLARMAN_WRITE_SERVICE: Final = "write_multiple_holding_registers"
 
 #: Net metering (saldering) ends on this date. From it onwards, export is paid
 #: at the feed-in price instead of being netted against import.

@@ -27,12 +27,14 @@ from homeassistant.util import dt as dt_util
 
 from . import HeliosConfigEntry
 from .accounting import DeviceSnapshot
+from .battery import ChargePlan
 from .const import (
     CURRENCY,
     DOMAIN,
     GRID_MINUTES,
     NAME,
     SLOT_MINUTES,
+    SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_GRID,
     UNIT_ERE,
@@ -42,7 +44,7 @@ from .const import (
 )
 from .coordinator import HeliosEngine
 from .grid import GridSnapshot
-from .models import DeviceConfig, GridConfig
+from .models import BatteryConfig, DeviceConfig, GridConfig
 from .prices import PriceSeries
 
 _LOGGER = logging.getLogger(__name__)
@@ -398,6 +400,44 @@ def _grid_descriptions_for(config: GridConfig) -> list[HeliosGridSensorDescripti
     return descriptions
 
 
+@dataclass(frozen=True, kw_only=True)
+class HeliosBatterySensorDescription(SensorEntityDescription):
+    """Describes a battery planning sensor."""
+
+    value_fn: Callable[[ChargePlan, datetime], StateType]
+
+
+BATTERY_SENSORS: tuple[HeliosBatterySensorDescription, ...] = (
+    HeliosBatterySensorDescription(
+        key="battery_charge_energy",
+        translation_key="battery_charge_energy",
+        native_unit_of_measurement=UNIT_KWH,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        icon="mdi:battery-arrow-up",
+        value_fn=lambda plan, _now: plan.energy_kwh,
+    ),
+    HeliosBatterySensorDescription(
+        key="battery_plan_saving",
+        translation_key="battery_plan_saving",
+        native_unit_of_measurement=CURRENCY,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        icon="mdi:piggy-bank-outline",
+        value_fn=lambda plan, _now: plan.expected_saving,
+    ),
+    HeliosBatterySensorDescription(
+        key="battery_next_charge",
+        translation_key="battery_next_charge",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:clock-start",
+        value_fn=lambda plan, now: (
+            window.start if (window := plan.next_window(now)) else None
+        ),
+    ),
+)
+
+
 def _descriptions_for(config: DeviceConfig) -> list[HeliosDeviceSensorDescription]:
     """Return the sensor descriptions that apply to a device."""
     descriptions: list[HeliosDeviceSensorDescription] = []
@@ -618,6 +658,89 @@ class HeliosGridSensor(CoordinatorEntity[HeliosEngine], SensorEntity):
         }
 
 
+class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
+    """A sensor describing the planned battery charge."""
+
+    _attr_has_entity_name = True
+    entity_description: HeliosBatterySensorDescription
+
+    def __init__(
+        self,
+        coordinator: HeliosEngine,
+        config: BatteryConfig,
+        description: HeliosBatterySensorDescription,
+    ) -> None:
+        """Initialise the battery sensor."""
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._config = config
+        self._subentry_id = config.subentry_id
+        self._attr_unique_id = f"{config.subentry_id}_{description.key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, config.subentry_id)},
+            name=config.name,
+            manufacturer=NAME,
+            model=config.model_name,
+        )
+
+    @property
+    def _plan(self) -> ChargePlan | None:
+        """Return the current plan."""
+        data = self.coordinator.data
+        return data.battery if data is not None else None
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the current sensor value."""
+        plan = self._plan
+        if plan is None:
+            return None
+        return self.entity_description.value_fn(plan, dt_util.utcnow())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object] | None:
+        """Expose the windows and the programs that would be written."""
+        if self.entity_description.key != "battery_charge_energy":
+            return None
+        plan = self._plan
+        if plan is None:
+            return None
+        now = dt_util.utcnow()
+        tou = self.coordinator.tou_plan
+        return {
+            "reason": plan.reason,
+            "soc_pct": plan.soc_pct,
+            "charge_now": plan.active_window(now) is not None,
+            "capacity_kwh": self._config.capacity_kwh,
+            "max_charge_kw": self._config.max_charge_kw,
+            "reserve_soc_pct": self._config.reserve_soc_pct,
+            "target_soc_pct": self._config.target_soc_pct,
+            "efficiency_pct": self._config.efficiency_pct,
+            "horizon_hours": self._config.horizon_hours,
+            "windows": [
+                {
+                    "start": window.start.isoformat(),
+                    "end": window.end.isoformat(),
+                    "energy_kwh": round(window.energy_kwh, 3),
+                    "average_price": round(window.average_price, 5),
+                    "discharge_price": round(window.discharge_price, 5),
+                    "expected_profit": round(window.profit, 2),
+                }
+                for window in plan.windows
+            ],
+            "tou_truncated": bool(tou.truncated) if tou else False,
+            "tou_programs": [
+                {
+                    "start": f"{program.hhmm:04d}",
+                    "power_w": program.power_w,
+                    "soc_pct": program.soc_pct,
+                    "source": int(program.source),
+                }
+                for program in (tou.programs if tou else ())
+            ],
+        }
+
+
 def _async_prune_stale_entities(
     hass: HomeAssistant, entry: HeliosConfigEntry, valid_unique_ids: set[str]
 ) -> None:
@@ -671,6 +794,18 @@ async def async_setup_entry(
         entities = [
             HeliosGridSensor(runtime.engine, grid_config, description)
             for description in _grid_descriptions_for(grid_config)
+        ]
+        valid_unique_ids.update(entity.unique_id for entity in entities)
+        async_add_entities(
+            entities,
+            config_subentry_id=subentry.subentry_id,
+        )
+
+    for subentry in entry.get_subentries_of_type(SUBENTRY_TYPE_BATTERY):
+        battery_config = BatteryConfig.from_subentry(subentry)
+        entities = [
+            HeliosBatterySensor(runtime.engine, battery_config, description)
+            for description in BATTERY_SENSORS
         ]
         valid_unique_ids.update(entity.unique_id for entity in entities)
         async_add_entities(

@@ -9,7 +9,12 @@ from typing import Any, TypeVar
 
 from homeassistant.config_entries import ConfigSubentry
 
+from .battery import BatterySettings
 from .const import (
+    CONF_ALLOW_INVERTER_WRITES,
+    CONF_BATTERY_CAPACITY_KWH,
+    CONF_BATTERY_HORIZON_HOURS,
+    CONF_EFFICIENCY,
     CONF_ENERGY_ENTITY,
     CONF_ERE_CREDITS_ENTITY,
     CONF_ERE_KWH_ENTITY,
@@ -25,7 +30,9 @@ from .const import (
     CONF_GRID_POWER_ENTITY,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
+    CONF_INVERTER_DEVICE,
     CONF_KIND,
+    CONF_MAX_CHARGE_KW,
     CONF_METER_DEVICE,
     CONF_NAME,
     CONF_POWER_ENTITY,
@@ -35,8 +42,11 @@ from .const import (
     CONF_REIMBURSEMENT_PERCENT,
     CONF_REIMBURSEMENT_RATE,
     CONF_REIMBURSEMENT_SURCHARGE,
+    CONF_RESERVE_SOC,
     CONF_SALDERING,
+    CONF_SOC_ENTITY,
     CONF_SUPPLY_COST_MONTHLY,
+    CONF_TARGET_SOC,
     DEFAULT_DEVICE_KIND,
     DEFAULT_ERE_MODE,
     DEFAULT_MARKET_PRICE_BASIS,
@@ -322,4 +332,56 @@ class GridConfig:
                 data.get(CONF_EXPORT_PRICE_SOURCE),
                 ExportPriceSource.MANUAL,
             ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BatteryConfig:
+    """How to plan and, optionally, program a home battery."""
+
+    subentry_id: str
+    name: str = "Home battery"
+    soc_entity: str | None = None
+    capacity_kwh: float = 10.0
+    max_charge_kw: float = 3.0
+    reserve_soc_pct: float = 10.0
+    target_soc_pct: float = 100.0
+    efficiency_pct: float = 90.0
+    horizon_hours: int = 36
+    inverter_device_id: str | None = None
+    allow_writes: bool = False
+
+    @property
+    def model_name(self) -> str:
+        """Return the model shown in the device registry."""
+        return "Battery"
+
+    @property
+    def settings(self) -> BatterySettings:
+        """Return the parameters the planner needs."""
+        return BatterySettings(
+            capacity_kwh=self.capacity_kwh,
+            max_charge_kw=self.max_charge_kw,
+            reserve_soc_pct=self.reserve_soc_pct,
+            target_soc_pct=self.target_soc_pct,
+            efficiency_pct=self.efficiency_pct,
+            horizon_hours=self.horizon_hours,
+        )
+
+    @classmethod
+    def from_subentry(cls, subentry: ConfigSubentry) -> BatteryConfig:
+        """Build the config from a config subentry."""
+        data = subentry.data
+        return cls(
+            subentry_id=subentry.subentry_id,
+            name=as_entity_id(data.get(CONF_NAME)) or subentry.title or "Battery",
+            soc_entity=as_entity_id(data.get(CONF_SOC_ENTITY)),
+            capacity_kwh=as_float(data.get(CONF_BATTERY_CAPACITY_KWH), 10.0),
+            max_charge_kw=as_float(data.get(CONF_MAX_CHARGE_KW), 3.0),
+            reserve_soc_pct=as_float(data.get(CONF_RESERVE_SOC), 10.0),
+            target_soc_pct=as_float(data.get(CONF_TARGET_SOC), 100.0),
+            efficiency_pct=as_float(data.get(CONF_EFFICIENCY), 90.0),
+            horizon_hours=int(as_float(data.get(CONF_BATTERY_HORIZON_HOURS), 36.0)),
+            inverter_device_id=as_entity_id(data.get(CONF_INVERTER_DEVICE)),
+            allow_writes=as_bool(data.get(CONF_ALLOW_INVERTER_WRITES)),
         )
