@@ -389,3 +389,34 @@ async def test_separate_power_sensors_are_clamped(hass) -> None:
     assert snapshot.import_power == pytest.approx(0.0)
     assert snapshot.export_power == pytest.approx(200.0)
     assert snapshot.net_power == pytest.approx(-200.0)
+
+
+async def test_daily_counters_reset_at_local_midnight(hass) -> None:
+    """The dashboard shows today, so the ledger keeps a daily view too."""
+    previous = dt_util.get_default_time_zone()
+    dt_util.set_default_time_zone(ZoneInfo("Europe/Amsterdam"))
+    tracker = make_grid(hass, import_entity=IMPORT)
+    # 22:52Z is 23:52 in Amsterdam: a few minutes later it is a new day.
+    start = datetime(2026, 11, 20, 22, 52, tzinfo=UTC)
+    series = flat_series(start, all_in=0.30, hours=4)
+
+    try:
+        set_energy_state(hass, IMPORT, 1000.0)
+        tracker.update(start, series)
+
+        set_energy_state(hass, IMPORT, 1000.2)
+        tracker.update(start + timedelta(minutes=3), series)
+        snapshot = tracker.snapshot(start + timedelta(minutes=3), series)
+        assert snapshot.imported_kwh_today == pytest.approx(IMPORT_KWH)
+        assert snapshot.imported_cost_today == pytest.approx(IMPORT_KWH * 0.30)
+        assert snapshot.imported_kwh == pytest.approx(IMPORT_KWH)
+
+        # 23:02Z on the 20th is 00:02 on the 21st in Amsterdam.
+        set_energy_state(hass, IMPORT, 1000.4)
+        tracker.update(start + timedelta(minutes=10), series)
+        rolled = tracker.snapshot(start + timedelta(minutes=10), series)
+
+        assert rolled.imported_kwh_today == pytest.approx(IMPORT_KWH)
+        assert rolled.imported_kwh == pytest.approx(2 * IMPORT_KWH)
+    finally:
+        dt_util.set_default_time_zone(previous)

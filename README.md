@@ -369,26 +369,44 @@ custom element — no build step, no external imports — served from
 `/kd_helios/kd-helios-panel.js`, so it works offline and survives Home Assistant
 upgrades.
 
-It shows, in one screen:
+The layout follows the Helios dashboard: a greeting and live tariff in the
+header, four KPI tiles, a price chart with the planned charging windows, then
+cards for the EV charger, the device breakdown, the battery and the tariff.
 
-- **Now** — the all-in price, the spot price, the next slot, today's average and
-  the 24 hour range.
-- **Price chart** — 24 hours of quarter-hour prices coloured from cheap to
-  expensive, with the planned charging windows shaded and a marker for now.
-- **Grid connection** — year-to-date import, export, credit, fixed costs and the
-  net bill, with the saldering state.
-- **Home battery** — state of charge, planned versus applied saving, the planned
-  windows and the six time-of-use programs, plus a button that writes them to
-  the inverter (behind a confirmation prompt, and disabled unless writes are
-  enabled).
-- **Devices** — energy, cost, cost today and net cost per tracked device.
+### What is real, and what is deliberately absent
 
-Everything comes from one WebSocket command, `kd_helios/dashboard`, which is
-also what `build_dashboard()` returns, so the payload is tested without a
-browser. The panel refreshes every minute.
+The dashboard shows **only values the integration actually has**. Three things
+from the original design are not there, and are not faked:
 
-The panel needs the frontend: it registers on setup when the frontend is
-already loaded, and otherwise waits for Home Assistant to finish starting.
+| Missing | Why |
+|---|---|
+| Solar generation | KD Helios has no PV entity in its model; it tracks consumption, grid and battery. |
+| Car state of charge | That needs the vehicle integration, not the charger. |
+| "vs yesterday" trends | The ledger stores the year and today, not a history, so a trend would be invented. |
+
+Instead, every tile carries real context: the grid cost shows the year to date,
+the battery tile says whether the saving is from the *applied* plan or only a
+proposal, the EV tile shows what has been reimbursed, and the grid balance
+splits import from export.
+
+### Today
+
+The grid ledger now keeps today's import, export, credit and fixed costs
+alongside the yearly totals, and devices already tracked their own daily
+energy and cost. That is what the KPI tiles and the device breakdown read, so
+"today" means today and not "since installation".
+
+### How it is built
+
+Everything comes from one WebSocket command, `kd_helios/dashboard`, built by
+`build_dashboard()` — the same function the command calls, so the payload is
+tested without a browser. A Node harness renders the element against the real
+payload and asserts the sections appear, which catches a broken render path that
+Python tests cannot reach.
+
+The panel refreshes every minute, needs the frontend (it registers on setup
+when the frontend is loaded, and otherwise waits for startup), and its only
+action — writing the programs — asks for confirmation first.
 
 ---
 
@@ -580,7 +598,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 212 tests
+.venv/bin/python -m pytest        # 215 tests
 .venv/bin/ruff check custom_components tests
 ```
 
@@ -600,7 +618,9 @@ predicted saving survive a restart. The panel payload is covered by rendering
 is also a test that a device-typed entry created before the split keeps its
 reimbursement when edited through the short form, and that automatic control
 writes once per real change, never on every tick, and that releasing it writes
-generator-only slots plus the configured work mode. Coverage is 94%.
+generator-only slots plus the configured work mode. The panel is rendered in
+Node against a real payload, and again for a tariff-only install, so a broken
+render path fails the suite. Coverage is 94%.
 
 ---
 

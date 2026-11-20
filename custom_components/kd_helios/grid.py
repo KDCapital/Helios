@@ -53,7 +53,7 @@ _DATETIME_FIELDS = frozenset({"import_last_tick", "export_last_tick", "fixed_tic
 _INT_FIELDS = frozenset(
     {"year", "import_gaps", "import_rejected", "export_gaps", "export_rejected"}
 )
-_STR_FIELDS = frozenset({"import_source", "export_source"})
+_STR_FIELDS = frozenset({"import_source", "export_source", "day"})
 
 
 def feed_in_price(spot: float | None, deduction: float) -> float | None:
@@ -106,6 +106,14 @@ class GridAccumulators:
     fixed_cost: float = 0.0
     #: Energy that was metered but had no tariff to price it against.
     unpriced_kwh: float = 0.0
+
+    # Today, for the dashboard. The ledger itself is yearly.
+    day: str | None = None
+    imported_kwh_today: float = 0.0
+    imported_cost_today: float = 0.0
+    exported_kwh_today: float = 0.0
+    export_credit_today: float = 0.0
+    fixed_cost_today: float = 0.0
 
     import_source: str | None = None
     import_last_value: float | None = None
@@ -165,6 +173,12 @@ class GridSnapshot:
     export_credit: float
     fixed_cost: float
     total_cost: float
+    imported_kwh_today: float
+    imported_cost_today: float
+    exported_kwh_today: float
+    export_credit_today: float
+    fixed_cost_today: float
+    total_cost_today: float
     netted_kwh: float
     open_export_kwh: float
     import_power: float | None
@@ -216,6 +230,18 @@ class GridTracker:
         return dt_util.as_local(when).date() < SALDERING_END_DATE
 
     # -- year ledger -------------------------------------------------------
+    def _roll_day(self, now: datetime) -> None:
+        """Reset the daily counters when the local date changes."""
+        key = dt_util.as_local(now).date().isoformat()
+        if self.acc.day == key:
+            return
+        self.acc.day = key
+        self.acc.imported_kwh_today = 0.0
+        self.acc.imported_cost_today = 0.0
+        self.acc.exported_kwh_today = 0.0
+        self.acc.export_credit_today = 0.0
+        self.acc.fixed_cost_today = 0.0
+
     def _roll_year(self, now: datetime) -> None:
         """Reset the billing ledger when the local year changes."""
         year = dt_util.as_local(now).year
@@ -246,7 +272,9 @@ class GridTracker:
         if elapsed <= 0 or now - previous > MAX_TRACKING_GAP:
             return
         days = _days_in_month(dt_util.as_local(now))
-        self.acc.fixed_cost += monthly / (days * 86400) * elapsed
+        share = monthly / (days * 86400) * elapsed
+        self.acc.fixed_cost += share
+        self.acc.fixed_cost_today += share
 
     # -- source sampling ---------------------------------------------------
     def _consume(self, direction: str, now: datetime) -> tuple[datetime, float] | None:
@@ -351,8 +379,10 @@ class GridTracker:
             weight = (seg_end - seg_start).total_seconds() / total_seconds
             kwh = delta_kwh * weight
             self.acc.imported_kwh += kwh
+            self.acc.imported_kwh_today += kwh
             if point is not None and point.all_in is not None:
                 self.acc.imported_cost += kwh * point.all_in
+                self.acc.imported_cost_today += kwh * point.all_in
             else:
                 self.acc.unpriced_kwh += kwh
 
@@ -370,9 +400,11 @@ class GridTracker:
             weight = (seg_end - seg_start).total_seconds() / total_seconds
             kwh = delta_kwh * weight
             self.acc.exported_kwh += kwh
+            self.acc.exported_kwh_today += kwh
             priced = False
             if point is not None and point.all_in is not None:
                 self.acc.export_credit_saldered += kwh * point.all_in
+                self.acc.export_credit_today += kwh * point.all_in
                 priced = True
             if point is not None:
                 export_price = feed_in_price(point.spot, deduction)
@@ -410,6 +442,7 @@ class GridTracker:
         """Run one accounting tick for the grid connection."""
         now = dt_util.as_utc(now)
         self._roll_year(now)
+        self._roll_day(now)
 
         if series is not None:
             point = series.point_at(now)
@@ -460,6 +493,14 @@ class GridTracker:
             export_credit=credit,
             fixed_cost=acc.fixed_cost,
             total_cost=acc.imported_cost - credit + acc.fixed_cost,
+            imported_kwh_today=acc.imported_kwh_today,
+            imported_cost_today=acc.imported_cost_today,
+            exported_kwh_today=acc.exported_kwh_today,
+            export_credit_today=acc.export_credit_today,
+            fixed_cost_today=acc.fixed_cost_today,
+            total_cost_today=(
+                acc.imported_cost_today - acc.export_credit_today + acc.fixed_cost_today
+            ),
             netted_kwh=netted_kwh,
             open_export_kwh=open_export_kwh,
             import_power=self._import_power,

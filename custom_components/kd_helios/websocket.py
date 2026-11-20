@@ -145,6 +145,12 @@ def _grid_payload(runtime: Any) -> dict[str, Any] | None:
         "saldering_active": snapshot.saldering_active,
         "fixed_monthly": _round(snapshot.fixed_monthly, 2),
         "billing_year": snapshot.year,
+        "imported_kwh_today": _round(snapshot.imported_kwh_today, 2),
+        "imported_cost_today": _round(snapshot.imported_cost_today, 2),
+        "exported_kwh_today": _round(snapshot.exported_kwh_today, 2),
+        "export_credit_today": _round(snapshot.export_credit_today, 2),
+        "fixed_cost_today": _round(snapshot.fixed_cost_today, 2),
+        "total_cost_today": _round(snapshot.total_cost_today, 2),
         "unpriced_kwh": _round(snapshot.unpriced_kwh, 3),
         "import_power": _round(snapshot.import_power, 0),
         "export_power": _round(snapshot.export_power, 0),
@@ -157,10 +163,9 @@ def _devices_payload(runtime: Any) -> list[dict[str, Any]]:
     if data is None:
         return []
     devices: list[dict[str, Any]] = []
-    for subentry_id, config in (
-        (tracker.config.subentry_id, tracker.config)
-        for tracker in runtime.engine.trackers.values()
-    ):
+    for tracker in runtime.engine.trackers.values():
+        config = tracker.config
+        subentry_id = config.subentry_id
         snapshot = data.devices.get(subentry_id)
         if snapshot is None:
             continue
@@ -169,6 +174,7 @@ def _devices_payload(runtime: Any) -> list[dict[str, Any]]:
                 "name": config.name,
                 "kind": config.kind.value,
                 "energy_kwh": _round(snapshot.energy_kwh, 2),
+                "energy_kwh_today": _round(tracker.acc.day_kwh, 2),
                 "cost": _round(snapshot.cost, 2),
                 "cost_today": _round(snapshot.cost_today, 2),
                 "reimbursement": _round(snapshot.reimbursement, 2),
@@ -180,6 +186,41 @@ def _devices_payload(runtime: Any) -> list[dict[str, Any]]:
             }
         )
     return sorted(devices, key=lambda row: row["name"].lower())
+
+
+def _summary(runtime: Any) -> dict[str, Any]:
+    """Return the headline figures the KPI cards show."""
+    engine = runtime.engine
+    grid = engine.data.grid if engine.data else None
+    devices = _devices_payload(runtime)
+    ev = [row for row in devices if row["kind"] == "ev_charger"]
+    ev_cost = sum(row["cost"] for row in ev)
+    ev_reimbursed = sum(row["reimbursement"] for row in ev)
+    applied = engine.applied_plan
+    plan = engine.battery_plan
+    return {
+        "grid_cost_today": grid.total_cost_today if grid else None,
+        "grid_cost_year": grid.total_cost if grid else None,
+        "grid_import_today": grid.imported_kwh_today if grid else None,
+        "grid_export_today": grid.exported_kwh_today if grid else None,
+        "grid_balance_today": (
+            _round(grid.imported_kwh_today - grid.exported_kwh_today, 1)
+            if grid
+            else None
+        ),
+        "devices_cost_today": _round(sum(row["cost_today"] for row in devices), 2),
+        "ev_balance": _round(ev_reimbursed - ev_cost, 2) if ev else None,
+        "ev_reimbursed": _round(ev_reimbursed, 2) if ev else None,
+        "ev_cost_today": _round(sum(row["cost_today"] for row in ev), 2)
+        if ev
+        else None,
+        "ev_count": len(ev),
+        "battery_saving_applied": _round(applied.expected_saving, 2)
+        if applied
+        else None,
+        "battery_saving_planned": _round(plan.expected_saving, 2) if plan else None,
+        "control_enabled": engine.control_enabled,
+    }
 
 
 def build_dashboard(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
@@ -239,6 +280,7 @@ def build_dashboard(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
         "grid": _grid_payload(runtime),
         "battery": _battery_payload(runtime, now),
         "devices": _devices_payload(runtime),
+        "summary": _summary(runtime),
     }
 
 

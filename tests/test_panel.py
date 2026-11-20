@@ -6,6 +6,7 @@ import inspect
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+import pytest
 from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -141,6 +142,18 @@ async def test_dashboard_returns_everything_the_panel_renders(hass) -> None:
     device = result["devices"][0]
     assert device["name"] == "EV charger"
     assert device["kind"] == "ev_charger"
+    assert "energy_kwh_today" in device
+
+    summary = result["summary"]
+    assert summary["grid_cost_today"] == pytest.approx(grid["total_cost_today"])
+    assert summary["grid_cost_year"] == pytest.approx(grid["total_cost"])
+    assert summary["ev_count"] == 1
+    assert summary["control_enabled"] is False
+    assert summary["battery_saving_planned"] is not None
+    # The EV balance is reimbursement minus cost to date.
+    assert summary["ev_balance"] == pytest.approx(
+        summary["ev_reimbursed"] - device["cost"]
+    )
 
 
 async def test_dashboard_without_grid_or_battery(hass) -> None:
