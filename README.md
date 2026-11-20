@@ -77,7 +77,9 @@ Open the KD Helios entry and choose **Add device**.
 
 If both are attached, the energy entity is authoritative and the power entity
 only feeds the live `Power` sensor. Mixing the two mid-flight would double
-count, so KD Helios never silently switches between them.
+count, so KD Helios never switches between them — and pointing a device at a
+different meter rebases the counters instead of billing the difference between
+the old and the new reading.
 
 ### 3. Employer reimbursement (EV chargers)
 
@@ -179,14 +181,16 @@ A plain cost tracker would have reported €3.82 and missed the entire story.
 | `sensor.<device>_net_cost` | `cost − reimbursement − ERE value`, when either applies |
 
 The `cost` sensor also exposes `source_entity`, `source_available`,
-`unpriced_energy_kwh` and `untracked_gaps` as attributes, so accounting health
-is visible without adding diagnostic entities.
+`unpriced_energy_kwh`, `untracked_gaps` and `rejected_deltas` as attributes, so
+accounting health is visible without adding diagnostic entities.
 
 ---
 
 ## How it works
 
-**Prices.** Two endpoints are used. The provider endpoint returns all-in prices
+**Prices.** The tariff is re-fetched every ten minutes and the sensors are
+recomputed every minute from the cached series, so `current price` flips at the
+quarter hour boundary without an extra API call. Two endpoints are used. The provider endpoint returns all-in prices
 with `energy_tax`, `provider_charge` and `spot_coefficient`; the spot endpoint
 returns raw day-ahead prices at quarter hour resolution. Both are normalised
 onto a single 15 minute UTC grid, so an hourly contract still resolves the
@@ -204,11 +208,21 @@ elapsed window. The resulting kWh are then split across the price boundaries
 they actually spanned.
 
 **Clock discipline.** The accounting clock only advances on a *successful*
-reading. If a source entity goes unavailable, the window stays open and the
-energy is priced over its true duration when the entity returns. A window
-longer than 10 minutes is treated as downtime: Home Assistant cannot know the
-prices that applied, so instead of inventing them the period is dropped, logged
-and counted in `untracked_gaps`.
+reading. If a source entity goes unavailable, or no tariff is available, the
+window stays open and the energy is priced over its true duration once both are
+back. A window longer than 10 minutes is treated as downtime: Home Assistant
+cannot know the prices that applied, so instead of inventing them the period is
+dropped, logged and counted in `untracked_gaps`.
+
+Two further guards keep the numbers honest. Changing a device's source entity
+re-baselines instead of billing `new reading − old reading`. And any single
+window implying more than 500 kW is rejected as a sensor glitch (a meter that
+reported 0 while offline and then recovered, for example) and counted in
+`rejected_deltas`.
+
+Energy that was metered but had no tariff is not thrown away silently: it is
+added to `unpriced_energy_kwh`, which is persisted and exposed on the `cost`
+sensor.
 
 **Persistence.** Totals, the last source reading, the daily counter and the
 Joulo baselines are stored through Home Assistant's storage helper, so a
@@ -228,7 +242,11 @@ restart continues where it left off instead of resetting to zero.
   device is the charger that earns those EREs.
 - **epexprijzen.nl is an unofficial, free API.** If it fails, the last known
   prices are carried forward for up to 36 hours, then energy becomes
-  "unpriced" rather than wrongly priced.
+  "unpriced" rather than wrongly priced (and shows up in
+  `unpriced_energy_kwh`).
+- **Exporting devices are not netted.** A power-based device that exports
+  (solar, V2G) never produces negative deltas, so its energy total only counts
+  consumption. Use a metered energy entity for those.
 - **Dynamic contracts only.** Fixed and variable contracts are not modelled in
   this version, and gas is out of scope.
 
@@ -239,14 +257,15 @@ restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 71 tests
+.venv/bin/python -m pytest        # 94 tests
 .venv/bin/ruff check custom_components tests
 ```
 
 The test suite covers the tariff math, price normalisation against recorded
-API payloads, the accounting engine (including price boundaries, gaps, meter
-resets, reimbursement and ERE), both config flows and persistence across a
-reload.
+API payloads, the accounting engine (price boundaries, gaps, meter resets and
+source swaps, implausible deltas, reimbursement and ERE), the HTTP client error
+paths, both config flows, periodic price polling, persistence across a reload
+and entity cleanup when a device loses a feature. Coverage is 96%.
 
 ---
 

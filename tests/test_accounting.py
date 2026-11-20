@@ -444,12 +444,16 @@ async def test_accumulators_round_trip_through_storage(hass) -> None:
         total_cost=3.5,
         total_reimbursement=1.0,
         total_ere_value=0.5,
+        total_ere_credits=2.5,
         day="2026-11-20",
         day_cost=0.9,
         day_kwh=1.5,
         last_value=42.0,
         last_tick=FROZEN_TIME,
+        source="sensor.device_energy",
         untracked_gaps=2,
+        rejected_deltas=1,
+        unpriced_kwh=0.25,
         joulo_base_ere=100.0,
         joulo_base_kwh=1000.0,
     )
@@ -493,3 +497,167 @@ async def test_missing_entity_is_reported_as_unavailable(hass) -> None:
     snapshot = tracker.snapshot(FROZEN_TIME, series)
     assert snapshot.source_available is False
     assert snapshot.energy_kwh == 0.0
+
+
+async def test_swapping_the_energy_entity_does_not_bill_the_difference(hass) -> None:
+    """Pointing a device at a different meter must rebase, not invent energy."""
+    tracker = make_tracker(hass)
+    series = flat_series(FROZEN_TIME, all_in=PRICE)
+
+    set_energy_state(hass, "sensor.device_energy", 10.0)
+    tracker.update(FROZEN_TIME, series)
+
+    # The user reconfigures the device to a meter reading 1234.5 kWh.
+    swapped = DeviceTracker(
+        hass,
+        DeviceConfig(
+            subentry_id="device-1",
+            name="Test device",
+            energy_entity="sensor.other_energy",
+        ),
+        tracker.acc.as_dict(),
+    )
+    set_energy_state(hass, "sensor.other_energy", 1234.5)
+    swapped.update(FROZEN_TIME + timedelta(seconds=60), series)
+
+    snapshot = swapped.snapshot(FROZEN_TIME + timedelta(seconds=60), series)
+    assert snapshot.energy_kwh == 0.0
+    assert snapshot.cost == 0.0
+    assert swapped.acc.source == "sensor.other_energy"
+
+    # From the new baseline it accrues normally again.
+    set_energy_state(hass, "sensor.other_energy", 1235.5)
+    swapped.update(FROZEN_TIME + timedelta(seconds=120), series)
+    assert swapped.snapshot(
+        FROZEN_TIME + timedelta(seconds=120), series
+    ).energy_kwh == pytest.approx(1.0)
+
+
+async def test_implausible_delta_is_rejected(hass) -> None:
+    """A meter that jumps by a year of energy is not billed."""
+    tracker = make_tracker(hass)
+    series = flat_series(FROZEN_TIME, all_in=PRICE)
+
+    set_energy_state(hass, "sensor.device_energy", 10.0)
+    tracker.update(FROZEN_TIME, series)
+
+    # 500 kWh in one minute implies 30 MW.
+    set_energy_state(hass, "sensor.device_energy", 510.0)
+    tracker.update(FROZEN_TIME + timedelta(seconds=60), series)
+
+    snapshot = tracker.snapshot(FROZEN_TIME + timedelta(seconds=60), series)
+    assert snapshot.energy_kwh == 0.0
+    assert snapshot.cost == 0.0
+    assert tracker.acc.rejected_deltas == 1
+    # The baseline moved, so normal accounting resumes.
+    assert tracker.acc.last_value == pytest.approx(510.0)
+
+    set_energy_state(hass, "sensor.device_energy", 511.0)
+    tracker.update(FROZEN_TIME + timedelta(seconds=120), series)
+    assert tracker.snapshot(
+        FROZEN_TIME + timedelta(seconds=120), series
+    ).energy_kwh == pytest.approx(1.0)
+
+
+async def test_ere_credits_do_not_rewrite_history(hass) -> None:
+    """Credits accrue at the ratio in force, they are not recomputed."""
+    tracker = make_tracker(
+        hass,
+        ere=EreConfig(
+            mode=EreMode.JOULO,
+            ere_per_kwh=0.1,
+            ere_price=4.0,
+            credits_entity="sensor.joulo_ere",
+            kwh_entity="sensor.joulo_kwh",
+        ),
+    )
+    series = flat_series(FROZEN_TIME, all_in=PRICE)
+
+    hass.states.async_set("sensor.joulo_ere", "100.0")
+    hass.states.async_set("sensor.joulo_kwh", "1000.0")
+    set_energy_state(hass, "sensor.device_energy", 10.0)
+    tracker.update(FROZEN_TIME, series)  # baselines
+
+    # 10 ERE over 50 kWh: 0.2 ERE/kWh.
+    hass.states.async_set("sensor.joulo_ere", "110.0")
+    hass.states.async_set("sensor.joulo_kwh", "1050.0")
+    set_energy_state(hass, "sensor.device_energy", 11.0)
+    tracker.update(FROZEN_TIME + timedelta(minutes=1), series)
+
+    first = tracker.snapshot(FROZEN_TIME + timedelta(minutes=1), series)
+    assert first.ere_credits == pytest.approx(0.2)
+    assert first.ere_value == pytest.approx(0.8)
+
+    # The cumulative ratio rises to 1.1; already booked credits must not move.
+    hass.states.async_set("sensor.joulo_ere", "210.0")
+    hass.states.async_set("sensor.joulo_kwh", "1100.0")
+    set_energy_state(hass, "sensor.device_energy", 12.0)
+    tracker.update(FROZEN_TIME + timedelta(minutes=2), series)
+
+    second = tracker.snapshot(FROZEN_TIME + timedelta(minutes=2), series)
+    assert second.ere_rate == pytest.approx(1.1)
+    assert second.ere_credits == pytest.approx(0.2 + 1.1)
+    assert second.ere_value == pytest.approx(4.0 * (0.2 + 1.1))
+
+
+async def test_joulo_counter_reset_is_detected(hass) -> None:
+    """A reset Joulo counter rebases the ratio instead of drifting."""
+    tracker = make_tracker(
+        hass,
+        ere=EreConfig(
+            mode=EreMode.JOULO,
+            ere_per_kwh=0.1,
+            ere_price=4.0,
+            credits_entity="sensor.joulo_ere",
+            kwh_entity="sensor.joulo_kwh",
+        ),
+    )
+    series = flat_series(FROZEN_TIME, all_in=PRICE)
+
+    hass.states.async_set("sensor.joulo_ere", "100.0")
+    hass.states.async_set("sensor.joulo_kwh", "1000.0")
+    set_energy_state(hass, "sensor.device_energy", 10.0)
+    tracker.update(FROZEN_TIME, series)
+
+    # Counters restart from zero.
+    hass.states.async_set("sensor.joulo_ere", "0.0")
+    hass.states.async_set("sensor.joulo_kwh", "0.0")
+    set_energy_state(hass, "sensor.device_energy", 11.0)
+    tracker.update(FROZEN_TIME + timedelta(minutes=1), series)
+
+    assert tracker.acc.joulo_base_ere == pytest.approx(0.0)
+    assert tracker.acc.joulo_base_kwh == pytest.approx(0.0)
+    # Falls back to the configured ratio right after the reset.
+    assert tracker.snapshot(
+        FROZEN_TIME + timedelta(minutes=1), series
+    ).ere_rate == pytest.approx(0.1)
+
+    # 10 ERE over 50 kWh after the reset: a clean 0.2.
+    hass.states.async_set("sensor.joulo_ere", "10.0")
+    hass.states.async_set("sensor.joulo_kwh", "50.0")
+    set_energy_state(hass, "sensor.device_energy", 12.0)
+    tracker.update(FROZEN_TIME + timedelta(minutes=2), series)
+
+    assert tracker.snapshot(
+        FROZEN_TIME + timedelta(minutes=2), series
+    ).ere_rate == pytest.approx(0.2)
+
+
+async def test_clock_stays_open_while_prices_are_missing(hass) -> None:
+    """Energy consumed without a tariff is priced once a tariff returns."""
+    tracker = make_tracker(hass)
+    series = flat_series(FROZEN_TIME, all_in=PRICE)
+
+    set_energy_state(hass, "sensor.device_energy", 10.0)
+    tracker.update(FROZEN_TIME, series)  # baseline
+
+    set_energy_state(hass, "sensor.device_energy", 11.0)
+    tracker.update(FROZEN_TIME + timedelta(seconds=60), None)
+    # The clock did not advance, so the window is still open.
+    assert tracker.acc.last_tick == FROZEN_TIME
+
+    tracker.update(FROZEN_TIME + timedelta(seconds=120), series)
+    snapshot = tracker.snapshot(FROZEN_TIME + timedelta(seconds=120), series)
+    assert snapshot.energy_kwh == pytest.approx(1.0)
+    assert snapshot.cost == pytest.approx(PRICE)
+    assert snapshot.unpriced_kwh == 0.0

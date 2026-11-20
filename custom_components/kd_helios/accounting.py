@@ -26,6 +26,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import EnergyConverter, PowerConverter
 
 from .const import (
+    MAX_PLAUSIBLE_POWER_KW,
     MAX_TRACKING_GAP,
     MIN_ERE_RATIO_WINDOW_KWH,
     UNIT_KWH,
@@ -66,12 +67,18 @@ class DeviceAccumulators:
     total_cost: float = 0.0
     total_reimbursement: float = 0.0
     total_ere_value: float = 0.0
+    total_ere_credits: float = 0.0
     day: str | None = None
     day_cost: float = 0.0
     day_kwh: float = 0.0
     last_value: float | None = None
     last_tick: datetime | None = None
+    #: Entity id the last_value came from, so a swapped source can be detected.
+    source: str | None = None
     untracked_gaps: int = 0
+    rejected_deltas: int = 0
+    #: Energy that was metered but had no tariff. Persisted so it stays visible.
+    unpriced_kwh: float = 0.0
     joulo_base_ere: float | None = None
     joulo_base_kwh: float | None = None
 
@@ -82,12 +89,16 @@ class DeviceAccumulators:
             "total_cost": self.total_cost,
             "total_reimbursement": self.total_reimbursement,
             "total_ere_value": self.total_ere_value,
+            "total_ere_credits": self.total_ere_credits,
             "day": self.day,
             "day_cost": self.day_cost,
             "day_kwh": self.day_kwh,
             "last_value": self.last_value,
             "last_tick": self.last_tick.isoformat() if self.last_tick else None,
+            "source": self.source,
             "untracked_gaps": self.untracked_gaps,
+            "rejected_deltas": self.rejected_deltas,
+            "unpriced_kwh": self.unpriced_kwh,
             "joulo_base_ere": self.joulo_base_ere,
             "joulo_base_kwh": self.joulo_base_kwh,
         }
@@ -100,12 +111,16 @@ class DeviceAccumulators:
             total_cost=_as_float(data.get("total_cost")) or 0.0,
             total_reimbursement=_as_float(data.get("total_reimbursement")) or 0.0,
             total_ere_value=_as_float(data.get("total_ere_value")) or 0.0,
+            total_ere_credits=_as_float(data.get("total_ere_credits")) or 0.0,
             day=data.get("day") if isinstance(data.get("day"), str) else None,
             day_cost=_as_float(data.get("day_cost")) or 0.0,
             day_kwh=_as_float(data.get("day_kwh")) or 0.0,
             last_value=_as_float(data.get("last_value")),
             last_tick=_as_datetime(data.get("last_tick")),
+            source=data.get("source") if isinstance(data.get("source"), str) else None,
             untracked_gaps=int(_as_float(data.get("untracked_gaps")) or 0),
+            rejected_deltas=int(_as_float(data.get("rejected_deltas")) or 0),
+            unpriced_kwh=_as_float(data.get("unpriced_kwh")) or 0.0,
             joulo_base_ere=_as_float(data.get("joulo_base_ere")),
             joulo_base_kwh=_as_float(data.get("joulo_base_kwh")),
         )
@@ -156,7 +171,6 @@ class DeviceTracker:
         self._ere_price: float | None = None
         self._cached_ere_rate: float | None = None
         self._source_ok = True
-        self._unpriced_kwh = 0.0
 
     # -- source reading ----------------------------------------------------
     def _state(self, entity_id: str | None) -> State | None:
@@ -227,6 +241,17 @@ class DeviceTracker:
             if self.acc.joulo_base_ere is None or self.acc.joulo_base_kwh is None:
                 self.acc.joulo_base_ere = credits
                 self.acc.joulo_base_kwh = energy
+            elif credits < self.acc.joulo_base_ere or energy < self.acc.joulo_base_kwh:
+                # The Joulo counters restarted. Rebase, otherwise the ratio
+                # would mix pre- and post-reset readings and drift silently.
+                _LOGGER.info(
+                    "%s: Joulo counters went backwards, rebasing the ERE ratio",
+                    self.config.name,
+                )
+                self.acc.joulo_base_ere = credits
+                self.acc.joulo_base_kwh = energy
+                self._cached_ere_rate = None
+                return ere.ere_per_kwh or None
             ratio = ere_ratio(
                 credits,
                 energy,
@@ -281,6 +306,24 @@ class DeviceTracker:
             # the source is unavailable is integrated on the next good reading.
             return
 
+        if series is None:
+            # Nothing can be priced yet. Keep the window open so the energy is
+            # priced once a tariff is available again.
+            return
+
+        if self.acc.source != self.source_entity:
+            if self.acc.source is not None:
+                _LOGGER.info(
+                    "%s: accounting source changed from %s to %s, rebasing",
+                    self.config.name,
+                    self.acc.source,
+                    self.source_entity,
+                )
+            self.acc.source = self.source_entity
+            self.acc.last_value = reading
+            self.acc.last_tick = now
+            return
+
         previous_value = self.acc.last_value
         previous_tick = self.acc.last_tick
 
@@ -309,17 +352,32 @@ class DeviceTracker:
             )
             return
 
-        if gap.total_seconds() <= 0 or series is None:
+        window_seconds = gap.total_seconds()
+        if window_seconds <= 0:
             return
 
         if self._uses_energy_meter:
             delta_kwh = reading - previous_value
         else:
-            delta_kwh = (
-                (previous_value + reading) / 2 * gap.total_seconds() / 3600 / 1000
-            )
+            delta_kwh = (previous_value + reading) / 2 * window_seconds / 3600 / 1000
 
         if delta_kwh <= 0:
+            return
+
+        implied_kw = delta_kwh / (window_seconds / 3600)
+        if implied_kw > MAX_PLAUSIBLE_POWER_KW:
+            # Swapping a source entity for one with a larger reading, or a
+            # sensor that reported 0 while offline and then recovered, must not
+            # be billed as if it were real consumption.
+            self.acc.rejected_deltas += 1
+            _LOGGER.warning(
+                "%s: rejected implausible delta of %.3f kWh in %.0f s "
+                "(%.1f kW), rebasing",
+                self.config.name,
+                delta_kwh,
+                window_seconds,
+                implied_kw,
+            )
             return
 
         self._accrue(previous_tick, now, delta_kwh, series)
@@ -348,16 +406,21 @@ class DeviceTracker:
                 acc.total_cost += slice_cost
                 acc.day_cost += slice_cost
             else:
-                self._unpriced_kwh += kwh
+                acc.unpriced_kwh += kwh
 
             rate = self.config.reimbursement.rate(point)
             if rate is not None:
                 acc.total_reimbursement += kwh * rate
 
-            if self._ere_rate is not None and self._ere_price is not None:
-                acc.total_ere_value += kwh * ere_value_per_kwh(
-                    self._ere_rate, self._ere_price
-                )
+            if self._ere_rate is not None:
+                # Credits are accrued at the ratio that applied to this kWh, so
+                # the credit counter and the euro counter can never disagree.
+                credits = kwh * self._ere_rate
+                acc.total_ere_credits += credits
+                if self._ere_price is not None:
+                    acc.total_ere_value += (
+                        ere_value_per_kwh(self._ere_rate, self._ere_price) * kwh
+                    )
 
     # -- reporting ---------------------------------------------------------
     def snapshot(self, now: datetime, series: PriceSeries | None) -> DeviceSnapshot:
@@ -375,11 +438,11 @@ class DeviceTracker:
             reimbursement=acc.total_reimbursement,
             reimbursement_rate=self.config.reimbursement.rate(point),
             ere_value=acc.total_ere_value,
-            ere_credits=acc.total_kwh * ere_rate if ere_rate else 0.0,
+            ere_credits=acc.total_ere_credits,
             ere_rate=ere_rate,
             net_cost=acc.total_cost - acc.total_reimbursement - acc.total_ere_value,
             source_available=self._source_ok,
             source_entity=self.source_entity,
-            unpriced_kwh=self._unpriced_kwh,
+            unpriced_kwh=acc.unpriced_kwh,
             last_update=dt_util.as_utc(now),
         )

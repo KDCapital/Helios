@@ -7,10 +7,18 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from freezegun import freeze_time
-from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
+from homeassistant.config_entries import (
+    SOURCE_RECONFIGURE,
+    SOURCE_USER,
+    ConfigEntryState,
+)
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.kd_helios.const import (
     CONF_ENERGY_ENTITY,
@@ -28,6 +36,7 @@ from custom_components.kd_helios.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 from custom_components.kd_helios.prices import PriceApiError
+from tests.helpers import load_fixture
 
 CRC = "custom_components.kd_helios.coordinator.async_fetch_provider_prices"
 
@@ -318,3 +327,55 @@ async def test_removing_a_device_drops_its_entities(hass, entry) -> None:
     remaining = _registry_entries(hass, entry)
     assert {item.translation_key for item in remaining} == HUB_KEYS
     assert entry.runtime_data.engine.trackers == {}
+
+
+async def test_prices_keep_polling_while_running(hass, entry) -> None:
+    """The tariff must be re-fetched periodically, not just once at setup.
+
+    A DataUpdateCoordinator only re-arms its interval while it has a listener,
+    so without the engine subscribing the prices would freeze after setup.
+    """
+    fetch = AsyncMock(return_value=load_fixture("provider_zonneplan_quarterly.json"))
+    with freeze_time("2026-11-20 12:00:00+00:00") as frozen, patch(CRC, new=fetch):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert fetch.call_count == 1
+
+        frozen.tick(timedelta(minutes=11))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await hass.async_block_till_done()
+
+    assert fetch.call_count >= 2
+
+
+async def test_disabling_reimbursement_removes_its_entities(hass, entry) -> None:
+    """Turning reimbursement off must not leave dead entities behind."""
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    before = {item.translation_key for item in _registry_entries(hass, entry)}
+    assert {"reimbursement", "reimbursement_rate", "net_cost"} <= before
+
+    subentry_id = entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0].subentry_id
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_DEVICE),
+        context={"source": SOURCE_RECONFIGURE, "subentry_id": subentry_id},
+    )
+    assert result["type"] is FlowResultType.FORM
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            CONF_NAME: "EV charger",
+            CONF_KIND: "ev_charger",
+            CONF_ENERGY_ENTITY: "sensor.ev_energy",
+            CONF_REIMBURSEMENT_MODE: "none",
+            CONF_ERE_MODE: "none",
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    await hass.async_block_till_done()
+
+    after = {item.translation_key for item in _registry_entries(hass, entry)}
+    assert "reimbursement" not in after
+    assert "reimbursement_rate" not in after
+    assert "net_cost" not in after
+    assert "energy" in after and "cost" in after

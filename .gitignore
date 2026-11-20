@@ -5,3 +5,5 @@ __pycache__/
 .ruff_cache/
 .research/
 .DS_Store
+.coverage
+htmlcov/

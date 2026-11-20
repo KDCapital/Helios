@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -14,6 +15,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
@@ -37,6 +39,8 @@ from .const import (
 from .coordinator import HeliosEngine
 from .models import DeviceConfig
 from .prices import PriceSeries
+
+_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
 
@@ -398,7 +402,26 @@ class HeliosDeviceSensor(CoordinatorEntity[HeliosEngine], SensorEntity):
             "source_available": snapshot.source_available,
             "unpriced_energy_kwh": round(snapshot.unpriced_kwh, 4),
             "untracked_gaps": tracker.acc.untracked_gaps,
+            "rejected_deltas": tracker.acc.rejected_deltas,
         }
+
+
+def _async_prune_stale_entities(
+    hass: HomeAssistant, entry: HeliosConfigEntry, valid_unique_ids: set[str]
+) -> None:
+    """Remove registry entries this entry no longer creates.
+
+    Turning off reimbursement or ERE on an existing device would otherwise
+    leave its sensors behind as permanently unavailable entities.
+    """
+    registry = er.async_get(hass)
+    for item in list(registry.entities.values()):
+        if item.config_entry_id != entry.entry_id:
+            continue
+        if item.unique_id in valid_unique_ids:
+            continue
+        _LOGGER.debug("Removing stale entity %s", item.entity_id)
+        registry.async_remove(item.entity_id)
 
 
 async def async_setup_entry(
@@ -409,17 +432,23 @@ async def async_setup_entry(
     """Set up KD Helios sensors."""
     runtime = entry.runtime_data
 
-    async_add_entities(
+    hub_entities = [
         HeliosPriceSensor(runtime.engine, entry, description)
         for description in HUB_SENSORS
-    )
+    ]
+    valid_unique_ids = {entity.unique_id for entity in hub_entities}
+    async_add_entities(hub_entities)
 
     for subentry in entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE):
         config = DeviceConfig.from_subentry(subentry)
+        entities = [
+            HeliosDeviceSensor(runtime.engine, config, description)
+            for description in _descriptions_for(config)
+        ]
+        valid_unique_ids.update(entity.unique_id for entity in entities)
         async_add_entities(
-            (
-                HeliosDeviceSensor(runtime.engine, config, description)
-                for description in _descriptions_for(config)
-            ),
+            entities,
             config_subentry_id=subentry.subentry_id,
         )
+
+    _async_prune_stale_entities(hass, entry, valid_unique_ids)

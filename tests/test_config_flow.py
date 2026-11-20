@@ -16,6 +16,7 @@ from custom_components.kd_helios.const import (
     CONF_ERE_MODE,
     CONF_ERE_PER_KWH,
     CONF_ERE_PRICE,
+    CONF_ERE_PRICE_ENTITY,
     CONF_KIND,
     CONF_NAME,
     CONF_POWER_ENTITY,
@@ -290,7 +291,33 @@ async def test_joulo_needs_both_counters(hass, loaded_entry) -> None:
     assert result["errors"] == {
         CONF_ERE_CREDITS_ENTITY: "entity_required",
         CONF_ERE_KWH_ENTITY: "entity_required",
+        # Without a price the credits would silently be worth nothing.
+        CONF_ERE_PRICE: "ere_price_required",
     }
+
+
+async def test_joulo_accepts_a_live_price_entity(hass, loaded_entry) -> None:
+    """Joulo mode works with a live price sensor instead of a fixed price."""
+    result = await _start_subentry_flow(hass, loaded_entry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], EV_INPUT
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_REIMBURSEMENT_MODE: "none"}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            CONF_ERE_MODE: "joulo",
+            CONF_ERE_CREDITS_ENTITY: "sensor.joulo_total_ere_credits",
+            CONF_ERE_KWH_ENTITY: "sensor.joulo_total_all_kwh",
+            CONF_ERE_PRICE_ENTITY: "sensor.joulo_actuele_ere_marktprijs",
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0]
+    assert subentry.data[CONF_ERE_KWH_ENTITY] == "sensor.joulo_total_all_kwh"
 
 
 async def test_reconfigure_updates_a_device(hass, loaded_entry) -> None:

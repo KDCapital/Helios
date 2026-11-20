@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -113,6 +113,19 @@ class HeliosEngine(DataUpdateCoordinator[dict[str, DeviceSnapshot]]):
                 config,
                 storage.device_state(config.subentry_id),
             )
+
+    @callback
+    def async_prices_updated(self) -> None:
+        """Recompute snapshots when a new price series arrives.
+
+        Registering this also keeps the price coordinator polling: a
+        ``DataUpdateCoordinator`` only reschedules its interval while it has at
+        least one listener, so without this the prices would be fetched once at
+        setup and never again.
+        """
+        self.hass.async_create_task(
+            self.async_request_refresh(), f"{DOMAIN} price update"
+        )
 
     async def _async_update_data(self) -> dict[str, DeviceSnapshot]:
         """Run one accounting tick."""

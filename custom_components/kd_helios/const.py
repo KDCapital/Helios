@@ -166,6 +166,11 @@ ACCOUNTING_UPDATE_INTERVAL: Final = timedelta(minutes=1)
 #: fresh baseline is taken instead of pricing the backlog at the current price.
 MAX_TRACKING_GAP: Final = timedelta(minutes=10)
 
+#: A single accounting window may never imply more power than this. Protects
+#: against phantom energy when a source entity is swapped for one with a
+#: larger reading, or recovers from a bogus 0 while offline.
+MAX_PLAUSIBLE_POWER_KW: Final = 500.0
+
 #: Minimum energy, in kWh, needed before a Joulo-derived ERE/kWh ratio is
 #: trusted. Below this the ratio is dominated by measurement noise.
 MIN_ERE_RATIO_WINDOW_KWH: Final = 1.0
@@ -181,5 +186,3 @@ UNIT_EUR_PER_KWH: Final = "EUR/kWh"
 UNIT_KWH: Final = "kWh"
 UNIT_W: Final = "W"
 UNIT_ERE: Final = "ERE"
-
-SERVICE_DEVICE_NAME: Final = NAME

@@ -48,6 +48,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: HeliosConfigEntry) -> bo
     await storage.async_load()
 
     engine = HeliosEngine(hass, entry, prices, storage)
+    # The engine listens to the price coordinator: it recomputes as soon as new
+    # prices land, and the listener keeps the polling interval armed.
+    # The engine listens to the price coordinator: it recomputes snapshots as
+    # soon as new prices land, and that listener is what keeps the price
+    # coordinator's polling interval armed.
+    entry.async_on_unload(prices.async_add_listener(engine.async_prices_updated))
     await engine.async_config_entry_first_refresh()
 
     entry.runtime_data = HeliosRuntimeData(

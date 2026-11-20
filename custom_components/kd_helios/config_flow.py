@@ -279,6 +279,12 @@ def _validate_ere(user_input: Mapping[str, Any]) -> dict[str, str]:
             errors[CONF_ERE_CREDITS_ENTITY] = "entity_required"
         if as_entity_id(user_input.get(CONF_ERE_KWH_ENTITY)) is None:
             errors[CONF_ERE_KWH_ENTITY] = "entity_required"
+        # Without a price the credits would be worth zero, silently.
+        if (
+            as_entity_id(user_input.get(CONF_ERE_PRICE_ENTITY)) is None
+            and as_float(user_input.get(CONF_ERE_PRICE)) <= 0
+        ):
+            errors[CONF_ERE_PRICE] = "ere_price_required"
     return errors
 
 
