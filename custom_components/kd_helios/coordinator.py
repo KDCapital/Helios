@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -15,8 +16,10 @@ from .const import (
     DOMAIN,
     PRICE_UPDATE_INTERVAL,
     SUBENTRY_TYPE_DEVICE,
+    SUBENTRY_TYPE_GRID,
 )
-from .models import DeviceConfig
+from .grid import GridSnapshot, GridTracker
+from .models import DeviceConfig, GridConfig
 from .prices import (
     PriceApiError,
     PriceSeries,
@@ -86,7 +89,15 @@ class PriceCoordinator(DataUpdateCoordinator[PriceSeries]):
         return series
 
 
-class HeliosEngine(DataUpdateCoordinator[dict[str, DeviceSnapshot]]):
+@dataclass(frozen=True, slots=True)
+class EngineData:
+    """Everything one accounting tick produces."""
+
+    devices: dict[str, DeviceSnapshot]
+    grid: GridSnapshot | None
+
+
+class HeliosEngine(DataUpdateCoordinator[EngineData]):
     """Integrate energy and cost for every tracked device."""
 
     def __init__(
@@ -114,6 +125,17 @@ class HeliosEngine(DataUpdateCoordinator[dict[str, DeviceSnapshot]]):
                 storage.device_state(config.subentry_id),
             )
 
+        grid_subentries = entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)
+        self.grid_tracker: GridTracker | None = (
+            GridTracker(
+                hass,
+                GridConfig.from_subentry(grid_subentries[0]),
+                storage.grid_state(),
+            )
+            if grid_subentries
+            else None
+        )
+
     @callback
     def async_prices_updated(self) -> None:
         """Recompute snapshots when a new price series arrives.
@@ -127,7 +149,7 @@ class HeliosEngine(DataUpdateCoordinator[dict[str, DeviceSnapshot]]):
             self.async_request_refresh(), f"{DOMAIN} price update"
         )
 
-    async def _async_update_data(self) -> dict[str, DeviceSnapshot]:
+    async def _async_update_data(self) -> EngineData:
         """Run one accounting tick."""
         now = dt_util.utcnow()
         series = self.prices.series
@@ -144,4 +166,11 @@ class HeliosEngine(DataUpdateCoordinator[dict[str, DeviceSnapshot]]):
                 for subentry_id, tracker in self.trackers.items()
             }
         )
-        return snapshots
+
+        grid_snapshot: GridSnapshot | None = None
+        if self.grid_tracker is not None:
+            self.grid_tracker.update(now, available_series)
+            grid_snapshot = self.grid_tracker.snapshot(now, available_series)
+            self.storage.async_set_grid(self.grid_tracker.acc.as_dict())
+
+        return EngineData(devices=snapshots, grid=grid_snapshot)

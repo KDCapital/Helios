@@ -129,6 +129,73 @@
         "ere_price_required": "Een vaste ERE-prijs heeft een waarde boven nul nodig.",
         "entity_required": "Selecteer de Joulo-sensor voor dit veld."
       }
+    },
+    "grid": {
+      "entry_type": "Netwerkaansluiting",
+      "initiate_flow": {
+        "user": "Netwerkaansluiting toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "Netwerkaansluiting",
+          "description": "Koppel KD Helios aan je meter, zodat de hele aansluiting wordt afgerekend en niet alleen de apparaten die je volgt.\n\nGebruik de cumulatieve import- en exporttellers; een P1-meter heeft ze allebei. De vermogenssensoren zijn optioneel en voeden alleen de actuele vermogenssensoren.",
+          "data": {
+            "import_entity": "Energiesensor import",
+            "export_entity": "Energiesensor export",
+            "import_power_entity": "Vermogenssensor import",
+            "export_power_entity": "Vermogenssensor export",
+            "saldering": "Salderen"
+          },
+          "data_description": {
+            "import_entity": "Cumulatieve kWh die je van het net haalt.",
+            "export_entity": "Cumulatieve kWh die je teruglevert. Laat leeg als je nooit teruglevert.",
+            "import_power_entity": "Optioneel actueel vermogen, in W of kW.",
+            "export_power_entity": "Optioneel actueel terugleververmogen, in W of kW.",
+            "saldering": "Verreken teruggeleverde kWh binnen het kalenderjaar met afgenomen kWh, zodat een teruggeleverde kWh het importtarief waard is. Zet dit uit als je contract teruglevering tegen de terugleverprijs afrekent. Het gaat automatisch uit op 1 januari 2027, wanneer salderen stopt."
+          }
+        },
+        "tariff": {
+          "title": "Teruglevering en vaste kosten",
+          "description": "epexprijzen.nl publiceert geen teruglevergegevens via zijn API, dus de voorgestelde waarde komt uit hun eigen leveranciersgegevens, uitgelezen op {snapshot}.\n\n**{provider}**: een aftrek van **{suggested}** EUR/kWh. Een negatief bedrag betekent dat de leverancier een bonus bovenop de beursprijs betaalt.\n\nControleer dit met je contract en bevestig het. Een verkeerde aftrek vertekent elke euro terugleveropbrengst.",
+          "data": {
+            "export_deduction": "Aftrek teruglevering",
+            "export_deduction_confirmed": "Ik heb dit gecontroleerd met mijn contract",
+            "supply_cost_monthly": "Leveringskosten per maand",
+            "grid_fee_monthly": "Netbeheerkosten per maand"
+          },
+          "data_description": {
+            "export_deduction": "Wordt per teruggeleverde kWh van de EPEX-spotprijs afgetrokken, inclusief btw.",
+            "export_deduction_confirmed": "Verplicht. Vink dit aan nadat je het bedrag hebt gecontroleerd.",
+            "supply_cost_monthly": "De vaste maandelijkse kosten van je energiecontract. Vul 0 in als je die niet hebt.",
+            "grid_fee_monthly": "De vaste maandelijkse kosten van je netbeheerder. Vul 0 in als je die niet hebt."
+          }
+        },
+        "reconfigure": {
+          "title": "Netwerkaansluiting bewerken",
+          "description": "Wijzig de meters, de aftrek voor teruglevering of de vaste kosten. De totalen van het lopende jaar blijven behouden.\n\nBevestig de aftrek opnieuw: die bepaalt wat elke teruggeleverde kWh waard is.",
+          "data": {
+            "import_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::import_entity%]",
+            "export_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::export_entity%]",
+            "import_power_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::import_power_entity%]",
+            "export_power_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::export_power_entity%]",
+            "saldering": "[%key:component::kd_helios::config_subentries::grid::step::user::data::saldering%]",
+            "export_deduction": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::export_deduction%]",
+            "export_deduction_confirmed": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::export_deduction_confirmed%]",
+            "supply_cost_monthly": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::supply_cost_monthly%]",
+            "grid_fee_monthly": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::grid_fee_monthly%]"
+          }
+        }
+      },
+      "error": {
+        "import_required": "Koppel de energiesensor voor import van je meter.",
+        "duplicate_source": "De import- en exportsensor moeten verschillende sensoren zijn.",
+        "confirm_required": "Bevestig de aftrek voor teruglevering voordat je verdergaat.",
+        "fixed_cost_required": "Vul beide maandbedragen in. Gebruik 0 als je ze niet hebt."
+      },
+      "abort": {
+        "single_instance": "Er is al een netwerkaansluiting ingesteld.",
+        "reconfigure_successful": "De netwerkaansluiting is bijgewerkt."
+      }
     }
   },
   "entity": {
@@ -177,6 +244,38 @@
       },
       "net_cost": {
         "name": "Netto kosten"
+      },
+      "grid_import_energy": {
+        "name": "Afname energie"
+      },
+      "grid_export_energy": {
+        "name": "Teruglevering energie"
+      },
+      "grid_import_cost": {
+        "name": "Kosten afname"
+      },
+      "grid_export_credit": {
+        "name": "Opbrengst teruglevering"
+      },
+      "grid_fixed_cost": {
+        "name": "Vaste kosten"
+      },
+      "grid_cost": {
+        "name": "Netkosten"
+      },
+      "grid_export_price": {
+        "name": "Terugleverprijs"
+      },
+      "grid_import_power": {
+        "name": "Afnamevermogen"
+      },
+      "grid_export_power": {
+        "name": "Terugleververmogen"
+      }
+    },
+    "binary_sensor": {
+      "saldering_active": {
+        "name": "Salderen actief"
       }
     }
   },

@@ -24,14 +24,21 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.kd_helios.const import (
     CONF_ENERGY_ENTITY,
     CONF_ERE_MODE,
+    CONF_EXPORT_DEDUCTION,
+    CONF_EXPORT_ENTITY,
+    CONF_GRID_FEE_MONTHLY,
+    CONF_IMPORT_ENTITY,
     CONF_KIND,
     CONF_NAME,
     CONF_PRICE_INTERVAL,
     CONF_PROVIDER,
     CONF_REIMBURSEMENT_MODE,
     CONF_REIMBURSEMENT_RATE,
+    CONF_SALDERING,
+    CONF_SUPPLY_COST_MONTHLY,
     DOMAIN,
     SUBENTRY_TYPE_DEVICE,
+    SUBENTRY_TYPE_GRID,
 )
 from custom_components.kd_helios.diagnostics import (
     async_get_config_entry_diagnostics,
@@ -163,7 +170,7 @@ async def test_totals_survive_a_reload(hass, entry) -> None:
         frozen.tick(timedelta(seconds=60))
         await engine.async_refresh()
 
-        snapshot = engine.data[subentry_id]
+        snapshot = engine.data.devices[subentry_id]
         assert snapshot.energy_kwh == pytest.approx(1.0)
         assert snapshot.cost == pytest.approx(NOON_PRICE)
         assert snapshot.reimbursement == pytest.approx(0.35)
@@ -387,14 +394,14 @@ async def test_subentry_type_is_exposed_to_the_frontend(hass, entry) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert entry.supported_subentry_types == {
-        SUBENTRY_TYPE_DEVICE: {"supports_reconfigure": True}
+    expected = {
+        SUBENTRY_TYPE_DEVICE: {"supports_reconfigure": True},
+        SUBENTRY_TYPE_GRID: {"supports_reconfigure": True},
     }
+    assert entry.supported_subentry_types == expected
     # The same value is serialised into the WebSocket payload the UI reads.
     payload = orjson.loads(orjson.dumps(entry.as_json_fragment))
-    assert payload["supported_subentry_types"] == {
-        SUBENTRY_TYPE_DEVICE: {"supports_reconfigure": True}
-    }
+    assert payload["supported_subentry_types"] == expected
 
 
 async def test_repair_hint_points_at_adding_a_device(hass) -> None:
@@ -438,3 +445,98 @@ async def test_repair_hint_points_at_adding_a_device(hass) -> None:
     await hass.async_block_till_done()
 
     assert issues.async_get_issue(DOMAIN, issue_id) is None
+
+
+GRID_DATA = {
+    CONF_IMPORT_ENTITY: "sensor.p1_import",
+    CONF_EXPORT_ENTITY: "sensor.p1_export",
+    CONF_SALDERING: True,
+    CONF_EXPORT_DEDUCTION: 0.01361,
+    CONF_SUPPLY_COST_MONTHLY: 6.0,
+    CONF_GRID_FEE_MONTHLY: 20.0,
+}
+
+GRID_SUBENTRY = {
+    "subentry_type": SUBENTRY_TYPE_GRID,
+    "data": GRID_DATA,
+    "title": "Grid connection",
+    "unique_id": None,
+}
+
+GRID_KEYS = {
+    "grid_import_energy",
+    "grid_export_energy",
+    "grid_import_cost",
+    "grid_export_credit",
+    "grid_fixed_cost",
+    "grid_cost",
+    "grid_export_price",
+}
+
+
+async def test_grid_connection_creates_its_entities(hass) -> None:
+    """A grid subentry produces the tariff sensors and the saldering switch."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=USER_INPUT,
+        unique_id="zonneplan_quarterly",
+        title="Zonneplan",
+        subentries_data=[GRID_SUBENTRY],
+    )
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    registry_entries = _registry_entries(hass, entry)
+    grid_sensors = {
+        item.translation_key
+        for item in registry_entries
+        if item.entity_id.startswith("sensor.") and item.config_subentry_id is not None
+    }
+    assert grid_sensors == GRID_KEYS
+
+    binary = [
+        item for item in registry_entries if item.entity_id.startswith("binary_sensor.")
+    ]
+    assert len(binary) == 1
+    assert binary[0].translation_key == "saldering_active"
+    state = hass.states.get(binary[0].entity_id)
+    assert state is not None
+    assert state.state == "on"
+    assert state.attributes["saldering_ends_on"] == "2027-01-01"
+
+    cost = next(
+        item for item in registry_entries if item.translation_key == "grid_cost"
+    )
+    cost_state = hass.states.get(cost.entity_id)
+    assert cost_state is not None
+    assert "last_reset" in cost_state.attributes
+    year = cost_state.attributes["billing_year"]
+    assert cost_state.attributes["last_reset"].startswith(f"{year}-01-01T00:00:00")
+    assert cost_state.attributes["saldering_active"] is True
+    assert cost_state.attributes["fixed_monthly"] == pytest.approx(26.0)
+
+    assert entry.runtime_data.engine.grid_tracker is not None
+
+
+async def test_grid_only_install_has_no_repair_hint(hass) -> None:
+    """A connection that meters the grid is tracking something."""
+    from homeassistant.helpers import issue_registry as ir
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=USER_INPUT,
+        unique_id="zonneplan_quarterly",
+        title="Zonneplan",
+        subentries_data=[GRID_SUBENTRY],
+    )
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert (
+        ir.async_get(hass).async_get_issue(DOMAIN, f"no_devices_{entry.entry_id}")
+        is None
+    )

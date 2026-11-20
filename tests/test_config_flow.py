@@ -17,6 +17,12 @@ from custom_components.kd_helios.const import (
     CONF_ERE_PER_KWH,
     CONF_ERE_PRICE,
     CONF_ERE_PRICE_ENTITY,
+    CONF_EXPORT_DEDUCTION,
+    CONF_EXPORT_DEDUCTION_CONFIRMED,
+    CONF_EXPORT_ENTITY,
+    CONF_EXPORT_PRICE_SOURCE,
+    CONF_GRID_FEE_MONTHLY,
+    CONF_IMPORT_ENTITY,
     CONF_KIND,
     CONF_NAME,
     CONF_POWER_ENTITY,
@@ -25,8 +31,11 @@ from custom_components.kd_helios.const import (
     CONF_REIMBURSEMENT_MODE,
     CONF_REIMBURSEMENT_RATE,
     CONF_REIMBURSEMENT_SURCHARGE,
+    CONF_SALDERING,
+    CONF_SUPPLY_COST_MONTHLY,
     DOMAIN,
     SUBENTRY_TYPE_DEVICE,
+    SUBENTRY_TYPE_GRID,
 )
 from custom_components.kd_helios.prices import PriceApiError, UnknownProviderError
 
@@ -352,3 +361,130 @@ async def test_reconfigure_updates_a_device(hass, loaded_entry) -> None:
 
     subentries = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)
     assert subentries[0].title == "Heat pump (basement)"
+
+
+# ---------------------------------------------------------------------------
+# Grid connection subentry flow
+# ---------------------------------------------------------------------------
+GRID_CONNECTION = {
+    CONF_IMPORT_ENTITY: "sensor.p1_import",
+    CONF_EXPORT_ENTITY: "sensor.p1_export",
+    CONF_SALDERING: True,
+}
+
+GRID_TARIFF = {
+    CONF_EXPORT_DEDUCTION: -0.02,
+    CONF_EXPORT_DEDUCTION_CONFIRMED: True,
+    CONF_SUPPLY_COST_MONTHLY: 6.0,
+    CONF_GRID_FEE_MONTHLY: 20.0,
+}
+
+
+async def _start_grid_flow(hass, entry: MockConfigEntry) -> dict:
+    """Start a grid connection subentry flow."""
+    return await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_GRID), context={"source": SOURCE_USER}
+    )
+
+
+async def test_add_grid_connection_walks_both_steps(hass, loaded_entry) -> None:
+    """The connection is configured, then the tariff confirmed."""
+    result = await _start_grid_flow(hass, loaded_entry)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+    # Saldering is still in force today, so it defaults on.
+    validated = result["data_schema"]({CONF_IMPORT_ENTITY: "sensor.p1_import"})
+    assert validated[CONF_SALDERING] is True
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_CONNECTION
+    )
+    assert result["step_id"] == "tariff"
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_TARIFF
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)[0]
+    assert subentry.title == "Grid connection"
+    assert subentry.data[CONF_IMPORT_ENTITY] == "sensor.p1_import"
+    assert subentry.data[CONF_SUPPLY_COST_MONTHLY] == pytest.approx(6.0)
+    # Zonneplan's published deduction is -0.02, so leaving it alone is recorded.
+    assert subentry.data[CONF_EXPORT_PRICE_SOURCE] == "epexprijzen"
+
+
+async def test_grid_deduction_override_is_recorded(hass, loaded_entry) -> None:
+    """Correcting the suggested deduction is recorded as a manual value."""
+    result = await _start_grid_flow(hass, loaded_entry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_CONNECTION
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {**GRID_TARIFF, CONF_EXPORT_DEDUCTION: 0.0115}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)[0]
+    assert subentry.data[CONF_EXPORT_DEDUCTION] == pytest.approx(0.0115)
+    assert subentry.data[CONF_EXPORT_PRICE_SOURCE] == "manual"
+
+
+async def test_grid_requires_an_import_entity(hass, loaded_entry) -> None:
+    """The connection cannot be metered without an import counter."""
+    result = await _start_grid_flow(hass, loaded_entry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_SALDERING: True}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_IMPORT_ENTITY: "import_required"}
+
+
+async def test_grid_requires_confirmation_of_the_deduction(hass, loaded_entry) -> None:
+    """The user has to confirm the feed-in deduction before it is used."""
+    result = await _start_grid_flow(hass, loaded_entry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_CONNECTION
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {**GRID_TARIFF, CONF_EXPORT_DEDUCTION_CONFIRMED: False},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_EXPORT_DEDUCTION_CONFIRMED: "confirm_required"}
+
+
+async def test_grid_requires_both_fixed_costs(hass, loaded_entry) -> None:
+    """Users must state their monthly fixed costs, even when they are zero."""
+    result = await _start_grid_flow(hass, loaded_entry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_CONNECTION
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {CONF_EXPORT_DEDUCTION: -0.02, CONF_EXPORT_DEDUCTION_CONFIRMED: True},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert set(result["errors"]) == {
+        CONF_SUPPLY_COST_MONTHLY,
+        CONF_GRID_FEE_MONTHLY,
+    }
+
+
+async def test_only_one_grid_connection(hass, loaded_entry) -> None:
+    """A house has one connection, so a second one is refused."""
+    result = await _start_grid_flow(hass, loaded_entry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_CONNECTION
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_TARIFF
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    result = await _start_grid_flow(hass, loaded_entry)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "single_instance"

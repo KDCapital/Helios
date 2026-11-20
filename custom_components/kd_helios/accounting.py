@@ -16,24 +16,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from homeassistant.const import (
-    ATTR_UNIT_OF_MEASUREMENT,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-)
-from homeassistant.core import HomeAssistant, State
+from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
-from homeassistant.util.unit_conversion import EnergyConverter, PowerConverter
 
 from .const import (
     MAX_PLAUSIBLE_POWER_KW,
     MAX_TRACKING_GAP,
     MIN_ERE_RATIO_WINDOW_KWH,
-    UNIT_KWH,
-    UNIT_W,
 )
 from .models import DeviceConfig
 from .prices import PriceSeries
+from .sources import read_energy, read_number, read_power
 from .tariff import ere_ratio, ere_value_per_kwh
 
 _LOGGER = logging.getLogger(__name__)
@@ -173,54 +166,17 @@ class DeviceTracker:
         self._source_ok = True
 
     # -- source reading ----------------------------------------------------
-    def _state(self, entity_id: str | None) -> State | None:
-        """Return the state object for an entity, ignoring unusable states."""
-        if not entity_id:
-            return None
-        state = self.hass.states.get(entity_id)
-        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return None
-        return state
-
     def _read_number(self, entity_id: str | None) -> float | None:
         """Read a plain numeric state without unit conversion."""
-        state = self._state(entity_id)
-        if state is None:
-            return None
-        try:
-            return float(state.state)
-        except (TypeError, ValueError):
-            return None
+        return read_number(self.hass, entity_id)
 
     def _read_power(self) -> float | None:
         """Read the power entity in watt."""
-        state = self._state(self.config.power_entity)
-        if state is None:
-            return None
-        try:
-            value = float(state.state)
-        except (TypeError, ValueError):
-            return None
-        unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) or UNIT_W
-        try:
-            return PowerConverter.convert(value, unit, UNIT_W)
-        except (TypeError, ValueError):
-            return value
+        return read_power(self.hass, self.config.power_entity)
 
     def _read_energy(self) -> float | None:
         """Read the energy entity in kWh."""
-        state = self._state(self.config.energy_entity)
-        if state is None:
-            return None
-        try:
-            value = float(state.state)
-        except (TypeError, ValueError):
-            return None
-        unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) or UNIT_KWH
-        try:
-            return EnergyConverter.convert(value, unit, UNIT_KWH)
-        except (TypeError, ValueError):
-            return value
+        return read_energy(self.hass, self.config.energy_entity)
 
     def _read_source(self) -> float | None:
         """Read the configured accounting source."""

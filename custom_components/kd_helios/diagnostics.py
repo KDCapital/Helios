@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from . import HeliosConfigEntry
+from .const import SUBENTRY_TYPE_GRID
 
 
 async def async_get_config_entry_diagnostics(
@@ -37,6 +38,20 @@ async def async_get_config_entry_diagnostics(
             "provider_charge": series.meta.provider_charge,
             "spot_coefficient": series.meta.spot_coefficient,
         },
+        "grid": (
+            {
+                "config": dict(
+                    next(
+                        subentry
+                        for subentry in entry.subentries.values()
+                        if subentry.subentry_type == SUBENTRY_TYPE_GRID
+                    ).data
+                ),
+                "accumulators": runtime.engine.grid_tracker.acc.as_dict(),
+            }
+            if runtime.engine.grid_tracker is not None
+            else None
+        ),
         "devices": {
             subentry_id: {
                 "subentry_type": subentry.subentry_type,

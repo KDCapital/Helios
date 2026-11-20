@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from homeassistant.components.sensor import (
+    DOMAIN as SENSOR_DOMAIN,
+)
+from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
@@ -31,13 +34,15 @@ from .const import (
     NAME,
     SLOT_MINUTES,
     SUBENTRY_TYPE_DEVICE,
+    SUBENTRY_TYPE_GRID,
     UNIT_ERE,
     UNIT_EUR_PER_KWH,
     UNIT_KWH,
     UNIT_W,
 )
 from .coordinator import HeliosEngine
-from .models import DeviceConfig
+from .grid import GridSnapshot
+from .models import DeviceConfig, GridConfig
 from .prices import PriceSeries
 
 _LOGGER = logging.getLogger(__name__)
@@ -264,6 +269,118 @@ DEVICE_SENSORS: tuple[HeliosDeviceSensorDescription, ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class HeliosGridSensorDescription(SensorEntityDescription):
+    """Describes a grid connection sensor."""
+
+    value_fn: Callable[[GridSnapshot], StateType]
+
+
+GRID_SENSORS: tuple[HeliosGridSensorDescription, ...] = (
+    HeliosGridSensorDescription(
+        key="grid_import_energy",
+        translation_key="grid_import_energy",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UNIT_KWH,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        icon="mdi:transmission-tower-import",
+        value_fn=lambda snapshot: snapshot.imported_kwh,
+    ),
+    HeliosGridSensorDescription(
+        key="grid_export_energy",
+        translation_key="grid_export_energy",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UNIT_KWH,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        icon="mdi:transmission-tower-export",
+        value_fn=lambda snapshot: snapshot.exported_kwh,
+    ),
+    HeliosGridSensorDescription(
+        key="grid_import_cost",
+        translation_key="grid_import_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=CURRENCY,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        icon="mdi:cash-minus",
+        value_fn=lambda snapshot: snapshot.imported_cost,
+    ),
+    HeliosGridSensorDescription(
+        key="grid_export_credit",
+        translation_key="grid_export_credit",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=CURRENCY,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        icon="mdi:cash-plus",
+        value_fn=lambda snapshot: snapshot.export_credit,
+    ),
+    HeliosGridSensorDescription(
+        key="grid_fixed_cost",
+        translation_key="grid_fixed_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=CURRENCY,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        icon="mdi:receipt-text-outline",
+        value_fn=lambda snapshot: snapshot.fixed_cost,
+    ),
+    HeliosGridSensorDescription(
+        key="grid_cost",
+        translation_key="grid_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=CURRENCY,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        icon="mdi:transmission-tower",
+        value_fn=lambda snapshot: snapshot.total_cost,
+    ),
+    HeliosGridSensorDescription(
+        key="grid_export_price",
+        translation_key="grid_export_price",
+        native_unit_of_measurement=UNIT_EUR_PER_KWH,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=PRICE_PRECISION,
+        icon="mdi:cash-refund",
+        value_fn=lambda snapshot: snapshot.export_price,
+    ),
+    HeliosGridSensorDescription(
+        key="grid_import_power",
+        translation_key="grid_import_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UNIT_W,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        icon="mdi:flash",
+        value_fn=lambda snapshot: snapshot.import_power,
+    ),
+    HeliosGridSensorDescription(
+        key="grid_export_power",
+        translation_key="grid_export_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UNIT_W,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        icon="mdi:flash-outline",
+        value_fn=lambda snapshot: snapshot.export_power,
+    ),
+)
+
+
+def _grid_descriptions_for(config: GridConfig) -> list[HeliosGridSensorDescription]:
+    """Return the grid sensors that apply to this connection."""
+    descriptions: list[HeliosGridSensorDescription] = []
+    for description in GRID_SENSORS:
+        if description.key == "grid_import_power" and not config.import_power_entity:
+            continue
+        if description.key == "grid_export_power" and not config.export_power_entity:
+            continue
+        descriptions.append(description)
+    return descriptions
+
+
 def _descriptions_for(config: DeviceConfig) -> list[HeliosDeviceSensorDescription]:
     """Return the sensor descriptions that apply to a device."""
     descriptions: list[HeliosDeviceSensorDescription] = []
@@ -362,7 +479,10 @@ class HeliosDeviceSensor(CoordinatorEntity[HeliosEngine], SensorEntity):
     @property
     def _snapshot(self) -> DeviceSnapshot | None:
         """Return the snapshot for this device."""
-        return (self.coordinator.data or {}).get(self._subentry_id)
+        data = self.coordinator.data
+        if data is None:
+            return None
+        return data.devices.get(self._subentry_id)
 
     @property
     def native_value(self) -> StateType:
@@ -406,6 +526,81 @@ class HeliosDeviceSensor(CoordinatorEntity[HeliosEngine], SensorEntity):
         }
 
 
+class HeliosGridSensor(CoordinatorEntity[HeliosEngine], SensorEntity):
+    """A sensor belonging to the grid connection."""
+
+    _attr_has_entity_name = True
+    entity_description: HeliosGridSensorDescription
+
+    def __init__(
+        self,
+        coordinator: HeliosEngine,
+        config: GridConfig,
+        description: HeliosGridSensorDescription,
+    ) -> None:
+        """Initialise the grid sensor."""
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._subentry_id = config.subentry_id
+        self._attr_unique_id = f"{config.subentry_id}_{description.key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, config.subentry_id)},
+            name=config.name,
+            manufacturer=NAME,
+            model=config.model_name,
+        )
+
+    @property
+    def _snapshot(self) -> GridSnapshot | None:
+        """Return the grid snapshot."""
+        data = self.coordinator.data
+        return data.grid if data is not None else None
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the current sensor value."""
+        snapshot = self._snapshot
+        if snapshot is None:
+            return None
+        return self.entity_description.value_fn(snapshot)
+
+    @property
+    def last_reset(self) -> datetime | None:
+        """Return the start of the billing year for the yearly counters.
+
+        Every grid counter restarts on 1 January, so the statistics engine must
+        treat each year as its own cycle.
+        """
+        # Home Assistant only accepts last_reset on totals.
+        if self.entity_description.state_class is not SensorStateClass.TOTAL:
+            return None
+        snapshot = self._snapshot
+        if snapshot is None:
+            return None
+        return datetime(snapshot.year, 1, 1, tzinfo=dt_util.get_default_time_zone())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | float | bool | None] | None:
+        """Expose the saldering state on the total grid cost."""
+        if self.entity_description.key != "grid_cost":
+            return None
+        snapshot = self._snapshot
+        if snapshot is None:
+            return None
+        return {
+            "billing_year": snapshot.year,
+            "saldering_enabled": snapshot.saldering_enabled,
+            "saldering_active": snapshot.saldering_active,
+            "netted_kwh": round(snapshot.netted_kwh, 3),
+            "open_export_kwh": round(snapshot.open_export_kwh, 3),
+            "export_deduction": snapshot.export_deduction,
+            "fixed_monthly": snapshot.fixed_monthly,
+            "unpriced_energy_kwh": round(snapshot.unpriced_kwh, 4),
+            "untracked_gaps": snapshot.untracked_gaps,
+            "rejected_deltas": snapshot.rejected_deltas,
+        }
+
+
 def _async_prune_stale_entities(
     hass: HomeAssistant, entry: HeliosConfigEntry, valid_unique_ids: set[str]
 ) -> None:
@@ -417,6 +612,9 @@ def _async_prune_stale_entities(
     registry = er.async_get(hass)
     for item in list(registry.entities.values()):
         if item.config_entry_id != entry.entry_id:
+            continue
+        if not item.entity_id.startswith(f"{SENSOR_DOMAIN}."):
+            # Other platforms of this integration own their own entities.
             continue
         if item.unique_id in valid_unique_ids:
             continue
@@ -444,6 +642,18 @@ async def async_setup_entry(
         entities = [
             HeliosDeviceSensor(runtime.engine, config, description)
             for description in _descriptions_for(config)
+        ]
+        valid_unique_ids.update(entity.unique_id for entity in entities)
+        async_add_entities(
+            entities,
+            config_subentry_id=subentry.subentry_id,
+        )
+
+    for subentry in entry.get_subentries_of_type(SUBENTRY_TYPE_GRID):
+        grid_config = GridConfig.from_subentry(subentry)
+        entities = [
+            HeliosGridSensor(runtime.engine, grid_config, description)
+            for description in _grid_descriptions_for(grid_config)
         ]
         valid_unique_ids.update(entity.unique_id for entity in entities)
         async_add_entities(

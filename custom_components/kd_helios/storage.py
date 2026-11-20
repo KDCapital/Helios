@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class HeliosStorage:
-    """Store per-device accumulator state for one config entry."""
+    """Store per-device and grid accumulator state for one config entry."""
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
         """Initialise the store for a config entry."""
@@ -28,26 +28,37 @@ class HeliosStorage:
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}"
         )
         self._devices: dict[str, dict[str, Any]] = {}
+        self._grid: dict[str, Any] = {}
 
     async def async_load(self) -> None:
         """Load persisted state, tolerating a missing or corrupt file."""
         data = await self._store.async_load()
         if not isinstance(data, dict):
             self._devices = {}
+            self._grid = {}
             return
+
         devices = data.get("devices")
-        if isinstance(devices, dict):
-            self._devices = {
+        self._devices = (
+            {
                 str(key): dict(value)
                 for key, value in devices.items()
                 if isinstance(value, dict)
             }
-        else:
-            self._devices = {}
+            if isinstance(devices, dict)
+            else {}
+        )
+
+        grid = data.get("grid")
+        self._grid = dict(grid) if isinstance(grid, dict) else {}
 
     def device_state(self, subentry_id: str) -> dict[str, Any]:
         """Return the persisted state for one device, if any."""
         return self._devices.get(subentry_id, {})
+
+    def grid_state(self) -> dict[str, Any]:
+        """Return the persisted state for the grid connection, if any."""
+        return self._grid
 
     def async_set_devices(self, devices: dict[str, dict[str, Any]]) -> None:
         """Replace the stored device state and schedule a debounced write."""
@@ -56,9 +67,16 @@ class HeliosStorage:
         self._devices = devices
         self._store.async_delay_save(self._as_payload, STORAGE_SAVE_DELAY)
 
+    def async_set_grid(self, grid: dict[str, Any]) -> None:
+        """Replace the stored grid state and schedule a debounced write."""
+        if grid == self._grid:
+            return
+        self._grid = grid
+        self._store.async_delay_save(self._as_payload, STORAGE_SAVE_DELAY)
+
     def _as_payload(self) -> dict[str, Any]:
         """Return the payload written to disk."""
-        return {"devices": self._devices}
+        return {"devices": self._devices, "grid": self._grid}
 
     async def async_save(self) -> None:
         """Write state to disk immediately."""

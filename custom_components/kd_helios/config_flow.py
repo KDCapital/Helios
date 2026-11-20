@@ -16,6 +16,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers import selector
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_ENERGY_ENTITY,
@@ -25,6 +26,14 @@ from .const import (
     CONF_ERE_PER_KWH,
     CONF_ERE_PRICE,
     CONF_ERE_PRICE_ENTITY,
+    CONF_EXPORT_DEDUCTION,
+    CONF_EXPORT_DEDUCTION_CONFIRMED,
+    CONF_EXPORT_ENTITY,
+    CONF_EXPORT_POWER_ENTITY,
+    CONF_EXPORT_PRICE_SOURCE,
+    CONF_GRID_FEE_MONTHLY,
+    CONF_IMPORT_ENTITY,
+    CONF_IMPORT_POWER_ENTITY,
     CONF_KIND,
     CONF_NAME,
     CONF_POWER_ENTITY,
@@ -35,6 +44,8 @@ from .const import (
     CONF_REIMBURSEMENT_PERCENT,
     CONF_REIMBURSEMENT_RATE,
     CONF_REIMBURSEMENT_SURCHARGE,
+    CONF_SALDERING,
+    CONF_SUPPLY_COST_MONTHLY,
     DEFAULT_ERE_MODE,
     DEFAULT_MARKET_PRICE_BASIS,
     DEFAULT_PRICE_INTERVAL,
@@ -43,19 +54,25 @@ from .const import (
     DOMAIN,
     MAX_ERE_PER_KWH,
     MAX_ERE_PRICE,
+    MAX_EXPORT_DEDUCTION,
     MAX_FIXED_REIMBURSEMENT_RATE,
+    MAX_MONTHLY_FIXED_COST,
     MAX_REIMBURSEMENT_PERCENT,
     MAX_SURCHARGE,
     PRICE_INTERVALS,
     PROVIDERS,
+    SALDERING_END_DATE,
     SUBENTRY_TYPE_DEVICE,
+    SUBENTRY_TYPE_GRID,
     UNIT_EUR_PER_KWH,
     DeviceKind,
     EreMode,
+    ExportPriceSource,
     MarketPriceBasis,
     ReimbursementMode,
 )
-from .models import as_entity_id, as_float
+from .feedin import FEED_IN_SNAPSHOT_DATE, feed_in_deduction
+from .models import as_bool, as_entity_id, as_float
 from .prices import PriceApiError, UnknownProviderError, async_fetch_provider_prices
 
 PRICE_STEP = 0.001
@@ -232,6 +249,76 @@ def _device_settings_schema() -> vol.Schema:
     )
 
 
+def _monthly_cost_selector() -> selector.NumberSelector:
+    """Return a selector for a monthly amount in euros."""
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=0,
+            max=MAX_MONTHLY_FIXED_COST,
+            step=0.01,
+            mode=selector.NumberSelectorMode.BOX,
+            unit_of_measurement="EUR/month",
+        )
+    )
+
+
+def _default_saldering() -> bool:
+    """Return whether net metering still applies today."""
+    return dt_util.now().date() < SALDERING_END_DATE
+
+
+def _grid_connection_schema() -> vol.Schema:
+    """Schema for the meters feeding the grid connection."""
+    return vol.Schema(
+        {
+            vol.Optional(CONF_IMPORT_ENTITY): _optional_entity(
+                SensorDeviceClass.ENERGY
+            ),
+            vol.Optional(CONF_EXPORT_ENTITY): _optional_entity(
+                SensorDeviceClass.ENERGY
+            ),
+            vol.Optional(CONF_IMPORT_POWER_ENTITY): _optional_entity(
+                SensorDeviceClass.POWER
+            ),
+            vol.Optional(CONF_EXPORT_POWER_ENTITY): _optional_entity(
+                SensorDeviceClass.POWER
+            ),
+            vol.Required(
+                CONF_SALDERING, default=_default_saldering()
+            ): selector.BooleanSelector(),
+        }
+    )
+
+
+def _grid_tariff_schema(suggested: float | None) -> vol.Schema:
+    """Schema for the feed-in deduction and the fixed costs."""
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_EXPORT_DEDUCTION,
+                default=suggested if suggested is not None else 0.0,
+            ): _money_selector(
+                -MAX_EXPORT_DEDUCTION, MAX_EXPORT_DEDUCTION, UNIT_EUR_PER_KWH
+            ),
+            vol.Optional(
+                CONF_EXPORT_DEDUCTION_CONFIRMED, default=False
+            ): selector.BooleanSelector(),
+            vol.Optional(CONF_SUPPLY_COST_MONTHLY): _monthly_cost_selector(),
+            vol.Optional(CONF_GRID_FEE_MONTHLY): _monthly_cost_selector(),
+        }
+    )
+
+
+def _grid_settings_schema(suggested: float | None) -> vol.Schema:
+    """Schema for a grid connection with every field expanded."""
+    return vol.Schema(
+        {
+            **_grid_connection_schema().schema,
+            **_grid_tariff_schema(suggested).schema,
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -288,6 +375,38 @@ def _validate_ere(user_input: Mapping[str, Any]) -> dict[str, str]:
     return errors
 
 
+def _validate_grid_connection(user_input: Mapping[str, Any]) -> dict[str, str]:
+    """Validate the meters of the grid connection."""
+    errors: dict[str, str] = {}
+    import_entity = as_entity_id(user_input.get(CONF_IMPORT_ENTITY))
+    export_entity = as_entity_id(user_input.get(CONF_EXPORT_ENTITY))
+    if import_entity is None:
+        errors[CONF_IMPORT_ENTITY] = "import_required"
+    elif export_entity is not None and import_entity == export_entity:
+        errors[CONF_EXPORT_ENTITY] = "duplicate_source"
+    return errors
+
+
+def _validate_grid_tariff(user_input: Mapping[str, Any]) -> dict[str, str]:
+    """Validate the feed-in deduction and the fixed costs."""
+    errors: dict[str, str] = {}
+    if not as_bool(user_input.get(CONF_EXPORT_DEDUCTION_CONFIRMED)):
+        errors[CONF_EXPORT_DEDUCTION_CONFIRMED] = "confirm_required"
+    for key in (CONF_SUPPLY_COST_MONTHLY, CONF_GRID_FEE_MONTHLY):
+        if user_input.get(key) is None:
+            errors[key] = "fixed_cost_required"
+    return errors
+
+
+def _export_price_source(submitted: Any, suggested: float | None) -> str:
+    """Return where the confirmed feed-in deduction came from."""
+    if suggested is None:
+        return ExportPriceSource.MANUAL.value
+    if abs(as_float(submitted) - suggested) < 1e-9:
+        return ExportPriceSource.EPEXPRIJZEN.value
+    return ExportPriceSource.MANUAL.value
+
+
 def _unique_id(provider: str, interval: str) -> str:
     """Return the config entry unique id for a provider and interval."""
     return f"{provider}_{interval}"
@@ -307,7 +426,10 @@ class HeliosConfigFlow(ConfigFlow, domain=DOMAIN):
         cls, config_entry: ConfigEntry
     ) -> dict[str, type[ConfigSubentryFlow]]:
         """Return the subentry types this integration supports."""
-        return {SUBENTRY_TYPE_DEVICE: DeviceSubentryFlow}
+        return {
+            SUBENTRY_TYPE_DEVICE: DeviceSubentryFlow,
+            SUBENTRY_TYPE_GRID: GridSubentryFlow,
+        }
 
     async def _async_validate(self, provider: str, interval: str) -> dict[str, str]:
         """Fetch prices to prove the provider works."""
@@ -468,4 +590,111 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
                 },
             ),
             errors=errors,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Grid connection subentry flow
+# ---------------------------------------------------------------------------
+class GridSubentryFlow(ConfigSubentryFlow):
+    """Add or edit the grid connection.
+
+    The feed-in deduction is prefilled from the provider dataset of
+    epexprijzen.nl, because their JSON API does not expose it. That dataset can
+    drift, so the user has to confirm or correct the value before it is used:
+    a wrong deduction would silently distort every euro of export revenue.
+    """
+
+    def __init__(self) -> None:
+        """Initialise the flow state."""
+        self._connection: dict[str, Any] = {}
+
+    @staticmethod
+    def _placeholders(provider: str, suggested: float | None) -> dict[str, str]:
+        """Return the text placeholders for the tariff step."""
+        return {
+            "provider": PROVIDERS.get(provider, provider),
+            "suggested": "unknown" if suggested is None else f"{suggested:+.5f}",
+            "snapshot": FEED_IN_SNAPSHOT_DATE,
+        }
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle the meters step."""
+        entry = self._get_entry()
+        if entry.get_subentries_of_type(SUBENTRY_TYPE_GRID):
+            return self.async_abort(reason="single_instance")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_grid_connection(user_input)
+            if not errors:
+                self._connection = dict(user_input)
+                return await self.async_step_tariff()
+
+        return self.async_show_form(
+            step_id="user", data_schema=_grid_connection_schema(), errors=errors
+        )
+
+    async def async_step_tariff(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle the feed-in deduction and fixed costs step."""
+        entry = self._get_entry()
+        provider = entry.data.get(CONF_PROVIDER, "")
+        suggested = feed_in_deduction(provider)
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            errors = _validate_grid_tariff(user_input)
+            if not errors:
+                data = {**self._connection, **user_input}
+                data[CONF_EXPORT_PRICE_SOURCE] = _export_price_source(
+                    user_input.get(CONF_EXPORT_DEDUCTION), suggested
+                )
+                return self.async_create_entry(title="Grid connection", data=data)
+
+        return self.async_show_form(
+            step_id="tariff",
+            data_schema=_grid_tariff_schema(suggested),
+            errors=errors,
+            description_placeholders=self._placeholders(provider, suggested),
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Edit every setting of the grid connection."""
+        entry = self._get_entry()
+        subentry = self._get_reconfigure_subentry()
+        provider = entry.data.get(CONF_PROVIDER, "")
+        suggested = feed_in_deduction(provider)
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = {
+                **_validate_grid_connection(user_input),
+                **_validate_grid_tariff(user_input),
+            }
+            if not errors:
+                data = dict(user_input)
+                data[CONF_EXPORT_PRICE_SOURCE] = _export_price_source(
+                    user_input.get(CONF_EXPORT_DEDUCTION), suggested
+                )
+                return self.async_update_and_abort(entry, subentry, data=data)
+
+        schema = _grid_settings_schema(suggested)
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                schema,
+                {
+                    key: value
+                    for key, value in subentry.data.items()
+                    if key in schema.schema
+                },
+            ),
+            errors=errors,
+            description_placeholders=self._placeholders(provider, suggested),
         )

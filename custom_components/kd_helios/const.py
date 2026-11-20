@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from enum import StrEnum
 from typing import Final
 
@@ -20,6 +20,7 @@ CONF_PRICE_INTERVAL: Final = "price_interval"
 # Subentries
 # ---------------------------------------------------------------------------
 SUBENTRY_TYPE_DEVICE: Final = "device"
+SUBENTRY_TYPE_GRID: Final = "grid"
 
 CONF_NAME: Final = "name"
 CONF_KIND: Final = "kind"
@@ -38,6 +39,18 @@ CONF_ERE_PRICE: Final = "ere_price"
 CONF_ERE_PRICE_ENTITY: Final = "ere_price_entity"
 CONF_ERE_CREDITS_ENTITY: Final = "ere_credits_entity"
 CONF_ERE_KWH_ENTITY: Final = "ere_kwh_entity"
+
+# Grid connection
+CONF_IMPORT_ENTITY: Final = "import_entity"
+CONF_EXPORT_ENTITY: Final = "export_entity"
+CONF_IMPORT_POWER_ENTITY: Final = "import_power_entity"
+CONF_EXPORT_POWER_ENTITY: Final = "export_power_entity"
+CONF_SALDERING: Final = "saldering"
+CONF_EXPORT_DEDUCTION: Final = "export_deduction"
+CONF_EXPORT_DEDUCTION_CONFIRMED: Final = "export_deduction_confirmed"
+CONF_SUPPLY_COST_MONTHLY: Final = "supply_cost_monthly"
+CONF_GRID_FEE_MONTHLY: Final = "grid_fee_monthly"
+CONF_EXPORT_PRICE_SOURCE: Final = "export_price_source"
 
 
 class DeviceKind(StrEnum):
@@ -64,6 +77,15 @@ class MarketPriceBasis(StrEnum):
     ALL_IN = "all_in"
 
 
+class ExportPriceSource(StrEnum):
+    """Where the feed-in deduction came from."""
+
+    #: Suggested from the epexprijzen.nl provider dataset and left unchanged.
+    EPEXPRIJZEN = "epexprijzen"
+    #: Typed or corrected by the user.
+    MANUAL = "manual"
+
+
 class EreMode(StrEnum):
     """How ERE certificate value is determined."""
 
@@ -83,6 +105,12 @@ MAX_SURCHARGE: Final = 5.0
 MAX_ERE_PER_KWH: Final = 100.0
 MAX_ERE_PRICE: Final = 1000.0
 MAX_FIXED_REIMBURSEMENT_RATE: Final = 10.0
+MAX_EXPORT_DEDUCTION: Final = 5.0
+MAX_MONTHLY_FIXED_COST: Final = 500.0
+
+#: Net metering (saldering) ends on this date. From it onwards, export is paid
+#: at the feed-in price instead of being netted against import.
+SALDERING_END_DATE: Final = date(2027, 1, 1)
 
 # ---------------------------------------------------------------------------
 # epexprijzen.nl API

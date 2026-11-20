@@ -29,6 +29,7 @@ charge.
 | **Employer reimbursement** | A fixed amount per kWh, or the dynamic formula `(market price + fixed surcharge) × surcharge percentage`. |
 | **ERE certificates** | A fixed `ERE per kWh × price per ERE`, or the ratio derived from the [Joulo integration](https://github.com/boronz/joulo-hacs-integratie). |
 | **Honest net cost** | `net cost = cost − reimbursement − ERE value`, and it may go negative. |
+| **Grid connection** | Import and export metered at the real tariff, with an annual **saldering** ledger and your fixed monthly costs. |
 | **Survives restarts** | Totals, integration baselines and daily counters are persisted. |
 | **Exact price boundaries** | Energy consumed across a tariff change is split at the boundary, not priced at a single rate. |
 
@@ -126,6 +127,68 @@ trusted after 1 kWh has passed, and the configured fixed ratio is used as a
 fallback until then. Because the ratio is account wide, treating it as per
 device is correct as long as the device *is* the charger those EREs come from.
 
+### 5. Add the grid connection
+
+Devices tell you what *they* cost; the grid connection tells you what you
+actually **pay the energy company**. Add it once, from the same **Add device**
+menu (**Grid connection** / *Netwerkaansluiting*).
+
+| Field | Meaning |
+|---|---|
+| **Import energy entity** | Cumulative kWh taken from the grid. Required. |
+| **Export energy entity** | Cumulative kWh returned. Optional. |
+| **Import / export power entity** | Optional, feeds the live power sensors. |
+| **Net metering (saldering)** | On by default while it is still legal. |
+| **Feed-in deduction** | Deducted from the spot price for exported kWh. Prefilled, and you must confirm it. |
+| **Supply costs / grid operator costs per month** | Your fixed costs. Both are required; enter 0 if you have none. |
+
+Only one connection can exist per installation.
+
+#### Saldering
+
+While net metering applies, exported kWh are **not** paid at the feed-in price:
+they are netted 1:1 against the kWh you import, so an exported kWh is worth the
+*import tariff* of that moment. That is why the toggle exists and why it is on
+by default.
+
+`saldering` legally ends on **1 January 2027**. From that instant the integration
+ignores the toggle and settles export at the feed-in price, whatever the stored
+preference says — `binary_sensor.…_net_metering_active` shows which mode is live
+and carries `saldering_ends_on`.
+
+Netting is capped by what you import: if you export more than you consume in a
+year, the surplus is valued at the feed-in price instead. Both valuations are
+accumulated and mixed by volume, so the year total stays truthful.
+
+#### The feed-in deduction is confirmed, not assumed
+
+epexprijzen.nl publishes feed-in data in the provider dataset of its web
+application but **not** through its JSON API — `/api/v1/providers` only carries
+ids and names, and the price endpoints carry import prices only. So the
+integration ships a dated snapshot of that dataset
+([feedin.py](custom_components/kd_helios/feedin.py)) to *suggest* a value.
+
+Because that snapshot can drift, the flow requires you to confirm the amount,
+and you can always overwrite it. The stored value records whether it came from
+epexprijzen or from you:
+
+| Provider examples | Deduction |
+|---|---|
+| Zonneplan | −€0.02000 (they pay a bonus) |
+| Frank Energie Slim | −€0.01815 |
+| VandeBron | +€0.01361 |
+| Essent | +€0.02528 |
+
+A negative deduction is a bonus on top of the spot price, which is exactly how
+Zonneplan returns its purchase fee.
+
+#### Fixed costs
+
+`supply_cost_monthly` and `grid_fee_monthly` are accrued per second and spread
+over the days of the month, so the yearly total grows smoothly instead of
+jumping on the first of the month. They are **not** prefilled from provider
+data: only you know your contract.
+
 ---
 
 ## Worked example
@@ -180,6 +243,24 @@ A plain cost tracker would have reported €3.82 and missed the entire story.
 | `sensor.<device>_ere_credits` | Metered ERE credits |
 | `sensor.<device>_net_cost` | `cost − reimbursement − ERE value`, when either applies |
 
+### Grid connection (year to date)
+
+| Entity | Description |
+|---|---|
+| `sensor.<grid>_grid_import_energy` | kWh imported this year |
+| `sensor.<grid>_grid_export_energy` | kWh exported this year |
+| `sensor.<grid>_grid_import_cost` | What the imported kWh cost |
+| `sensor.<grid>_grid_export_credit` | What the exported kWh earned back |
+| `sensor.<grid>_fixed_costs` | Accrued supply and grid operator costs |
+| `sensor.<grid>_grid_cost` | `import cost − export credit + fixed costs` |
+| `sensor.<grid>_feed_in_price` | Feed-in price right now |
+| `sensor.<grid>_grid_import_power` / `_grid_export_power` | Live power, when configured |
+| `binary_sensor.<grid>_net_metering_active` | Whether saldering still applies |
+
+The `grid_cost` sensor exposes `billing_year`, `saldering_active`,
+`netted_kwh`, `open_export_kwh`, `export_deduction`, `fixed_monthly` and the
+accounting health counters as attributes.
+
 The `cost` sensor also exposes `source_entity`, `source_available`,
 `unpriced_energy_kwh`, `untracked_gaps` and `rejected_deltas` as attributes, so
 accounting health is visible without adding diagnostic entities.
@@ -224,9 +305,23 @@ Energy that was metered but had no tariff is not thrown away silently: it is
 added to `unpriced_energy_kwh`, which is persisted and exposed on the `cost`
 sensor.
 
-**Persistence.** Totals, the last source reading, the daily counter and the
-Joulo baselines are stored through Home Assistant's storage helper, so a
-restart continues where it left off instead of resetting to zero.
+**Grid connection.** Import and export are two independent counters with their
+own baselines, gap handling and plausibility guards. Imported kWh are priced at
+the all-in tariff; exported kWh are accrued **twice**, once at the import tariff
+(for saldering) and once at the feed-in price (for after 2026). The active mode
+picks the mix:
+
+```text
+ratio  = min(1, imported_kwh / exported_kwh)
+credit = saldered_credit × ratio + feedin_credit × (1 − ratio)
+total  = imported_cost − credit + fixed_cost
+```
+
+The ledger is per calendar year and resets on 1 January.
+
+**Persistence.** Totals, the last source reading, the daily counter, the Joulo
+baselines and the grid ledger are stored through Home Assistant's storage
+helper, so a restart continues where it left off instead of resetting to zero.
 
 ---
 
@@ -246,7 +341,16 @@ restart continues where it left off instead of resetting to zero.
   `unpriced_energy_kwh`).
 - **Exporting devices are not netted.** A power-based device that exports
   (solar, V2G) never produces negative deltas, so its energy total only counts
-  consumption. Use a metered energy entity for those.
+  consumption. Use a metered energy entity for those. The grid connection does
+  handle export, because it has a dedicated export counter.
+- **Saldering prorates by volume.** When a year exports more than it imports,
+  the split between netted and feed-in kWh is an average rather than an exact
+  per-kWh match. It is exact whenever you import more than you export.
+- **The feed-in deduction is a snapshot.** It comes from epexprijzen.nl's
+  provider dataset, not from their API, so it is suggested and confirmed rather
+  than fetched live. Re-check it when your contract changes.
+- **Fixed costs are manual.** They are not read from any source; provider
+  monthly fees are published only in signup flows.
 - **Dynamic contracts only.** Fixed and variable contracts are not modelled in
   this version, and gas is out of scope.
 - **A reload during an API outage** (for example while adding a device) puts the
@@ -260,15 +364,16 @@ restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 94 tests
+.venv/bin/python -m pytest        # 131 tests
 .venv/bin/ruff check custom_components tests
 ```
 
 The test suite covers the tariff math, price normalisation against recorded
 API payloads, the accounting engine (price boundaries, gaps, meter resets and
 source swaps, implausible deltas, reimbursement and ERE), the HTTP client error
-paths, both config flows, periodic price polling, persistence across a reload
-and entity cleanup when a device loses a feature. Coverage is 96%.
+paths, both config flows, periodic price polling, persistence across a reload,
+grid import/export with both saldering modes, the 2027 cut-over, and entity
+cleanup when a device loses a feature. Coverage is 94%.
 
 ---
 
@@ -280,10 +385,13 @@ the heating/energy management platform without a rewrite:
 - `prices.py` — tariff acquisition and a queryable price timeline
 - `tariff.py` — pure money math, no Home Assistant imports
 - `accounting.py` — energy integration and per-device accumulators
+- `grid.py` — grid import/export and the annual saldering ledger
 - `coordinator.py` — orchestration and polling
 - `sensor.py` — presentation only
 
-The pure layers already answer the questions a HEM needs ("what does this kWh
+`sources.py` holds the single interpretation of units and unavailable states
+shared by devices and the grid. The pure layers already answer the questions a
+HEM needs ("what does this kWh
 cost at this instant?", "what did this device cost over this window?"), and the
 accumulators are plain serialisable state, so they can move to a database or an
 external service later — behind the same interface, whether that ends up as a

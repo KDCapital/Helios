@@ -129,6 +129,73 @@
         "ere_price_required": "A fixed ERE price needs a value above zero.",
         "entity_required": "Select the Joulo entity for this field."
       }
+    },
+    "grid": {
+      "entry_type": "Grid connection",
+      "initiate_flow": {
+        "user": "Add grid connection"
+      },
+      "step": {
+        "user": {
+          "title": "Grid connection",
+          "description": "Point KD Helios at your meter so the whole connection is costed, not only the devices you track.\n\nUse the cumulative import and export counters; a P1 meter exposes both. The power entities are optional and only feed the live power sensors.",
+          "data": {
+            "import_entity": "Import energy entity",
+            "export_entity": "Export energy entity",
+            "import_power_entity": "Import power entity",
+            "export_power_entity": "Export power entity",
+            "saldering": "Net metering (saldering)"
+          },
+          "data_description": {
+            "import_entity": "Cumulative kWh taken from the grid.",
+            "export_entity": "Cumulative kWh returned to the grid. Leave empty if you never export.",
+            "import_power_entity": "Optional live power, in W or kW.",
+            "export_power_entity": "Optional live export power, in W or kW.",
+            "saldering": "Net exported kWh against imported kWh within the calendar year, so an exported kWh is worth the import tariff. Turn this off when your contract pays export at the feed-in price. It switches off by itself on 1 January 2027, when saldering ends."
+          }
+        },
+        "tariff": {
+          "title": "Feed-in and fixed costs",
+          "description": "epexprijzen.nl does not publish feed-in data through its API, so the suggested value comes from its own provider dataset, read on {snapshot}.\n\n**{provider}**: a deduction of **{suggested}** EUR/kWh. A negative amount means the provider pays a bonus on top of the spot price.\n\nCheck it against your contract and confirm it. A wrong deduction distorts every euro of export revenue.",
+          "data": {
+            "export_deduction": "Feed-in deduction",
+            "export_deduction_confirmed": "I checked this against my contract",
+            "supply_cost_monthly": "Supply costs per month",
+            "grid_fee_monthly": "Grid operator costs per month"
+          },
+          "data_description": {
+            "export_deduction": "Deducted from the EPEX spot price for every exported kWh, including VAT.",
+            "export_deduction_confirmed": "Required. Tick this after checking the amount.",
+            "supply_cost_monthly": "The fixed monthly fee of your energy contract. Enter 0 if you have none.",
+            "grid_fee_monthly": "The fixed monthly charge of your grid operator. Enter 0 if you have none."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit grid connection",
+          "description": "Change the meters, the feed-in deduction or the fixed costs. The billing year totals are preserved.\n\nConfirm the feed-in deduction again: it decides how every exported kWh is valued.",
+          "data": {
+            "import_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::import_entity%]",
+            "export_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::export_entity%]",
+            "import_power_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::import_power_entity%]",
+            "export_power_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::export_power_entity%]",
+            "saldering": "[%key:component::kd_helios::config_subentries::grid::step::user::data::saldering%]",
+            "export_deduction": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::export_deduction%]",
+            "export_deduction_confirmed": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::export_deduction_confirmed%]",
+            "supply_cost_monthly": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::supply_cost_monthly%]",
+            "grid_fee_monthly": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::grid_fee_monthly%]"
+          }
+        }
+      },
+      "error": {
+        "import_required": "Attach the import energy entity of your meter.",
+        "duplicate_source": "The import and export entity must be different sensors.",
+        "confirm_required": "Confirm the feed-in deduction before continuing.",
+        "fixed_cost_required": "Fill in both monthly amounts. Enter 0 if you have none."
+      },
+      "abort": {
+        "single_instance": "A grid connection is already configured.",
+        "reconfigure_successful": "The grid connection was updated."
+      }
     }
   },
   "entity": {
@@ -177,6 +244,38 @@
       },
       "net_cost": {
         "name": "Net cost"
+      },
+      "grid_import_energy": {
+        "name": "Grid import energy"
+      },
+      "grid_export_energy": {
+        "name": "Grid export energy"
+      },
+      "grid_import_cost": {
+        "name": "Grid import cost"
+      },
+      "grid_export_credit": {
+        "name": "Grid export credit"
+      },
+      "grid_fixed_cost": {
+        "name": "Fixed costs"
+      },
+      "grid_cost": {
+        "name": "Grid cost"
+      },
+      "grid_export_price": {
+        "name": "Feed-in price"
+      },
+      "grid_import_power": {
+        "name": "Grid import power"
+      },
+      "grid_export_power": {
+        "name": "Grid export power"
+      }
+    },
+    "binary_sensor": {
+      "saldering_active": {
+        "name": "Net metering active"
       }
     }
   },

@@ -131,11 +131,15 @@ def test_repair_issues_are_translated() -> None:
 
 def test_every_sensor_has_a_translated_name() -> None:
     """No entity is left showing a raw translation key."""
-    from custom_components.kd_helios.sensor import DEVICE_SENSORS, HUB_SENSORS
+    from custom_components.kd_helios.sensor import (
+        DEVICE_SENSORS,
+        GRID_SENSORS,
+        HUB_SENSORS,
+    )
 
     strings = json.loads((COMPONENT / "strings.json").read_text(encoding="utf-8"))
     names = strings["entity"]["sensor"]
-    for description in (*HUB_SENSORS, *DEVICE_SENSORS):
+    for description in (*HUB_SENSORS, *DEVICE_SENSORS, *GRID_SENSORS):
         key = description.translation_key or description.key
         assert key in names, key
         assert names[key]["name"]

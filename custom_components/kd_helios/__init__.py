@@ -23,13 +23,14 @@ from .const import (
     DOMAIN,
     ISSUE_NO_DEVICES,
     SUBENTRY_TYPE_DEVICE,
+    SUBENTRY_TYPE_GRID,
 )
 from .coordinator import HeliosEngine, PriceCoordinator
 from .storage import HeliosStorage
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
 @dataclass
@@ -96,9 +97,7 @@ def _no_device_issue_id(entry: HeliosConfigEntry) -> str:
     return f"{ISSUE_NO_DEVICES}_{entry.entry_id}"
 
 
-def _async_sync_no_device_issue(
-    hass: HomeAssistant, entry: HeliosConfigEntry
-) -> None:
+def _async_sync_no_device_issue(hass: HomeAssistant, entry: HeliosConfigEntry) -> None:
     """Nudge the user to add a device, since the tariff alone meters nothing.
 
     Devices are config subentries, which are added from the integration page
@@ -106,7 +105,10 @@ def _async_sync_no_device_issue(
     install looks finished but tracks nothing.
     """
     issue_id = _no_device_issue_id(entry)
-    if entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE):
+    tracks_something = entry.get_subentries_of_type(
+        SUBENTRY_TYPE_DEVICE
+    ) or entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)
+    if tracks_something:
         ir.async_delete_issue(hass, DOMAIN, issue_id)
         return
     ir.async_create_issue(
