@@ -273,3 +273,15 @@ def test_panel_registration_is_awaited() -> None:
     source = Path(panel.__file__).read_text(encoding="utf-8")
     assert "await panel_custom.async_register_panel(" in source
     assert "\n    panel_custom.async_register_panel(" not in source
+
+
+async def test_history_command_is_registered(hass) -> None:
+    """The panel's range selector depends on this command existing."""
+    from homeassistant.components import websocket_api
+
+    from custom_components.kd_helios.websocket import async_register_websocket_api
+
+    async_register_websocket_api(hass)
+    handlers = hass.data[websocket_api.DOMAIN]
+    assert "kd_helios/history" in handlers
+    assert "kd_helios/dashboard" in handlers

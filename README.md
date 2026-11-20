@@ -407,6 +407,24 @@ alongside the yearly totals, and devices already tracked their own daily
 energy and cost. That is what the KPI tiles and the device breakdown read, so
 "today" means today and not "since installation".
 
+### Ranges and history
+
+The range selector (**Today / 7D / Month / Year**) drives every number on the
+page: the KPI tiles, the EV card and the device breakdown. It reads Home
+Assistant's **long-term statistics**, which the recorder keeps forever for every
+sensor with a `state_class` — our cumulative `cost`, `energy`, `reimbursement`
+and grid sensors qualify, so no history had to be invented or stored.
+
+`kd_helios/history` resolves the entities per subentry from the registry, asks
+the recorder for the `change` of each statistic over the selected period and
+sums it. The cumulative sensors are used rather than `cost_today`, which resets
+at midnight and so can only ever describe one day.
+
+### Chart hover
+
+Hovering the price chart shows the all-in price of that quarter hour. The axis
+labels descend from the top, because the top of the chart is the highest price.
+
 ### How it is built
 
 Everything comes from one WebSocket command, `kd_helios/dashboard`, built by
@@ -609,7 +627,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 215 tests
+.venv/bin/python -m pytest        # 221 tests
 .venv/bin/ruff check custom_components tests
 ```
 

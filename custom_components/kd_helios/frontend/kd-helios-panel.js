@@ -142,6 +142,19 @@ const STYLE = `
   .muted { color: var(--secondary-text-color); font-size: 12.5px; margin: 8px 0 0; }
   .error { color: var(--error-color); }
   .actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .ranges { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px;
+    background: var(--secondary-background-color); border: 1px solid var(--helios-line); }
+  .ranges button { border: none; background: transparent; padding: 5px 11px; border-radius: 999px; }
+  .ranges button.on { background: var(--helios-accent); color: #fff; }
+  .chartwrap .bands { position: absolute; inset: 0; display: flex; }
+  .chartwrap .bands span { flex: 1; }
+  .tip { position: absolute; pointer-events: none; padding: 7px 10px; border-radius: 9px;
+    background: var(--helios-card); border: 1px solid var(--helios-line); font-size: 11.5px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.35); white-space: nowrap; z-index: 3;
+    font-variant-numeric: tabular-nums; }
+  .tip b { font-weight: 600; }
+  .tip .row { display: flex; gap: 10px; justify-content: space-between; }
+  .tip .muted { margin: 0; font-size: 10.5px; }
 `;
 
 class KdHeliosPanel extends HTMLElement {
@@ -153,6 +166,8 @@ class KdHeliosPanel extends HTMLElement {
     this._started = false;
     this._busy = false;
     this._synced = null;
+    this._range = "today";
+    this._history = null;
   }
 
   set hass(hass) {
@@ -172,11 +187,32 @@ class KdHeliosPanel extends HTMLElement {
     if (!this._hass) return;
     try {
       this._data = await this._hass.callWS({ type: "kd_helios/dashboard" });
+      this._history = await this._loadHistory();
       this._error = null;
       this._synced = new Date();
     } catch (err) {
       this._error = err && err.message ? err.message : String(err);
     }
+    this._render();
+  }
+
+  async _loadHistory() {
+    if (this._range === "today") return null;
+    try {
+      return await this._hass.callWS({
+        type: "kd_helios/history",
+        range: this._range,
+      });
+    } catch (err) {
+      // History is a nicety; the live numbers must still render.
+      return { available: false, error: String(err) };
+    }
+  }
+
+  async _setRange(range) {
+    if (this._range === range) return;
+    this._range = range;
+    this._history = await this._loadHistory();
     this._render();
   }
 
@@ -262,6 +298,22 @@ class KdHeliosPanel extends HTMLElement {
   }
 
   // -- pieces -------------------------------------------------------------
+  _rangeTabs() {
+    const labels = { today: "Today", "7d": "7D", month: "Month", year: "Year" };
+    return Object.entries(labels)
+      .map(
+        ([key, text]) =>
+          `<button data-range="${key}" class="${this._range === key ? "on" : ""}">${text}</button>`
+      )
+      .join("");
+  }
+
+  _rangeLabel() {
+    return { today: "today", "7d": "the last 7 days", month: "this month", year: "this year" }[
+      this._range
+    ];
+  }
+
   _kpi({ icon, label, value, unit, sub, tone }) {
     return `
       <div class="card kpi">
@@ -318,14 +370,19 @@ class KdHeliosPanel extends HTMLElement {
         ? `<div class="now" style="left:${(((now - start) / total) * 100).toFixed(3)}%"></div>`
         : "";
 
+    // Top of the chart is the highest price, so the labels descend.
     const gridlines = [0, 50, 100]
       .map(
         (pct, index) => `
         <div class="gridline" style="top:${pct}%"></div>
         <span class="ylabel" style="top:${pct}%">${this._price(
-          index === 0 ? low + pad : index === 1 ? (low + high) / 2 : high - pad
+          index === 0 ? high - pad : index === 1 ? (low + high) / 2 : low + pad
         )}</span>`
       )
+      .join("");
+
+    const bands = points
+      .map((_point, index) => `<span data-i="${index}"></span>`)
       .join("");
 
     const ticks = [];
@@ -354,6 +411,8 @@ class KdHeliosPanel extends HTMLElement {
         ${gridlines}
         ${overlays}
         ${marker}
+        <div class="bands">${bands}</div>
+        <div class="tip" hidden></div>
       </div>
       <div class="axis">${ticks.join("")}</div>`;
   }
@@ -433,7 +492,7 @@ class KdHeliosPanel extends HTMLElement {
     return `
       <div class="card">
         <div class="head"><div><h2>Device cost breakdown</h2>
-          <p class="sub">Today, per tracked device</p></div></div>
+          <p class="sub">${this._rangeLabel()}, per tracked device</p></div></div>
         <div class="bars">${rows}</div>
       </div>`;
   }
@@ -573,6 +632,38 @@ class KdHeliosPanel extends HTMLElement {
       </div>`;
   }
 
+  _wireChart() {
+    const wrap = this.shadowRoot.querySelector(".chartwrap");
+    if (!wrap || !this._data) return;
+    const points = (this._data.prices && this._data.prices.points) || [];
+    if (!points.length) return;
+    const tip = wrap.querySelector(".tip");
+    const bands = wrap.querySelectorAll(".bands span");
+
+    const show = (index, event) => {
+      const point = points[index];
+      if (!point) return;
+      const price = this._money(point.price, 3);
+      tip.innerHTML = `
+        <div><b>${this._time(point.t)}</b></div>
+        <div class="row"><span>All-in</span><b>${price}</b></div>`;
+      tip.hidden = false;
+      const box = wrap.getBoundingClientRect();
+      const left = Math.min(Math.max(event.clientX - box.left + 12, 4), box.width - 120);
+      tip.style.left = `${left}px`;
+      tip.style.top = `${Math.max(4, event.clientY - box.top - 46)}px`;
+    };
+
+    bands.forEach((band) => {
+      band.addEventListener("mousemove", (event) =>
+        show(Number(band.dataset.i), event)
+      );
+      band.addEventListener("mouseleave", () => {
+        tip.hidden = true;
+      });
+    });
+  }
+
   _render() {
     if (!this.shadowRoot) return;
     if (!this._data) {
@@ -589,8 +680,46 @@ class KdHeliosPanel extends HTMLElement {
     }
 
     const { entry, prices, grid, battery, devices, summary } = this._data;
-    const ev = devices.filter((device) => device.kind === "ev_charger");
-    const others = devices.filter((device) => device.kind !== "ev_charger");
+    const history = this._history && this._history.available ? this._history : null;
+
+    // With a range selected, every number comes from the statistics of that
+    // range; without one, from the live daily counters.
+    const view = history
+      ? history.devices.map((row) => {
+          const live = devices.find((item) => item.name === row.name);
+          return {
+            name: row.name,
+            kind: live ? live.kind : "device",
+            cost: row.cost,
+            energy: row.energy_kwh,
+            power: live ? live.power : null,
+            cost_today: row.cost,
+            energy_kwh_today: row.energy_kwh,
+          };
+        })
+      : devices;
+
+    const ev = view.filter((device) => device.kind === "ev_charger");
+    const others = view.filter((device) => device.kind !== "ev_charger");
+    const gridCost = history
+      ? history.grid
+        ? history.grid.cost
+        : null
+      : summary.grid_cost_today;
+    const gridIn = history
+      ? history.grid
+        ? history.grid.import_kwh
+        : null
+      : summary.grid_import_today;
+    const gridOut = history
+      ? history.grid
+        ? history.grid.export_kwh
+        : null
+      : summary.grid_export_today;
+    const gridBalance = gridIn === null || gridOut === null ? null : gridIn - gridOut;
+    const devicesCost = history
+      ? view.reduce((total, device) => total + (device.cost || 0), 0)
+      : summary.devices_cost_today;
     const windows = battery && battery.plan ? battery.plan.windows : [];
     const user = this._hass && this._hass.user ? this._hass.user.name : entry.title;
     const control = battery
@@ -603,11 +732,12 @@ class KdHeliosPanel extends HTMLElement {
       this._kpi({
         icon: "⚡",
         label: "Net electricity cost",
-        value: this._money(summary.grid_cost_today),
-        sub:
-          summary.grid_cost_year !== null
-            ? `Year to date ${this._money(summary.grid_cost_year)}`
-            : "No grid connection",
+        value: this._money(gridCost),
+        sub: history
+          ? `${this._rangeLabel()}`
+          : summary.grid_cost_year !== null
+          ? `Year to date ${this._money(summary.grid_cost_year)}`
+          : "No grid connection",
         tone: "",
       }),
       this._kpi({
@@ -630,17 +760,21 @@ class KdHeliosPanel extends HTMLElement {
         icon: "🔌",
         label: "EV charging balance",
         value: this._money(summary.ev_balance),
-        sub: summary.ev_reimbursed !== null ? `${this._money(summary.ev_reimbursed)} reimbursed` : "No EV charger",
+        sub: history
+          ? `${this._rangeLabel()} · live balance ${this._money(summary.ev_balance)}`
+          : summary.ev_reimbursed !== null
+          ? `${this._money(summary.ev_reimbursed)} reimbursed`
+          : "No EV charger",
         tone: summary.ev_balance >= 0 ? "good" : "",
       }),
       this._kpi({
         icon: "🏠",
         label: "Net grid balance",
-        value: this._number(summary.grid_balance_today, 1),
+        value: this._number(gridBalance, 1),
         unit: "kWh",
         sub:
-          summary.grid_import_today !== null
-            ? `${this._number(summary.grid_import_today, 1)} in · ${this._number(summary.grid_export_today, 1)} out`
+          gridIn !== null
+            ? `${this._number(gridIn, 1)} in · ${this._number(gridOut, 1)} out`
             : "No grid connection",
         tone: "",
       }),
@@ -657,6 +791,7 @@ class KdHeliosPanel extends HTMLElement {
           <span class="chip"><span class="dot"></span>Live tariff ${this._money(prices.current, 3)}/kWh</span>
           ${control}
           ${this._error ? `<span class="chip warn"><span class="dot"></span>${this._esc(this._error)}</span>` : ""}
+          <div class="ranges">${this._rangeTabs()}</div>
           <button id="refresh">Refresh</button>
         </div>
 
@@ -700,9 +835,14 @@ class KdHeliosPanel extends HTMLElement {
 
         <div class="cols two">
           ${this._gridCard(grid)}
-          ${this._kpi({ icon: "🧾", label: "Devices today", value: this._money(summary.devices_cost_today), sub: `${devices.length} tracked device${devices.length === 1 ? "" : "s"}` })}
+          ${this._kpi({ icon: "🧾", label: history ? "Devices in range" : "Devices today", value: this._money(devicesCost), sub: `${devices.length} tracked device${devices.length === 1 ? "" : "s"}` })}
         </div>
       </div>`;
+
+    this.shadowRoot.querySelectorAll("[data-range]").forEach((button) => {
+      button.addEventListener("click", () => this._setRange(button.dataset.range));
+    });
+    this._wireChart();
 
     const apply = this.shadowRoot.getElementById("apply");
     if (apply) apply.addEventListener("click", () => this._apply());

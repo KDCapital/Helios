@@ -17,6 +17,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
+from .history import RANGES, async_history
 
 #: How much of the price timeline the panel draws.
 CHART_HOURS_AHEAD = 24
@@ -286,6 +287,27 @@ def build_dashboard(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): f"{DOMAIN}/history",
+        vol.Optional("entry_id"): str,
+        vol.Optional("range", default="7d"): vol.In(list(RANGES)),
+    }
+)
+@websocket_api.async_response
+async def websocket_history(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return historical costs from Home Assistant's long-term statistics."""
+    entry = _loaded_entry(hass, msg.get("entry_id"))
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "No KD Helios entry is loaded")
+        return
+    connection.send_result(msg["id"], await async_history(hass, entry, msg["range"]))
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): f"{DOMAIN}/dashboard",
         vol.Optional("entry_id"): str,
     }
@@ -307,3 +329,4 @@ async def websocket_dashboard(
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register the panel's WebSocket commands."""
     websocket_api.async_register_command(hass, websocket_dashboard)
+    websocket_api.async_register_command(hass, websocket_history)

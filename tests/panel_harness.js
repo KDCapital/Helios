@@ -13,6 +13,9 @@ global.HTMLElement = class {
       innerHTML: "",
       // A stand-in element so the event wiring runs too.
       getElementById: () => ({ addEventListener: () => {} }),
+      // The render wires the range tabs and the chart hover; both are no-ops here.
+      querySelector: () => null,
+      querySelectorAll: () => [],
     };
     return this.shadowRoot;
   }
