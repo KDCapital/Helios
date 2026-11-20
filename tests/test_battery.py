@@ -283,3 +283,43 @@ def test_applied_plan_ignores_empty_state() -> None:
     assert AppliedPlan.from_dict(None) is None
     assert AppliedPlan.from_dict({}) is None
     assert AppliedPlan.from_dict({"applied_at": "not a date"}) is None
+
+
+def test_the_charging_slot_is_what_decides_a_rewrite() -> None:
+    """An idle slot earlier in the day must not look like a changed target.
+
+    Slots are sorted by time of day, so the first program is usually an idle
+    one at the reserve SOC. Comparing that to the target would rewrite the
+    inverter on every tick.
+    """
+    from custom_components.kd_helios.battery import AppliedPlan, should_apply
+
+    plan = plan_charge(make_prices(NOON, DAY), SETTINGS, NOON, soc_pct=20.0)
+    tou = build_tou_programs(plan, SETTINGS, NOON)
+    # Put an idle slot first, as the real ordering does.
+    programs = tuple(sorted(tou.programs, key=lambda program: program.start_minute))
+    applied = AppliedPlan.from_plan(
+        plan, build_tou_programs(plan, SETTINGS, NOON), NOON
+    )
+    applied = AppliedPlan(
+        applied_at=applied.applied_at,
+        soc_pct=applied.soc_pct,
+        energy_kwh=applied.energy_kwh,
+        cost=applied.cost,
+        expected_saving=applied.expected_saving,
+        truncated=False,
+        programs=programs,
+        windows=applied.windows,
+    )
+
+    assert not should_apply(plan, applied, SETTINGS)
+
+    stricter = BatterySettings(
+        capacity_kwh=SETTINGS.capacity_kwh,
+        max_charge_kw=SETTINGS.max_charge_kw,
+        reserve_soc_pct=SETTINGS.reserve_soc_pct,
+        target_soc_pct=80.0,
+        efficiency_pct=SETTINGS.efficiency_pct,
+        horizon_hours=SETTINGS.horizon_hours,
+    )
+    assert should_apply(plan, applied, stricter)

@@ -13,7 +13,6 @@ Solarman's Deye definition does not expose the time-of-use block as entities.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 import voluptuous as vol
@@ -29,6 +28,7 @@ from homeassistant.util import dt as dt_util
 
 from .battery import AppliedPlan
 from .const import DOMAIN, SERVICE_APPLY_TOU, SOLARMAN_WRITE_SERVICE
+from .inverter import async_write_tou
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,25 +97,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
             engine.battery_plan, engine.tou_plan, dt_util.utcnow()
         )
         registers = applied and engine.tou_plan.registers()
-        for index, (register, values) in enumerate(registers.items()):
-            if index:
-                await asyncio.sleep(WRITE_PAUSE)
-            await hass.services.async_call(
-                "solarman",
-                SOLARMAN_WRITE_SERVICE,
-                {
-                    "device": config.inverter_device_id,
-                    "register": register,
-                    "values": values,
-                },
-                blocking=True,
-            )
-            _LOGGER.info(
-                "Wrote time-of-use registers %s..%s with %s",
-                register,
-                register + len(values) - 1,
-                values,
-            )
+        await async_write_tou(hass, config.inverter_device_id, engine.tou_plan)
 
         # Remember what is actually programmed, so the saving it was expected to
         # deliver stays visible instead of being overwritten by the next tick.

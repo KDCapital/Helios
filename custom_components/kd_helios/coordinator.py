@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -15,8 +16,11 @@ from .battery import (
     AppliedPlan,
     ChargePlan,
     TouPlan,
+    WorkMode,
+    build_restore_programs,
     build_tou_programs,
     plan_charge,
+    should_apply,
 )
 from .const import (
     ACCOUNTING_UPDATE_INTERVAL,
@@ -26,6 +30,7 @@ from .const import (
     SUBENTRY_TYPE_GRID,
 )
 from .grid import GridSnapshot, GridTracker
+from .inverter import async_write_tou
 from .models import BatteryConfig, DeviceConfig, GridConfig, device_subentries
 from .prices import (
     PriceApiError,
@@ -147,6 +152,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             if self.battery_config is not None
             else None
         )
+        self.control_enabled: bool = bool(storage.control_state().get("enabled", False))
+        self.last_control_error: str | None = None
+        self._last_apply: datetime | None = None
 
         grid_subentries = entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)
         self.grid_tracker: GridTracker | None = (
@@ -158,6 +166,86 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             if grid_subentries
             else None
         )
+
+    # -- inverter control ---------------------------------------------------
+    def _persist_control(self) -> None:
+        """Store the control state."""
+        self.storage.async_set_control({"enabled": self.control_enabled})
+
+    async def async_set_control(self, enabled: bool) -> None:
+        """Take or release control of the inverter.
+
+        Taking control writes the current plan. Releasing it never leaves grid
+        charging behind: the programs are rewritten so only the generator may
+        charge, and the work mode goes back to self-consumption.
+        """
+        config = self.battery_config
+        if config is None or config.inverter_device_id is None:
+            raise ValueError("No inverter is configured for this battery")
+        if not config.allow_writes:
+            raise ValueError(
+                "Writing to the inverter is disabled in the battery settings"
+            )
+
+        device_id = config.inverter_device_id
+        if enabled:
+            if self.battery_plan is None or self.tou_plan is None:
+                raise ValueError("There is no charge plan to write yet")
+            await async_write_tou(self.hass, device_id, self.tou_plan)
+            self.applied_plan = AppliedPlan.from_plan(
+                self.battery_plan, self.tou_plan, dt_util.utcnow()
+            )
+            self._last_apply = dt_util.utcnow()
+            self.storage.async_set_battery(self.applied_plan.as_dict())
+        else:
+            restore = build_restore_programs(config.settings)
+            await async_write_tou(
+                self.hass,
+                device_id,
+                restore,
+                work_mode=WorkMode(config.restore_work_mode),
+            )
+            self.applied_plan = None
+            self.storage.async_set_battery({})
+
+        self.control_enabled = enabled
+        self._persist_control()
+        await self.storage.async_save()
+        self.async_set_updated_data(self.data)
+        _LOGGER.info("Inverter control %s", "enabled" if enabled else "released")
+
+    async def _async_sync_inverter(self, now: datetime) -> None:
+        """Apply the plan when it changed enough to matter."""
+        config = self.battery_config
+        plan = self.battery_plan
+        tou = self.tou_plan
+        if (
+            config is None
+            or plan is None
+            or tou is None
+            or not self.control_enabled
+            or not config.allow_writes
+            or config.inverter_device_id is None
+        ):
+            return
+        if not should_apply(
+            plan,
+            self.applied_plan,
+            config.settings,
+            last_apply=self._last_apply,
+            now=now,
+        ):
+            return
+        try:
+            await async_write_tou(self.hass, config.inverter_device_id, tou)
+        except Exception as err:  # noqa: BLE001 - never break accounting
+            self.last_control_error = str(err)
+            _LOGGER.error("Could not write the time-of-use programs: %s", err)
+            return
+        self.last_control_error = None
+        self._last_apply = now
+        self.applied_plan = AppliedPlan.from_plan(plan, tou, now)
+        self.storage.async_set_battery(self.applied_plan.as_dict())
 
     @callback
     def async_prices_updated(self) -> None:
@@ -211,5 +299,6 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             self.tou_plan = build_tou_programs(
                 battery_plan, self.battery_config.settings, now
             )
+            await self._async_sync_inverter(now)
 
         return EngineData(devices=snapshots, grid=grid_snapshot, battery=battery_plan)

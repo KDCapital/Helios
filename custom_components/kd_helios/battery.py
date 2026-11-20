@@ -41,6 +41,19 @@ TOU_REGISTERS: dict[str, int] = {
 #: Number of time-of-use slots in the inverter.
 TOU_SLOTS = 6
 
+#: Holding register of the inverter's work mode.
+WORK_MODE_REGISTER = 142
+
+#: Start times of the six slots used when releasing control: they only ever
+#: charge from the generator, so the grid is never used behind your back.
+RESTORE_SLOT_MINUTES = (0, 240, 480, 720, 960, 1200)
+
+#: At most one automatic write per this interval, to spare the Modbus link.
+AUTO_APPLY_MIN_INTERVAL = timedelta(minutes=10)
+
+#: A drifting charge start smaller than this is not worth rewriting for.
+AUTO_APPLY_TOLERANCE = timedelta(minutes=5)
+
 #: A slot cannot be shorter than this; minute resolution matches the HHMM field.
 MIN_SLOT = timedelta(minutes=1)
 
@@ -52,6 +65,14 @@ class ChargeSource(IntEnum):
     GRID = 1
     GENERATOR = 2
     GRID_AND_GENERATOR = 3
+
+
+class WorkMode(IntEnum):
+    """Work modes the inverter accepts."""
+
+    SELLING_FIRST = 0
+    ZERO_EXPORT_TO_LOAD = 1
+    ZERO_EXPORT_TO_CT = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -538,3 +559,72 @@ def _largest_free_minute(slots: dict[int, TouProgram]) -> int:
         if candidate not in slots:
             return candidate
     return 0
+
+
+def build_restore_programs(
+    settings: BatterySettings,
+    *,
+    charge_source: ChargeSource = ChargeSource.GENERATOR,
+    soc_pct: int = 100,
+) -> TouPlan:
+    """Return the programs written when control is released.
+
+    Grid charging is never allowed here: every slot only accepts the generator
+    as its source, so releasing control cannot silently keep buying power. The
+    work mode written alongside puts the inverter back into self-consumption.
+    """
+    power_w = max(0, round(settings.max_charge_kw * 1000))
+    programs = tuple(
+        TouProgram(minute, power_w, soc_pct, charge_source)
+        for minute in RESTORE_SLOT_MINUTES
+    )
+    return TouPlan(programs=programs, truncated=False)
+
+
+def should_apply(
+    plan: ChargePlan,
+    applied: AppliedPlan | None,
+    settings: BatterySettings,
+    *,
+    last_apply: datetime | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """Return True when the proposal is worth writing to the inverter.
+
+    Rewriting on every tick would hammer the Modbus link: the plan's energy
+    changes while the battery charges, so the window end moves constantly. The
+    decision therefore looks only at what matters for the schedule -- whether
+    there is a charge window at all, when the next one starts, and the target
+    state of charge.
+    """
+    if applied is None:
+        return True
+
+    if (
+        now is not None
+        and last_apply is not None
+        and now - last_apply < AUTO_APPLY_MIN_INTERVAL
+    ):
+        return False
+
+    if not plan.has_windows:
+        # Nothing to buy any more: the idle program has to replace the one that
+        # is in force, otherwise the old window would still grid-charge.
+        return bool(applied.windows)
+
+    if not applied.windows:
+        return True
+
+    if abs(plan.windows[0].start - applied.windows[0].start) > AUTO_APPLY_TOLERANCE:
+        return True
+
+    target = round(settings.target_soc_pct)
+    # Compare against the slot that actually charges, not the first slot of the
+    # day: slots sorted by time-of-day usually start with an idle one at the
+    # reserve SOC, which would look like a change on every tick.
+    charging = [
+        program for program in applied.programs if program.source is ChargeSource.GRID
+    ]
+    if not charging:
+        return True
+    return charging[0].soc_pct != target

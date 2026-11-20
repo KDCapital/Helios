@@ -30,6 +30,7 @@ class HeliosStorage:
         self._devices: dict[str, dict[str, Any]] = {}
         self._grid: dict[str, Any] = {}
         self._battery: dict[str, Any] = {}
+        self._control: dict[str, Any] = {}
 
     async def async_load(self) -> None:
         """Load persisted state, tolerating a missing or corrupt file."""
@@ -38,6 +39,7 @@ class HeliosStorage:
             self._devices = {}
             self._grid = {}
             self._battery = {}
+            self._control = {}
             return
 
         devices = data.get("devices")
@@ -57,6 +59,9 @@ class HeliosStorage:
         battery = data.get("battery")
         self._battery = dict(battery) if isinstance(battery, dict) else {}
 
+        control = data.get("battery_control")
+        self._control = dict(control) if isinstance(control, dict) else {}
+
     def device_state(self, subentry_id: str) -> dict[str, Any]:
         """Return the persisted state for one device, if any."""
         return self._devices.get(subentry_id, {})
@@ -74,6 +79,17 @@ class HeliosStorage:
         if battery == self._battery:
             return
         self._battery = battery
+        self._store.async_delay_save(self._as_payload, STORAGE_SAVE_DELAY)
+
+    def control_state(self) -> dict[str, Any]:
+        """Return the persisted inverter control state."""
+        return self._control
+
+    def async_set_control(self, control: dict[str, Any]) -> None:
+        """Replace the stored control state and schedule a debounced write."""
+        if control == self._control:
+            return
+        self._control = control
         self._store.async_delay_save(self._as_payload, STORAGE_SAVE_DELAY)
 
     def async_set_devices(self, devices: dict[str, dict[str, Any]]) -> None:
@@ -96,6 +112,7 @@ class HeliosStorage:
             "devices": self._devices,
             "grid": self._grid,
             "battery": self._battery,
+            "battery_control": self._control,
         }
 
     async def async_save(self) -> None:

@@ -19,6 +19,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
+from .battery import WorkMode
 from .const import (
     CONF_ALLOW_INVERTER_WRITES,
     CONF_BATTERY_CAPACITY_KWH,
@@ -55,6 +56,7 @@ from .const import (
     CONF_REIMBURSEMENT_RATE,
     CONF_REIMBURSEMENT_SURCHARGE,
     CONF_RESERVE_SOC,
+    CONF_RESTORE_WORK_MODE,
     CONF_SALDERING,
     CONF_SOC_ENTITY,
     CONF_SUPPLY_COST_MONTHLY,
@@ -423,6 +425,16 @@ def _battery_schema() -> vol.Schema:
             vol.Required(
                 CONF_ALLOW_INVERTER_WRITES, default=False
             ): selector.BooleanSelector(),
+            vol.Required(
+                CONF_RESTORE_WORK_MODE,
+                default=str(WorkMode.ZERO_EXPORT_TO_LOAD.value),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[str(mode.value) for mode in WorkMode],
+                    mode=selector.SelectSelectorMode.LIST,
+                    translation_key="work_mode",
+                )
+            ),
         }
     )
 

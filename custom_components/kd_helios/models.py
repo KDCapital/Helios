@@ -43,6 +43,7 @@ from .const import (
     CONF_REIMBURSEMENT_RATE,
     CONF_REIMBURSEMENT_SURCHARGE,
     CONF_RESERVE_SOC,
+    CONF_RESTORE_WORK_MODE,
     CONF_SALDERING,
     CONF_SOC_ENTITY,
     CONF_SUPPLY_COST_MONTHLY,
@@ -359,6 +360,8 @@ class BatteryConfig:
     horizon_hours: int = 36
     inverter_device_id: str | None = None
     allow_writes: bool = False
+    #: Work mode written when control is released, back to self-consumption.
+    restore_work_mode: int = 1
 
     @property
     def model_name(self) -> str:
@@ -393,6 +396,7 @@ class BatteryConfig:
             horizon_hours=int(as_float(data.get(CONF_BATTERY_HORIZON_HOURS), 36.0)),
             inverter_device_id=as_entity_id(data.get(CONF_INVERTER_DEVICE)),
             allow_writes=as_bool(data.get(CONF_ALLOW_INVERTER_WRITES)),
+            restore_work_mode=int(as_float(data.get(CONF_RESTORE_WORK_MODE), 1.0)),
         )
 
 

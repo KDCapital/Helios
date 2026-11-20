@@ -59,6 +59,8 @@ def _battery_payload(runtime: Any, now: Any) -> dict[str, Any] | None:
         "horizon_hours": config.horizon_hours,
         "allow_writes": config.allow_writes,
         "has_inverter": config.inverter_device_id is not None,
+        "control_enabled": runtime.engine.control_enabled,
+        "restore_work_mode": config.restore_work_mode,
         "plan": None,
         "applied": None,
     }

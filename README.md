@@ -312,6 +312,29 @@ A charging slot starts at the window start with source **grid** and the target
 SOC. It is followed by an idle slot at the window's end with the reserve SOC,
 which is what lets the battery discharge into the expensive hours.
 
+#### Automatic control, and releasing it safely
+
+`switch.<battery>_inverter_control` is the runtime toggle. Turn it on and KD
+Helios writes the current plan immediately and keeps it in sync from then on;
+turn it off and it hands the inverter back.
+
+Two things make the automatic mode safe:
+
+- **It only rewrites when the schedule actually changed** — when the next charge
+  window moves by more than five minutes, when the target SOC changes, or when
+  there is suddenly nothing worth buying. It never rewrites because the window's
+  *end* drifted while the battery charged, and never more than once every ten
+  minutes, so the Modbus link is not hammered.
+- **Releasing control never leaves grid charging behind.** All six slots are
+  rewritten with the **generator** as their only source, so the inverter cannot
+  silently keep buying power, and the work mode is written back to
+  self-consumption. Which work mode that is, is a setting: *Selling first*,
+  *Zero export to load* (default) or *Zero export to CT*.
+
+The switch is only available when writes were enabled in the battery settings
+and an inverter device is selected — the config permission is the master gate,
+the switch is the runtime one.
+
 #### Why writing needs two confirmations
 
 Solarman is the right tool for *reading* this inverter, but two limits matter:
@@ -444,6 +467,7 @@ A plain cost tracker would have reported €3.82 and missed the entire story.
 | `sensor.<battery>_planned_saving` | Expected profit of the proposal, in euros |
 | `sensor.<battery>_applied_saving` | Expected profit of the plan actually written, with its windows and programs |
 | `sensor.<battery>_next_charge_start` | When the next planned window begins |
+| `switch.<battery>_inverter_control` | Enables or disables automatic control; releasing restores self-consumption and generator-only charging |
 
 The `grid_cost` sensor exposes `billing_year`, `saldering_active`,
 `netted_kwh`, `open_export_kwh`, `export_deduction`, `fixed_monthly` and the
@@ -539,6 +563,10 @@ helper, so a restart continues where it left off instead of resetting to zero.
   than fetched live. Re-check it when your contract changes.
 - **Fixed costs are manual.** They are not read from any source; provider
   monthly fees are published only in signup flows.
+- **Automatic control is coarse by design.** It reacts to the charge window
+  moving, not to every price tick, and it waits ten minutes between writes. A
+  plan that changes only in energy (the window shrinking as the battery fills)
+  is deliberately not rewritten.
 - **Dynamic contracts only.** Fixed and variable contracts are not modelled in
   this version, and gas is out of scope.
 - **A reload during an API outage** (for example while adding a device) puts the
@@ -552,7 +580,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 203 tests
+.venv/bin/python -m pytest        # 212 tests
 .venv/bin/ruff check custom_components tests
 ```
 
@@ -570,7 +598,9 @@ register payload written to the inverter, plus that the applied plan and its
 predicted saving survive a restart. The panel payload is covered by rendering
 `build_dashboard()` directly, which is the same data the browser receives. There
 is also a test that a device-typed entry created before the split keeps its
-reimbursement when edited through the short form. Coverage is 95%.
+reimbursement when edited through the short form, and that automatic control
+writes once per real change, never on every tick, and that releasing it writes
+generator-only slots plus the configured work mode. Coverage is 94%.
 
 ---
 

@@ -18,6 +18,17 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 
 
 @pytest.fixture(autouse=True)
+def fast_inverter_writes(monkeypatch):
+    """Drop the pause between register writes.
+
+    The pause protects the inverter's Modbus link in production; in tests it
+    would only make every write slow, and it deadlocks under a frozen clock
+    because asyncio.sleep would never come back.
+    """
+    monkeypatch.setattr("custom_components.kd_helios.inverter.WRITE_PAUSE", 0)
+
+
+@pytest.fixture(autouse=True)
 def patch_price_api():
     """Serve the recorded epexprijzen.nl payloads instead of the network."""
     provider = load_fixture("provider_zonneplan_quarterly.json")

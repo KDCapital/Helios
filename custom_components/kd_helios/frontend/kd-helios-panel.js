@@ -303,6 +303,7 @@ class KdHeliosPanel extends HTMLElement {
           reserve ${battery.reserve_soc_pct}% · target ${battery.target_soc_pct}% ·
           efficiency ${battery.efficiency_pct}%
           ${applied ? `· applied ${this._time(applied.applied_at, true)}` : "· nothing applied yet"}
+          · automatic control <b>${battery.control_enabled ? "on" : "off"}</b>
         </p>
         <table>
           <thead><tr><th>Window start</th><th>End</th><th class="num">Energy</th>

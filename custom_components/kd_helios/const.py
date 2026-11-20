@@ -67,6 +67,7 @@ CONF_EFFICIENCY: Final = "efficiency"
 CONF_BATTERY_HORIZON_HOURS: Final = "battery_horizon_hours"
 CONF_INVERTER_DEVICE: Final = "inverter_device"
 CONF_ALLOW_INVERTER_WRITES: Final = "allow_inverter_writes"
+CONF_RESTORE_WORK_MODE: Final = "restore_work_mode"
 
 
 class DeviceKind(StrEnum):
