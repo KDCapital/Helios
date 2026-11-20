@@ -46,7 +46,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         # The path is already registered from an earlier setup attempt.
         _LOGGER.debug("%s is already served", module_url)
 
-    panel_custom.async_register_panel(
+    await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL,
         webcomponent_name=PANEL_COMPONENT,

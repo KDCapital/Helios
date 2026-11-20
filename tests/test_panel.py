@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
@@ -184,14 +186,17 @@ async def test_panel_is_wired_into_the_sidebar(hass, monkeypatch) -> None:
         async def async_register_static_paths(self, configs) -> None:
             calls["static"] = configs
 
-    monkeypatch.setattr(hass, "http", FakeHttp(), raising=False)
-    monkeypatch.setattr(
-        panel.panel_custom,
-        "async_register_panel",
-        lambda hass, **kwargs: calls.setdefault("panel", kwargs),
+    register = AsyncMock(
+        side_effect=lambda hass, **kwargs: calls.setdefault("panel", kwargs)
     )
+    monkeypatch.setattr(hass, "http", FakeHttp(), raising=False)
+    monkeypatch.setattr(panel.panel_custom, "async_register_panel", register)
 
     await panel.async_register_panel(hass)
+
+    # The real function is a coroutine; forgetting to await it is what made the
+    # panel silently never register once already.
+    register.assert_awaited_once()
 
     static = calls["static"]
     assert static[0].url_path == f"/{DOMAIN}/{panel.PANEL_JS}"
@@ -217,7 +222,7 @@ async def test_panel_registration_is_idempotent(hass, monkeypatch) -> None:
     monkeypatch.setattr(
         panel.panel_custom,
         "async_register_panel",
-        lambda hass, **kwargs: calls.append(kwargs),
+        AsyncMock(side_effect=lambda hass, **kwargs: calls.append(kwargs)),
     )
 
     await panel.async_register_panel(hass)
@@ -242,3 +247,16 @@ def test_panel_bundle_asks_before_writing() -> None:
     source = Path(panel.ASSET_DIR / panel.PANEL_JS).read_text(encoding="utf-8")
     assert "confirm: true" in source
     assert "window.confirm" in source
+
+
+def test_panel_registration_is_awaited() -> None:
+    """Guard against calling the coroutine registration without awaiting it.
+
+    Home Assistant's ``panel_custom.async_register_panel`` is a coroutine. An
+    un-awaited call raises no error at the call site: it logs a RuntimeWarning
+    and the panel simply never appears, which is exactly how this broke once.
+    """
+    assert inspect.iscoroutinefunction(panel.panel_custom.async_register_panel)
+    source = Path(panel.__file__).read_text(encoding="utf-8")
+    assert "await panel_custom.async_register_panel(" in source
+    assert "\n    panel_custom.async_register_panel(" not in source
