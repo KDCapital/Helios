@@ -15,6 +15,7 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
@@ -35,6 +36,7 @@ from .const import (
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
     CONF_KIND,
+    CONF_METER_DEVICE,
     CONF_NAME,
     CONF_POWER_ENTITY,
     CONF_PRICE_INTERVAL,
@@ -75,6 +77,7 @@ from .const import (
     ReimbursementMode,
 )
 from .feedin import FEED_IN_SNAPSHOT_DATE, feed_in_deduction
+from .meter import MeterDetection, async_detect_meter_entities
 from .models import as_bool, as_entity_id, as_float
 from .prices import PriceApiError, UnknownProviderError, async_fetch_provider_prices
 
@@ -280,8 +283,38 @@ def _default_saldering() -> bool:
     return dt_util.now().date() < SALDERING_END_DATE
 
 
-def _grid_connection_schema() -> vol.Schema:
-    """Schema for the meters feeding the grid connection."""
+def _meter_device_selector() -> selector.DeviceSelector:
+    """Return a device picker limited to devices that meter energy."""
+    return selector.DeviceSelector(
+        selector.DeviceSelectorConfig(
+            entity=[
+                selector.EntityFilterSelectorConfig(
+                    domain="sensor", device_class=[SensorDeviceClass.ENERGY]
+                )
+            ]
+        )
+    )
+
+
+def _optional_device() -> vol.Any:
+    """Return a device picker that also accepts an empty value."""
+    return vol.Any(None, _meter_device_selector())
+
+
+def _grid_meter_schema() -> vol.Schema:
+    """Schema for picking the meter device and the saldering mode."""
+    return vol.Schema(
+        {
+            vol.Optional(CONF_METER_DEVICE): _optional_device(),
+            vol.Required(
+                CONF_SALDERING, default=_default_saldering()
+            ): selector.BooleanSelector(),
+        }
+    )
+
+
+def _grid_entities_schema() -> vol.Schema:
+    """Schema for the counters feeding the grid connection."""
     return vol.Schema(
         {
             vol.Optional(CONF_IMPORT_ENTITY): _optional_entity(
@@ -296,9 +329,6 @@ def _grid_connection_schema() -> vol.Schema:
             vol.Optional(CONF_EXPORT_POWER_ENTITY): _optional_entity(
                 SensorDeviceClass.POWER
             ),
-            vol.Required(
-                CONF_SALDERING, default=_default_saldering()
-            ): selector.BooleanSelector(),
         }
     )
 
@@ -318,16 +348,6 @@ def _grid_tariff_schema(suggested: float | None) -> vol.Schema:
             ): selector.BooleanSelector(),
             vol.Optional(CONF_SUPPLY_COST_MONTHLY): _monthly_cost_selector(),
             vol.Optional(CONF_GRID_FEE_MONTHLY): _monthly_cost_selector(),
-        }
-    )
-
-
-def _grid_settings_schema(suggested: float | None) -> vol.Schema:
-    """Schema for a grid connection with every field expanded."""
-    return vol.Schema(
-        {
-            **_grid_connection_schema().schema,
-            **_grid_tariff_schema(suggested).schema,
         }
     )
 
@@ -612,16 +632,22 @@ class DeviceSubentryFlow(ConfigSubentryFlow):
 class GridSubentryFlow(ConfigSubentryFlow):
     """Add or edit the grid connection.
 
+    Three steps: pick the meter device, review the counters it detected, then
+    confirm the feed-in deduction and enter the fixed costs.
+
     The feed-in deduction is prefilled from the provider dataset of
     epexprijzen.nl, because their JSON API does not expose it. That dataset can
-    drift, so the user has to confirm or correct the value before it is used:
-    a wrong deduction would silently distort every euro of export revenue.
+    drift, so the user has to confirm or correct the value before it is used: a
+    wrong deduction would silently distort every euro of export revenue.
     """
 
     def __init__(self) -> None:
         """Initialise the flow state."""
         self._connection: dict[str, Any] = {}
+        self._detection: MeterDetection | None = None
+        self._suggest_from_detection = False
 
+    # -- helpers -----------------------------------------------------------
     @staticmethod
     def _placeholders(provider: str, suggested: float | None) -> dict[str, str]:
         """Return the text placeholders for the tariff step."""
@@ -631,23 +657,62 @@ class GridSubentryFlow(ConfigSubentryFlow):
             "snapshot": FEED_IN_SNAPSHOT_DATE,
         }
 
+    def _detection_placeholders(self) -> dict[str, str]:
+        """Describe the selected meter and what was recognised on it."""
+        device_id = self._connection.get(CONF_METER_DEVICE)
+        name = "the selected device"
+        if device_id:
+            device = dr.async_get(self.hass).async_get(device_id)
+            if device is not None:
+                name = device.name_by_user or device.name or name
+        found = ", ".join(self._detection.found) if self._detection else ""
+        return {"meter": name, "detected": found or "none"}
+
+    def _detect(self, device_id: str | None, *, suggest: bool) -> None:
+        """Detect the meter's entities and remember what was found."""
+        self._detection = (
+            async_detect_meter_entities(self.hass, device_id) if device_id else None
+        )
+        self._suggest_from_detection = suggest
+
+    # -- add ---------------------------------------------------------------
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Handle the meters step."""
+        """Handle the meter step."""
         entry = self._get_entry()
         if entry.get_subentries_of_type(SUBENTRY_TYPE_GRID):
             return self.async_abort(reason="single_instance")
 
+        if user_input is not None:
+            self._connection = dict(user_input)
+            self._detect(user_input.get(CONF_METER_DEVICE), suggest=True)
+            return await self.async_step_entities()
+
+        return self.async_show_form(step_id="user", data_schema=_grid_meter_schema())
+
+    async def async_step_entities(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle the counter review step."""
         errors: dict[str, str] = {}
         if user_input is not None:
             errors = _validate_grid_connection(user_input)
             if not errors:
-                self._connection = dict(user_input)
+                self._connection |= dict(user_input)
                 return await self.async_step_tariff()
 
+        schema = _grid_entities_schema()
+        suggestions = (
+            self._detection.as_suggestions()
+            if self._suggest_from_detection and self._detection
+            else {}
+        )
         return self.async_show_form(
-            step_id="user", data_schema=_grid_connection_schema(), errors=errors
+            step_id="entities",
+            data_schema=self.add_suggested_values_to_schema(schema, suggestions),
+            errors=errors,
+            description_placeholders=self._detection_placeholders(),
         )
 
     async def async_step_tariff(
@@ -675,31 +740,87 @@ class GridSubentryFlow(ConfigSubentryFlow):
             description_placeholders=self._placeholders(provider, suggested),
         )
 
+    # -- edit --------------------------------------------------------------
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Edit every setting of the grid connection."""
+        """Handle the meter step when editing."""
+        subentry = self._get_reconfigure_subentry()
+
+        if user_input is None:
+            self._connection = dict(subentry.data)
+            self._detect(subentry.data.get(CONF_METER_DEVICE), suggest=False)
+            schema = _grid_meter_schema()
+            return self.async_show_form(
+                step_id="reconfigure",
+                data_schema=self.add_suggested_values_to_schema(
+                    schema,
+                    {
+                        key: value
+                        for key, value in subentry.data.items()
+                        if key in schema.schema
+                    },
+                ),
+            )
+
+        previous = self._connection.get(CONF_METER_DEVICE)
+        self._connection |= dict(user_input)
+        # A different meter gets its counters detected and suggested; the same
+        # meter keeps whatever the user had configured.
+        changed = user_input.get(CONF_METER_DEVICE) != previous
+        self._detect(user_input.get(CONF_METER_DEVICE), suggest=changed)
+        return await self.async_step_reconfigure_entities()
+
+    async def async_step_reconfigure_entities(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle the counter review step when editing."""
+        subentry = self._get_reconfigure_subentry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = _validate_grid_connection(user_input)
+            if not errors:
+                self._connection |= dict(user_input)
+                return await self.async_step_reconfigure_tariff()
+
+        schema = _grid_entities_schema()
+        if self._suggest_from_detection and self._detection:
+            suggestions = self._detection.as_suggestions()
+        else:
+            suggestions = {
+                key: value
+                for key, value in subentry.data.items()
+                if key in schema.schema
+            }
+        return self.async_show_form(
+            step_id="reconfigure_entities",
+            data_schema=self.add_suggested_values_to_schema(schema, suggestions),
+            errors=errors,
+            description_placeholders=self._detection_placeholders(),
+        )
+
+    async def async_step_reconfigure_tariff(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle the tariff step when editing."""
         entry = self._get_entry()
         subentry = self._get_reconfigure_subentry()
         provider = entry.data.get(CONF_PROVIDER, "")
         suggested = feed_in_deduction(provider)
-
         errors: dict[str, str] = {}
+
         if user_input is not None:
-            errors = {
-                **_validate_grid_connection(user_input),
-                **_validate_grid_tariff(user_input),
-            }
+            errors = _validate_grid_tariff(user_input)
             if not errors:
-                data = dict(user_input)
+                data = {**self._connection, **user_input}
                 data[CONF_EXPORT_PRICE_SOURCE] = _export_price_source(
                     user_input.get(CONF_EXPORT_DEDUCTION), suggested
                 )
                 return self.async_update_and_abort(entry, subentry, data=data)
 
-        schema = _grid_settings_schema(suggested)
+        schema = _grid_tariff_schema(suggested)
         return self.async_show_form(
-            step_id="reconfigure",
+            step_id="reconfigure_tariff",
             data_schema=self.add_suggested_values_to_schema(
                 schema,
                 {

@@ -139,10 +139,20 @@ device is correct as long as the device *is* the charger those EREs come from.
 
 Devices tell you what *they* cost; the grid connection tells you what you
 actually **pay the energy company**. Add it once, from the same **Add device**
-menu (**Grid connection** / *Netwerkaansluiting*).
+menu (**Grid connection** / *Netwerkaansluiting*). It is three short steps:
+
+1. **Meter** — pick your meter device, for example a **HomeWizard Wi-Fi P1
+   meter**. KD Helios recognises the meter and looks up its counters. You may
+   also skip this and choose the counters yourself.
+2. **Meters** — the counters it found are filled in for you to check and
+   correct. For a HomeWizard P1 meter that is the combined *Energy import* and
+   *Energy export* sensor, not the per-tariff T1/T2 registers.
+3. **Feed-in and fixed costs** — confirm the feed-in deduction and enter your
+   monthly fixed costs.
 
 | Field | Meaning |
 |---|---|
+| **Meter device** | Optional. Detection is best effort; you always confirm the result on the next screen. |
 | **Import energy entity** | Cumulative kWh taken from the grid. Required. |
 | **Export energy entity** | Cumulative kWh returned. Optional. |
 | **Import / export power entity** | Optional, feeds the live power sensors. |
@@ -151,6 +161,15 @@ menu (**Grid connection** / *Netwerkaansluiting*).
 | **Supply costs / grid operator costs per month** | Your fixed costs. Both are required; enter 0 if you have none. |
 
 Only one connection can exist per installation.
+
+#### Meter recognition
+
+Picking a meter is friendlier than hunting for four entity ids, so the device is
+matched by the entity registry's integration platform and translation key
+rather than by entity names. HomeWizard's P1 meter is recognised out of the box;
+unknown meters fall back to a device-class and naming heuristic. Detection only
+ever *suggests* values — guessing wrong would silently meter the wrong counter,
+so the next step always shows what was found and what will be used.
 
 #### Saldering
 
@@ -372,7 +391,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 138 tests
+.venv/bin/python -m pytest        # 148 tests
 .venv/bin/ruff check custom_components tests
 ```
 
@@ -381,8 +400,10 @@ API payloads, the accounting engine (price boundaries, gaps, meter resets and
 source swaps, implausible deltas, reimbursement and ERE), the HTTP client error
 paths, both config flows, periodic price polling, persistence across a reload,
 grid import/export with both saldering modes, the 2027 cut-over, hourly versus
-quarterly reimbursement of the same energy, and entity cleanup when a device
-loses a feature. Coverage is 95%.
+quarterly reimbursement of the same energy, P1 meter recognition, both grid
+flows end to end, and entity cleanup when a device loses a feature. There is
+also a guard that no translation contains an unresolved ``%key`` reference.
+Coverage is 96%.
 
 ---
 

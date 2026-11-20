@@ -17,12 +17,12 @@
         "title": "Energy provider",
         "description": "Change the provider or the price interval. Existing devices and their totals are kept.",
         "data": {
-          "provider": "[%key:component::kd_helios::config::step::user::data::provider%]",
-          "price_interval": "[%key:component::kd_helios::config::step::user::data::price_interval%]"
+          "provider": "Energy provider",
+          "price_interval": "Price interval"
         },
         "data_description": {
-          "provider": "[%key:component::kd_helios::config::step::user::data_description::provider%]",
-          "price_interval": "[%key:component::kd_helios::config::step::user::data_description::price_interval%]"
+          "provider": "The provider as listed on epexprijzen.nl. It must offer a dynamic contract.",
+          "price_interval": "Most dynamic contracts settle per quarter hour. Pick hourly only if your contract does."
         }
       }
     },
@@ -103,22 +103,27 @@
           "title": "Edit device",
           "description": "Change any setting of this device. Its totals, including the energy already priced, are preserved.",
           "data": {
-            "name": "[%key:component::kd_helios::config_subentries::device::step::user::data::name%]",
-            "kind": "[%key:component::kd_helios::config_subentries::device::step::user::data::kind%]",
-            "power_entity": "[%key:component::kd_helios::config_subentries::device::step::user::data::power_entity%]",
-            "energy_entity": "[%key:component::kd_helios::config_subentries::device::step::user::data::energy_entity%]",
-            "reimbursement_mode": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_mode%]",
-            "reimbursement_rate": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_rate%]",
-            "reimbursement_surcharge": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_surcharge%]",
-            "reimbursement_percent": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_percent%]",
-            "reimbursement_basis": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_basis%]",
-            "ere_mode": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_mode%]",
-            "ere_per_kwh": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_per_kwh%]",
-            "ere_price": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_price%]",
-            "ere_price_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_price_entity%]",
-            "ere_credits_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_credits_entity%]",
-            "ere_kwh_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_kwh_entity%]",
-            "reimbursement_interval": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_interval%]"
+            "name": "Name",
+            "kind": "Device type",
+            "power_entity": "Power entity",
+            "energy_entity": "Energy entity",
+            "reimbursement_mode": "Reimbursement type",
+            "reimbursement_rate": "Fixed reimbursement",
+            "reimbursement_surcharge": "Fixed surcharge",
+            "reimbursement_percent": "Surcharge percentage",
+            "reimbursement_basis": "Market price",
+            "reimbursement_interval": "Reimbursement price interval",
+            "ere_mode": "ERE source",
+            "ere_per_kwh": "ERE per kWh",
+            "ere_price": "Price per ERE",
+            "ere_price_entity": "Live ERE price entity",
+            "ere_credits_entity": "Joulo ERE credits entity",
+            "ere_kwh_entity": "Joulo total kWh entity"
+          },
+          "data_description": {
+            "reimbursement_basis": "EPEX spot excludes VAT and energy tax. All-in is what you pay at home.",
+            "reimbursement_interval": "How often the tariff your employer uses changes, independently of your own contract.",
+            "ere_per_kwh": "Also used as the fallback while a Joulo ratio is not available yet."
           }
         }
       },
@@ -129,8 +134,11 @@
         "rate_required": "A fixed reimbursement needs an amount above zero.",
         "percent_required": "The surcharge percentage must be above zero.",
         "ere_per_kwh_required": "A fixed ERE ratio needs a value above zero.",
-        "ere_price_required": "A fixed ERE price needs a value above zero.",
+        "ere_price_required": "A fixed ERE price needs a value above zero. Enter one, or select a live price entity.",
         "entity_required": "Select the Joulo entity for this field."
+      },
+      "abort": {
+        "reconfigure_successful": "The device was updated."
       }
     },
     "grid": {
@@ -141,20 +149,30 @@
       "step": {
         "user": {
           "title": "Grid connection",
-          "description": "Point KD Helios at your meter so the whole connection is costed, not only the devices you track.\n\nUse the cumulative import and export counters; a P1 meter exposes both. The power entities are optional and only feed the live power sensors.",
+          "description": "Point KD Helios at your meter so the whole connection is costed, not only the devices you track.\n\nPick your meter below and KD Helios will look up its import and export counters on the next screen. Leave it empty to select the counters yourself.",
+          "data": {
+            "meter_device": "Meter device",
+            "saldering": "Net metering (saldering)"
+          },
+          "data_description": {
+            "meter_device": "For example your HomeWizard P1 meter, DSMR reader or other energy meter.",
+            "saldering": "Net exported kWh against imported kWh within the calendar year, so an exported kWh is worth the import tariff. It switches off by itself on 1 January 2027, when saldering ends."
+          }
+        },
+        "entities": {
+          "title": "Meters",
+          "description": "Counters found on **{meter}**: {detected}.\n\nCheck them before continuing. The import counter is required; export and the power sensors are optional.",
           "data": {
             "import_entity": "Import energy entity",
             "export_entity": "Export energy entity",
             "import_power_entity": "Import power entity",
-            "export_power_entity": "Export power entity",
-            "saldering": "Net metering (saldering)"
+            "export_power_entity": "Export power entity"
           },
           "data_description": {
             "import_entity": "Cumulative kWh taken from the grid.",
             "export_entity": "Cumulative kWh returned to the grid. Leave empty if you never export.",
             "import_power_entity": "Optional live power, in W or kW.",
-            "export_power_entity": "Optional live export power, in W or kW.",
-            "saldering": "Net exported kWh against imported kWh within the calendar year, so an exported kWh is worth the import tariff. Turn this off when your contract pays export at the feed-in price. It switches off by itself on 1 January 2027, when saldering ends."
+            "export_power_entity": "Optional live export power, in W or kW."
           }
         },
         "tariff": {
@@ -175,17 +193,46 @@
         },
         "reconfigure": {
           "title": "Edit grid connection",
-          "description": "Change the meters, the feed-in deduction or the fixed costs. The billing year totals are preserved.\n\nConfirm the feed-in deduction again: it decides how every exported kWh is valued.",
+          "description": "Change the meter or the net metering mode. If you pick a different meter, its counters are looked up again and shown on the next screen.",
           "data": {
-            "import_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::import_entity%]",
-            "export_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::export_entity%]",
-            "import_power_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::import_power_entity%]",
-            "export_power_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::export_power_entity%]",
-            "saldering": "[%key:component::kd_helios::config_subentries::grid::step::user::data::saldering%]",
-            "export_deduction": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::export_deduction%]",
-            "export_deduction_confirmed": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::export_deduction_confirmed%]",
-            "supply_cost_monthly": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::supply_cost_monthly%]",
-            "grid_fee_monthly": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::grid_fee_monthly%]"
+            "meter_device": "Meter device",
+            "saldering": "Net metering (saldering)"
+          },
+          "data_description": {
+            "meter_device": "Changing this meter re-detects its counters.",
+            "saldering": "Net exported kWh against imported kWh within the calendar year."
+          }
+        },
+        "reconfigure_entities": {
+          "title": "Edit meters",
+          "description": "Counters on **{meter}**: {detected}.\n\nThe billing year totals are preserved. Changing a counter re-baselines it, so nothing is billed for the jump between the old and the new reading.",
+          "data": {
+            "import_entity": "Import energy entity",
+            "export_entity": "Export energy entity",
+            "import_power_entity": "Import power entity",
+            "export_power_entity": "Export power entity"
+          },
+          "data_description": {
+            "import_entity": "Cumulative kWh taken from the grid.",
+            "export_entity": "Cumulative kWh returned to the grid.",
+            "import_power_entity": "Optional live power, in W or kW.",
+            "export_power_entity": "Optional live export power, in W or kW."
+          }
+        },
+        "reconfigure_tariff": {
+          "title": "Edit feed-in and fixed costs",
+          "description": "Confirm the feed-in deduction again: it decides how every exported kWh is valued. Suggested by epexprijzen.nl on {snapshot}: **{suggested}** EUR/kWh for **{provider}**.",
+          "data": {
+            "export_deduction": "Feed-in deduction",
+            "export_deduction_confirmed": "I checked this against my contract",
+            "supply_cost_monthly": "Supply costs per month",
+            "grid_fee_monthly": "Grid operator costs per month"
+          },
+          "data_description": {
+            "export_deduction": "Deducted from the EPEX spot price for every exported kWh, including VAT.",
+            "export_deduction_confirmed": "Required. Tick this after checking the amount.",
+            "supply_cost_monthly": "The fixed monthly fee of your energy contract. Enter 0 if you have none.",
+            "grid_fee_monthly": "The fixed monthly charge of your grid operator. Enter 0 if you have none."
           }
         }
       },

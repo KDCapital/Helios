@@ -24,11 +24,11 @@ from custom_components.kd_helios.const import (
     CONF_GRID_FEE_MONTHLY,
     CONF_IMPORT_ENTITY,
     CONF_KIND,
+    CONF_METER_DEVICE,
     CONF_NAME,
     CONF_POWER_ENTITY,
     CONF_PRICE_INTERVAL,
     CONF_PROVIDER,
-    CONF_REIMBURSEMENT_INTERVAL,
     CONF_REIMBURSEMENT_MODE,
     CONF_REIMBURSEMENT_RATE,
     CONF_REIMBURSEMENT_SURCHARGE,
@@ -39,6 +39,7 @@ from custom_components.kd_helios.const import (
     SUBENTRY_TYPE_GRID,
 )
 from custom_components.kd_helios.prices import PriceApiError, UnknownProviderError
+from tests.helpers import add_meter_device, add_meter_sensor
 
 USER_INPUT = {CONF_PROVIDER: "zonneplan", CONF_PRICE_INTERVAL: "quarterly"}
 
@@ -367,10 +368,9 @@ async def test_reconfigure_updates_a_device(hass, loaded_entry) -> None:
 # ---------------------------------------------------------------------------
 # Grid connection subentry flow
 # ---------------------------------------------------------------------------
-GRID_CONNECTION = {
+GRID_ENTITIES = {
     CONF_IMPORT_ENTITY: "sensor.p1_import",
     CONF_EXPORT_ENTITY: "sensor.p1_export",
-    CONF_SALDERING: True,
 }
 
 GRID_TARIFF = {
@@ -381,6 +381,15 @@ GRID_TARIFF = {
 }
 
 
+def _suggested(schema, key: str):
+    """Return the suggested value the form carries for a field."""
+    for marker in schema.schema:
+        if getattr(marker, "schema", None) == key:
+            description = getattr(marker, "description", None) or {}
+            return description.get("suggested_value")
+    return None
+
+
 async def _start_grid_flow(hass, entry: MockConfigEntry) -> dict:
     """Start a grid connection subentry flow."""
     return await hass.config_entries.subentries.async_init(
@@ -388,25 +397,44 @@ async def _start_grid_flow(hass, entry: MockConfigEntry) -> dict:
     )
 
 
-async def test_add_grid_connection_walks_both_steps(hass, loaded_entry) -> None:
-    """The connection is configured, then the tariff confirmed."""
+async def _add_grid(
+    hass,
+    entry: MockConfigEntry,
+    *,
+    meter: str | None = None,
+    entities: dict | None = None,
+    tariff: dict | None = None,
+) -> dict:
+    """Walk the three grid steps and return the final result."""
+    result = await _start_grid_flow(hass, entry)
+    meter_input = {CONF_SALDERING: True}
+    if meter is not None:
+        meter_input[CONF_METER_DEVICE] = meter
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], meter_input
+    )
+    assert result["step_id"] == "entities"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], entities if entities is not None else GRID_ENTITIES
+    )
+    assert result["step_id"] == "tariff"
+    return await hass.config_entries.subentries.async_configure(
+        result["flow_id"], tariff if tariff is not None else GRID_TARIFF
+    )
+
+
+async def test_add_grid_connection_walks_all_steps(hass, loaded_entry) -> None:
+    """The meter is chosen, the counters reviewed, then the tariff confirmed."""
     result = await _start_grid_flow(hass, loaded_entry)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
     # Saldering is still in force today, so it defaults on.
-    validated = result["data_schema"]({CONF_IMPORT_ENTITY: "sensor.p1_import"})
+    validated = result["data_schema"]({})
     assert validated[CONF_SALDERING] is True
 
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], GRID_CONNECTION
-    )
-    assert result["step_id"] == "tariff"
+    result = await _add_grid(hass, loaded_entry)
 
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], GRID_TARIFF
-    )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-
     subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)[0]
     assert subentry.title == "Grid connection"
     assert subentry.data[CONF_IMPORT_ENTITY] == "sensor.p1_import"
@@ -415,14 +443,66 @@ async def test_add_grid_connection_walks_both_steps(hass, loaded_entry) -> None:
     assert subentry.data[CONF_EXPORT_PRICE_SOURCE] == "epexprijzen"
 
 
-async def test_grid_deduction_override_is_recorded(hass, loaded_entry) -> None:
-    """Correcting the suggested deduction is recorded as a manual value."""
+async def test_homewizard_p1_meter_prefills_the_counters(hass, loaded_entry) -> None:
+    """Picking a P1 meter fills in its counters for the user to confirm."""
+    device = add_meter_device(hass)
+    add_meter_sensor(
+        hass,
+        device,
+        "p1_meter_energy_import",
+        translation_key="total_energy_import_kwh",
+    )
+    add_meter_sensor(
+        hass,
+        device,
+        "p1_meter_energy_export",
+        translation_key="total_energy_export_kwh",
+    )
+
     result = await _start_grid_flow(hass, loaded_entry)
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], GRID_CONNECTION
+        result["flow_id"], {CONF_SALDERING: True, CONF_METER_DEVICE: device.id}
     )
+
+    assert result["step_id"] == "entities"
+    assert _suggested(result["data_schema"], CONF_IMPORT_ENTITY) == (
+        "sensor.p1_meter_energy_import"
+    )
+    assert _suggested(result["data_schema"], CONF_EXPORT_ENTITY) == (
+        "sensor.p1_meter_energy_export"
+    )
+    # The user is told what was recognised on the meter.
+    assert result["description_placeholders"]["meter"] == "P1 meter"
+    assert (
+        "sensor.p1_meter_energy_import"
+        in (result["description_placeholders"]["detected"])
+    )
+
+    # Confirming the detected counters stores them.
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {**GRID_TARIFF, CONF_EXPORT_DEDUCTION: 0.0115}
+        result["flow_id"],
+        {
+            CONF_IMPORT_ENTITY: "sensor.p1_meter_energy_import",
+            CONF_EXPORT_ENTITY: "sensor.p1_meter_energy_export",
+        },
+    )
+    assert result["step_id"] == "tariff"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_TARIFF
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)[0]
+    assert subentry.data[CONF_METER_DEVICE] == device.id
+    assert subentry.data[CONF_IMPORT_ENTITY] == "sensor.p1_meter_energy_import"
+
+
+async def test_grid_deduction_override_is_recorded(hass, loaded_entry) -> None:
+    """Correcting the suggested deduction is recorded as a manual value."""
+    result = await _add_grid(
+        hass,
+        loaded_entry,
+        tariff={**GRID_TARIFF, CONF_EXPORT_DEDUCTION: 0.0115},
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
@@ -437,6 +517,7 @@ async def test_grid_requires_an_import_entity(hass, loaded_entry) -> None:
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], {CONF_SALDERING: True}
     )
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {})
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {CONF_IMPORT_ENTITY: "import_required"}
@@ -446,7 +527,10 @@ async def test_grid_requires_confirmation_of_the_deduction(hass, loaded_entry) -
     """The user has to confirm the feed-in deduction before it is used."""
     result = await _start_grid_flow(hass, loaded_entry)
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], GRID_CONNECTION
+        result["flow_id"], {CONF_SALDERING: True}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_ENTITIES
     )
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
@@ -461,7 +545,10 @@ async def test_grid_requires_both_fixed_costs(hass, loaded_entry) -> None:
     """Users must state their monthly fixed costs, even when they are zero."""
     result = await _start_grid_flow(hass, loaded_entry)
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], GRID_CONNECTION
+        result["flow_id"], {CONF_SALDERING: True}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_ENTITIES
     )
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
@@ -477,60 +564,45 @@ async def test_grid_requires_both_fixed_costs(hass, loaded_entry) -> None:
 
 async def test_only_one_grid_connection(hass, loaded_entry) -> None:
     """A house has one connection, so a second one is refused."""
-    result = await _start_grid_flow(hass, loaded_entry)
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], GRID_CONNECTION
-    )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], GRID_TARIFF
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert (await _add_grid(hass, loaded_entry))["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
 
     result = await _start_grid_flow(hass, loaded_entry)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "single_instance"
 
 
-async def test_ev_reimbursement_interval_is_stored(hass, loaded_entry) -> None:
-    """An EV can reimburse hourly while the contract settles per quarter."""
-    result = await _start_subentry_flow(hass, loaded_entry)
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], EV_INPUT
-    )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"],
-        {
-            CONF_REIMBURSEMENT_MODE: "dynamic",
-            CONF_REIMBURSEMENT_INTERVAL: "hourly",
-            CONF_REIMBURSEMENT_SURCHARGE: 0.02,
-        },
-    )
-    assert result["step_id"] == "ere"
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_ERE_MODE: "none"}
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+async def test_grid_reconfigure_walks_three_steps(hass, loaded_entry) -> None:
+    """Editing the connection keeps the same three-step shape."""
+    assert (await _add_grid(hass, loaded_entry))["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)[0]
 
-    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0]
-    assert subentry.data[CONF_REIMBURSEMENT_INTERVAL] == "hourly"
-
-
-async def test_ev_reimbursement_interval_defaults_to_quarterly(
-    hass, loaded_entry
-) -> None:
-    """The default matches the quarter hour contract."""
-    result = await _start_subentry_flow(hass, loaded_entry)
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], EV_INPUT
+    result = await hass.config_entries.subentries.async_init(
+        (loaded_entry.entry_id, SUBENTRY_TYPE_GRID),
+        context={"source": SOURCE_RECONFIGURE, "subentry_id": subentry.subentry_id},
     )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"],
-        {CONF_REIMBURSEMENT_MODE: "fixed", CONF_REIMBURSEMENT_RATE: 0.35},
-    )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {CONF_ERE_MODE: "none"}
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["step_id"] == "reconfigure"
 
-    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)[0]
-    assert subentry.data[CONF_REIMBURSEMENT_INTERVAL] == "quarterly"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_SALDERING: False}
+    )
+    assert result["step_id"] == "reconfigure_entities"
+    # The stored counters are suggested back, not re-detected.
+    assert _suggested(result["data_schema"], CONF_IMPORT_ENTITY) == ("sensor.p1_import")
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], GRID_ENTITIES
+    )
+    assert result["step_id"] == "reconfigure_tariff"
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {**GRID_TARIFF, CONF_SUPPLY_COST_MONTHLY: 7.5}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+
+    updated = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)[0]
+    assert updated.data[CONF_SALDERING] is False
+    assert updated.data[CONF_SUPPLY_COST_MONTHLY] == pytest.approx(7.5)

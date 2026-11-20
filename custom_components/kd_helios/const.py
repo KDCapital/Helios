@@ -52,6 +52,7 @@ CONF_EXPORT_DEDUCTION_CONFIRMED: Final = "export_deduction_confirmed"
 CONF_SUPPLY_COST_MONTHLY: Final = "supply_cost_monthly"
 CONF_GRID_FEE_MONTHLY: Final = "grid_fee_monthly"
 CONF_EXPORT_PRICE_SOURCE: Final = "export_price_source"
+CONF_METER_DEVICE: Final = "meter_device"
 
 
 class DeviceKind(StrEnum):

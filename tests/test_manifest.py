@@ -117,6 +117,19 @@ def test_every_subentry_type_has_translations() -> None:
     for step in ("user", "reimbursement", "ere", "reconfigure"):
         assert step in device["step"], step
 
+    assert "grid" in subentries
+    grid = subentries["grid"]
+    assert grid["initiate_flow"]["user"]
+    for step in (
+        "user",
+        "entities",
+        "tariff",
+        "reconfigure",
+        "reconfigure_entities",
+        "reconfigure_tariff",
+    ):
+        assert step in grid["step"], step
+
 
 def test_repair_issues_are_translated() -> None:
     """Every repair issue the integration raises has en and nl strings."""
@@ -143,3 +156,26 @@ def test_every_sensor_has_a_translated_name() -> None:
         key = description.translation_key or description.key
         assert key in names, key
         assert names[key]["name"]
+
+
+def test_translations_contain_no_key_references() -> None:
+    """Custom integrations must spell labels out.
+
+    Home Assistant only resolves ``[%key:...%]`` references in some contexts;
+    for a custom integration they reach the UI literally, which is why every
+    label here is written out in full.
+    """
+    for name in ("strings.json", "translations/en.json", "translations/nl.json"):
+        text = (COMPONENT / name).read_text(encoding="utf-8")
+        assert "%key:" not in text, f"{name} still contains a key reference"
+
+
+def test_grid_steps_are_described_in_both_languages() -> None:
+    """Every grid step carries a title and descriptions in en and nl."""
+    for name in ("translations/en.json", "translations/nl.json"):
+        data = json.loads((COMPONENT / name).read_text(encoding="utf-8"))
+        grid = data["config_subentries"]["grid"]
+        for step, content in grid["step"].items():
+            assert content.get("title"), (name, step)
+            for key in content.get("data", {}):
+                assert content.get("data_description", {}).get(key), (name, step, key)

@@ -25,6 +25,7 @@ from .const import (
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
     CONF_KIND,
+    CONF_METER_DEVICE,
     CONF_NAME,
     CONF_POWER_ENTITY,
     CONF_REIMBURSEMENT_BASIS,
@@ -249,6 +250,7 @@ class GridConfig:
 
     subentry_id: str
     name: str = "Grid connection"
+    meter_device_id: str | None = None
     import_entity: str | None = None
     export_entity: str | None = None
     import_power_entity: str | None = None
@@ -276,6 +278,7 @@ class GridConfig:
         return cls(
             subentry_id=subentry.subentry_id,
             name=as_entity_id(data.get(CONF_NAME)) or subentry.title or "Grid",
+            meter_device_id=as_entity_id(data.get(CONF_METER_DEVICE)),
             import_entity=as_entity_id(data.get(CONF_IMPORT_ENTITY)),
             export_entity=as_entity_id(data.get(CONF_EXPORT_ENTITY)),
             import_power_entity=as_entity_id(data.get(CONF_IMPORT_POWER_ENTITY)),

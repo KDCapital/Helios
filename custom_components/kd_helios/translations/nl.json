@@ -17,12 +17,12 @@
         "title": "Energieleverancier",
         "description": "Wijzig de leverancier of het prijsinterval. Bestaande apparaten en hun totalen blijven behouden.",
         "data": {
-          "provider": "[%key:component::kd_helios::config::step::user::data::provider%]",
-          "price_interval": "[%key:component::kd_helios::config::step::user::data::price_interval%]"
+          "provider": "Energieleverancier",
+          "price_interval": "Prijsinterval"
         },
         "data_description": {
-          "provider": "[%key:component::kd_helios::config::step::user::data_description::provider%]",
-          "price_interval": "[%key:component::kd_helios::config::step::user::data_description::price_interval%]"
+          "provider": "De leverancier zoals vermeld op epexprijzen.nl. Er moet een dynamisch contract zijn.",
+          "price_interval": "De meeste dynamische contracten rekenen per kwartier af. Kies alleen per uur als je contract dat doet."
         }
       }
     },
@@ -103,22 +103,27 @@
           "title": "Apparaat bewerken",
           "description": "Wijzig elke instelling van dit apparaat. De totalen, inclusief de al afgerekende energie, blijven behouden.",
           "data": {
-            "name": "[%key:component::kd_helios::config_subentries::device::step::user::data::name%]",
-            "kind": "[%key:component::kd_helios::config_subentries::device::step::user::data::kind%]",
-            "power_entity": "[%key:component::kd_helios::config_subentries::device::step::user::data::power_entity%]",
-            "energy_entity": "[%key:component::kd_helios::config_subentries::device::step::user::data::energy_entity%]",
-            "reimbursement_mode": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_mode%]",
-            "reimbursement_rate": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_rate%]",
-            "reimbursement_surcharge": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_surcharge%]",
-            "reimbursement_percent": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_percent%]",
-            "reimbursement_basis": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_basis%]",
-            "ere_mode": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_mode%]",
-            "ere_per_kwh": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_per_kwh%]",
-            "ere_price": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_price%]",
-            "ere_price_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_price_entity%]",
-            "ere_credits_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_credits_entity%]",
-            "ere_kwh_entity": "[%key:component::kd_helios::config_subentries::device::step::ere::data::ere_kwh_entity%]",
-            "reimbursement_interval": "[%key:component::kd_helios::config_subentries::device::step::reimbursement::data::reimbursement_interval%]"
+            "name": "Naam",
+            "kind": "Soort apparaat",
+            "power_entity": "Vermogenssensor",
+            "energy_entity": "Energiesensor",
+            "reimbursement_mode": "Soort vergoeding",
+            "reimbursement_rate": "Vaste vergoeding",
+            "reimbursement_surcharge": "Vaste toeslag",
+            "reimbursement_percent": "Toeslagpercentage",
+            "reimbursement_basis": "Marktprijs",
+            "reimbursement_interval": "Prijsinterval vergoeding",
+            "ere_mode": "ERE-bron",
+            "ere_per_kwh": "ERE per kWh",
+            "ere_price": "Prijs per ERE",
+            "ere_price_entity": "Sensor met actuele ERE-prijs",
+            "ere_credits_entity": "Joulo ERE-tegoedsensor",
+            "ere_kwh_entity": "Joulo totaal kWh-sensor"
+          },
+          "data_description": {
+            "reimbursement_basis": "EPEX spot is exclusief btw en energiebelasting. All-in is wat je thuis betaalt.",
+            "reimbursement_interval": "Hoe vaak het tarief van je werkgever wisselt, onafhankelijk van je eigen contract.",
+            "ere_per_kwh": "Wordt ook gebruikt als terugvalwaarde zolang er nog geen Joulo-verhouding is."
           }
         }
       },
@@ -129,8 +134,11 @@
         "rate_required": "Een vaste vergoeding heeft een bedrag boven nul nodig.",
         "percent_required": "Het toeslagpercentage moet boven nul liggen.",
         "ere_per_kwh_required": "Een vaste ERE-verhouding heeft een waarde boven nul nodig.",
-        "ere_price_required": "Een vaste ERE-prijs heeft een waarde boven nul nodig.",
+        "ere_price_required": "Een vaste ERE-prijs heeft een waarde boven nul nodig. Vul er een in, of kies een sensor met de actuele prijs.",
         "entity_required": "Selecteer de Joulo-sensor voor dit veld."
+      },
+      "abort": {
+        "reconfigure_successful": "Het apparaat is bijgewerkt."
       }
     },
     "grid": {
@@ -141,20 +149,30 @@
       "step": {
         "user": {
           "title": "Netwerkaansluiting",
-          "description": "Koppel KD Helios aan je meter, zodat de hele aansluiting wordt afgerekend en niet alleen de apparaten die je volgt.\n\nGebruik de cumulatieve import- en exporttellers; een P1-meter heeft ze allebei. De vermogenssensoren zijn optioneel en voeden alleen de actuele vermogenssensoren.",
+          "description": "Koppel KD Helios aan je meter, zodat de hele aansluiting wordt afgerekend en niet alleen de apparaten die je volgt.\n\nKies hieronder je meter; KD Helios zoekt op het volgende scherm de import- en exporttellers op. Laat je het leeg, dan kies je de tellers zelf.",
+          "data": {
+            "meter_device": "Meterapparaat",
+            "saldering": "Salderen"
+          },
+          "data_description": {
+            "meter_device": "Bijvoorbeeld je HomeWizard P1-meter, DSMR-reader of een andere energiemeter.",
+            "saldering": "Verreken teruggeleverde kWh binnen het kalenderjaar met afgenomen kWh, zodat een teruggeleverde kWh het importtarief waard is. Het gaat automatisch uit op 1 januari 2027, wanneer salderen stopt."
+          }
+        },
+        "entities": {
+          "title": "Meters",
+          "description": "Tellers gevonden op **{meter}**: {detected}.\n\nControleer ze voordat je verdergaat. De importteller is verplicht; export en de vermogenssensoren zijn optioneel.",
           "data": {
             "import_entity": "Energiesensor import",
             "export_entity": "Energiesensor export",
             "import_power_entity": "Vermogenssensor import",
-            "export_power_entity": "Vermogenssensor export",
-            "saldering": "Salderen"
+            "export_power_entity": "Vermogenssensor export"
           },
           "data_description": {
             "import_entity": "Cumulatieve kWh die je van het net haalt.",
             "export_entity": "Cumulatieve kWh die je teruglevert. Laat leeg als je nooit teruglevert.",
             "import_power_entity": "Optioneel actueel vermogen, in W of kW.",
-            "export_power_entity": "Optioneel actueel terugleververmogen, in W of kW.",
-            "saldering": "Verreken teruggeleverde kWh binnen het kalenderjaar met afgenomen kWh, zodat een teruggeleverde kWh het importtarief waard is. Zet dit uit als je contract teruglevering tegen de terugleverprijs afrekent. Het gaat automatisch uit op 1 januari 2027, wanneer salderen stopt."
+            "export_power_entity": "Optioneel actueel terugleververmogen, in W of kW."
           }
         },
         "tariff": {
@@ -175,17 +193,46 @@
         },
         "reconfigure": {
           "title": "Netwerkaansluiting bewerken",
-          "description": "Wijzig de meters, de aftrek voor teruglevering of de vaste kosten. De totalen van het lopende jaar blijven behouden.\n\nBevestig de aftrek opnieuw: die bepaalt wat elke teruggeleverde kWh waard is.",
+          "description": "Wijzig de meter of de salderingsmodus. Kies je een andere meter, dan worden de tellers opnieuw opgezocht en op het volgende scherm getoond.",
           "data": {
-            "import_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::import_entity%]",
-            "export_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::export_entity%]",
-            "import_power_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::import_power_entity%]",
-            "export_power_entity": "[%key:component::kd_helios::config_subentries::grid::step::user::data::export_power_entity%]",
-            "saldering": "[%key:component::kd_helios::config_subentries::grid::step::user::data::saldering%]",
-            "export_deduction": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::export_deduction%]",
-            "export_deduction_confirmed": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::export_deduction_confirmed%]",
-            "supply_cost_monthly": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::supply_cost_monthly%]",
-            "grid_fee_monthly": "[%key:component::kd_helios::config_subentries::grid::step::tariff::data::grid_fee_monthly%]"
+            "meter_device": "Meterapparaat",
+            "saldering": "Salderen"
+          },
+          "data_description": {
+            "meter_device": "Als je dit wijzigt, worden de tellers opnieuw opgezocht.",
+            "saldering": "Verreken teruggeleverde kWh binnen het kalenderjaar met afgenomen kWh."
+          }
+        },
+        "reconfigure_entities": {
+          "title": "Meters bewerken",
+          "description": "Tellers op **{meter}**: {detected}.\n\nDe totalen van het lopende jaar blijven behouden. Een andere teller kiezen herbaseert hem, zodat er niets wordt afgerekend voor de sprong tussen de oude en nieuwe stand.",
+          "data": {
+            "import_entity": "Energiesensor import",
+            "export_entity": "Energiesensor export",
+            "import_power_entity": "Vermogenssensor import",
+            "export_power_entity": "Vermogenssensor export"
+          },
+          "data_description": {
+            "import_entity": "Cumulatieve kWh die je van het net haalt.",
+            "export_entity": "Cumulatieve kWh die je teruglevert.",
+            "import_power_entity": "Optioneel actueel vermogen, in W of kW.",
+            "export_power_entity": "Optioneel actueel terugleververmogen, in W of kW."
+          }
+        },
+        "reconfigure_tariff": {
+          "title": "Teruglevering en vaste kosten bewerken",
+          "description": "Bevestig de aftrek voor teruglevering opnieuw: die bepaalt wat elke teruggeleverde kWh waard is. Voorgesteld door epexprijzen.nl op {snapshot}: **{suggested}** EUR/kWh voor **{provider}**.",
+          "data": {
+            "export_deduction": "Aftrek teruglevering",
+            "export_deduction_confirmed": "Ik heb dit gecontroleerd met mijn contract",
+            "supply_cost_monthly": "Leveringskosten per maand",
+            "grid_fee_monthly": "Netbeheerkosten per maand"
+          },
+          "data_description": {
+            "export_deduction": "Wordt per teruggeleverde kWh van de EPEX-spotprijs afgetrokken, inclusief btw.",
+            "export_deduction_confirmed": "Verplicht. Vink dit aan nadat je het bedrag hebt gecontroleerd.",
+            "supply_cost_monthly": "De vaste maandelijkse kosten van je energiecontract. Vul 0 in als je die niet hebt.",
+            "grid_fee_monthly": "De vaste maandelijkse kosten van je netbeheerder. Vul 0 in als je die niet hebt."
           }
         }
       },
