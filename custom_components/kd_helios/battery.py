@@ -111,10 +111,6 @@ class ChargeWindow:
     profit: float
     average_price: float
     discharge_price: float
-    #: For arbitrage: when the stored energy is sold back to the grid.
-    sell_start: datetime | None = None
-    sell_end: datetime | None = None
-    sell_price: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -480,8 +476,6 @@ def build_tou_programs(
     plan: ChargePlan,
     settings: BatterySettings,
     now: datetime,
-    *,
-    arbitrage: bool = False,
 ) -> TouPlan:
     """Turn a charge plan into the inverter's six time-of-use programs.
 
@@ -518,24 +512,6 @@ def build_tou_programs(
             start_minute, power_w, target, ChargeSource.GRID
         )
         end_minute = _minute_of_day(window.end)
-        if arbitrage and window.sell_start is not None and window.sell_end is not None:
-            # Keep the charge until the expensive hour, then let it go.
-            if end_minute != start_minute:
-                slots.setdefault(
-                    end_minute,
-                    TouProgram(end_minute, power_w, target, ChargeSource.OFF),
-                )
-            sell_minute = _minute_of_day(window.sell_start)
-            slots[sell_minute] = TouProgram(
-                sell_minute, power_w, reserve, ChargeSource.OFF
-            )
-            sell_end_minute = _minute_of_day(window.sell_end)
-            if sell_end_minute != sell_minute:
-                slots.setdefault(
-                    sell_end_minute,
-                    TouProgram(sell_end_minute, power_w, reserve, ChargeSource.OFF),
-                )
-            continue
         if end_minute != start_minute:
             slots.setdefault(
                 end_minute, TouProgram(end_minute, power_w, reserve, ChargeSource.OFF)
@@ -652,129 +628,3 @@ def should_apply(
     if not charging:
         return True
     return charging[0].soc_pct != target
-
-
-def plan_arbitrage(
-    series: PriceSeries,
-    settings: BatterySettings,
-    now: datetime,
-    soc_pct: float | None,
-    headroom_kwh: float,
-) -> ChargePlan:
-    """Buy in the cheap hours and sell into the most expensive one.
-
-    While saldering still applies, energy returned within your own consumption is
-    worth the import tariff of that moment, so a cycle earns the spread minus the
-    round-trip losses. ``headroom_kwh`` is what is left of the annual netting
-    limit: exporting beyond it only pays the feed-in price, which would turn the
-    trade into a loss, so it is a hard cap here.
-    """
-    now = dt_util.as_utc(now)
-    if soc_pct is None:
-        return _empty(now, None, "no_soc")
-    if headroom_kwh <= 0:
-        return _empty(now, soc_pct, "no_headroom")
-
-    slots = series.priced_slots(now, now + timedelta(hours=settings.horizon_hours))
-    if len(slots) < 2:
-        return _empty(now, soc_pct, "no_prices")
-
-    energy_needed = settings.capacity_kwh * (settings.target_soc_pct - soc_pct) / 100.0
-    if energy_needed <= 1e-6:
-        return _empty(now, soc_pct, "full")
-
-    # The sell moment is the most expensive slot that still has a cheaper slot
-    # before it to buy in.
-    sell_index = max(range(1, len(slots)), key=lambda index: slots[index][2])
-    sell_start, sell_end, sell_price = slots[sell_index]
-    if sell_price <= 0:
-        return _empty(now, soc_pct, "no_spread")
-
-    efficiency = settings.efficiency
-    candidates: list[tuple[datetime, datetime, float, float]] = []
-    for start, end, price in slots[:sell_index]:
-        profit_per_kwh = sell_price * efficiency - price
-        if profit_per_kwh <= 0:
-            continue
-        hours = (end - start).total_seconds() / 3600.0
-        if hours <= 0:
-            continue
-        max_kwh = min(settings.max_charge_kw * hours, settings.capacity_kwh)
-        if max_kwh <= 0:
-            continue
-        candidates.append((start, end, price, profit_per_kwh))
-
-    if not candidates:
-        return _empty(now, soc_pct, "no_spread")
-
-    candidates.sort(key=lambda item: item[2])
-
-    remaining = min(energy_needed, headroom_kwh)
-    chosen: list[tuple[datetime, datetime, float, float, float]] = []
-    for start, end, price, _profit in candidates:
-        if remaining <= 1e-9:
-            break
-        hours = (end - start).total_seconds() / 3600.0
-        kwh = min(settings.max_charge_kw * hours, remaining)
-        if kwh <= 0:
-            continue
-        chosen.append((start, end, price, kwh, sell_price))
-        remaining -= kwh
-
-    if not chosen:
-        return _empty(now, soc_pct, "no_spread")
-
-    chosen.sort(key=lambda item: item[0])
-    windows: list[ChargeWindow] = []
-    cursor: list = []
-    for start, end, price, kwh, target_price in chosen:
-        if cursor and cursor[1] == start:
-            cursor[1] = end
-            cursor[2] += kwh
-            cursor[3] += kwh * price
-            continue
-        if cursor:
-            windows.append(
-                _arbitrage_window(cursor, efficiency, sell_start, sell_end, sell_price)
-            )
-        cursor = [start, end, kwh, kwh * price]
-    if cursor:
-        windows.append(
-            _arbitrage_window(cursor, efficiency, sell_start, sell_end, sell_price)
-        )
-
-    total_cost = sum(window.cost for window in windows)
-    total_value = sum(window.value for window in windows)
-    return ChargePlan(
-        generated_at=now,
-        soc_pct=soc_pct,
-        windows=tuple(windows),
-        energy_kwh=sum(window.energy_kwh for window in windows),
-        cost=total_cost,
-        expected_saving=total_value - total_cost,
-        reason="arbitrage",
-    )
-
-
-def _arbitrage_window(
-    cursor: list,
-    efficiency: float,
-    sell_start: datetime,
-    sell_end: datetime,
-    sell_price: float,
-) -> ChargeWindow:
-    """Build one arbitrage window from the accumulated slots."""
-    start, end, kwh, cost = cursor
-    return ChargeWindow(
-        start=start,
-        end=end,
-        energy_kwh=kwh,
-        cost=cost,
-        value=kwh * efficiency * sell_price,
-        profit=kwh * efficiency * sell_price - cost,
-        average_price=cost / kwh if kwh else 0.0,
-        discharge_price=sell_price,
-        sell_start=sell_start,
-        sell_end=sell_end,
-        sell_price=sell_price,
-    )

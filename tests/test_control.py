@@ -205,9 +205,7 @@ async def test_release_honours_the_configured_work_mode(
         "switch", "turn_off", {"entity_id": entity_id}, blocking=True
     )
 
-    # Enabling control also states its work mode; releasing writes the configured one.
-    assert recorder.work_modes[-1] == 2
-    assert recorder.work_modes[0] == 1
+    assert recorder.work_modes == [2]
     assert WORK_MODE_REGISTER == 142
 
 
@@ -268,32 +266,3 @@ async def test_control_state_survives_a_reload(hass: HomeAssistant) -> None:
     assert engine.applied_plan is not None
     # The restored plan matches the proposal, so nothing was written.
     assert recorder.blocks == []
-
-
-async def test_arbitrage_mode_allows_export(hass: HomeAssistant) -> None:
-    """Arbitrage needs the inverter to sell, so it uses Selling First."""
-    from custom_components.kd_helios.const import CONF_BATTERY_MODE
-
-    entry = make_entry(
-        **{
-            CONF_ALLOW_INVERTER_WRITES: True,
-            CONF_INVERTER_DEVICE: INVERTER,
-            CONF_BATTERY_MODE: "arbitrage",
-        }
-    )
-    with freeze_time(FROZEN):
-        recorder = await _setup(hass, entry)
-    engine = entry.runtime_data.engine
-
-    assert engine.battery_config is not None
-    assert engine.battery_config.is_arbitrage is True
-    assert engine.battery_plan is not None
-    # No grid connection, so there is no netting headroom to trade with.
-    assert engine.battery_plan.reason == "no_headroom"
-
-    await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": _switch_entity(hass, entry)}, blocking=True
-    )
-
-    # Selling First is work mode 0.
-    assert recorder.work_modes[0] == 0

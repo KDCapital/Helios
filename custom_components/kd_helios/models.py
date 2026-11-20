@@ -9,13 +9,11 @@ from typing import Any, TypeVar
 
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 
-from .battery import BatterySettings, WorkMode
+from .battery import BatterySettings
 from .const import (
     CONF_ALLOW_INVERTER_WRITES,
-    CONF_ASSUME_SALDERED,
     CONF_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_HORIZON_HOURS,
-    CONF_BATTERY_MODE,
     CONF_EFFICIENCY,
     CONF_ENERGY_ENTITY,
     CONF_ERE_CREDITS_ENTITY,
@@ -35,7 +33,6 @@ from .const import (
     CONF_INVERTER_DEVICE,
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
-    CONF_MAX_DISCHARGE_KW,
     CONF_METER_DEVICE,
     CONF_NAME,
     CONF_POWER_ENTITY,
@@ -59,7 +56,6 @@ from .const import (
     DEFAULT_REIMBURSEMENT_PERCENT,
     SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_EV_CHARGER,
-    BatteryMode,
     DeviceKind,
     EreMode,
     ExportPriceSource,
@@ -366,35 +362,11 @@ class BatteryConfig:
     allow_writes: bool = False
     #: Work mode written when control is released, back to self-consumption.
     restore_work_mode: int = 1
-    mode: BatteryMode = BatteryMode.SELF_CONSUMPTION
-    #: Discharge power used when selling to the grid. Defaults to the charge power.
-    max_discharge_kw: float = 0.0
-    #: Whether the provider nets grid-charged battery energy under saldering.
-    assume_saldered: bool = True
 
     @property
     def model_name(self) -> str:
         """Return the model shown in the device registry."""
         return "Battery"
-
-    @property
-    def discharge_kw(self) -> float:
-        """Return the discharge power to plan with."""
-        return self.max_discharge_kw or self.max_charge_kw
-
-    @property
-    def is_arbitrage(self) -> bool:
-        """Return True when the battery is optimised for export arbitrage."""
-        return self.mode is BatteryMode.ARBITRAGE
-
-    @property
-    def control_work_mode(self) -> WorkMode:
-        """Return the work mode written while controlling the inverter."""
-        return (
-            WorkMode.SELLING_FIRST
-            if self.is_arbitrage
-            else WorkMode.ZERO_EXPORT_TO_LOAD
-        )
 
     @property
     def settings(self) -> BatterySettings:
@@ -425,13 +397,6 @@ class BatteryConfig:
             inverter_device_id=as_entity_id(data.get(CONF_INVERTER_DEVICE)),
             allow_writes=as_bool(data.get(CONF_ALLOW_INVERTER_WRITES)),
             restore_work_mode=int(as_float(data.get(CONF_RESTORE_WORK_MODE), 1.0)),
-            mode=_as_enum(
-                BatteryMode,
-                data.get(CONF_BATTERY_MODE),
-                BatteryMode.SELF_CONSUMPTION,
-            ),
-            max_discharge_kw=as_float(data.get(CONF_MAX_DISCHARGE_KW)),
-            assume_saldered=as_bool(data.get(CONF_ASSUME_SALDERED), True),
         )
 
 

@@ -312,34 +312,16 @@ A charging slot starts at the window start with source **grid** and the target
 SOC. It is followed by an idle slot at the window's end with the reserve SOC,
 which is what lets the battery discharge into the expensive hours.
 
-#### Two modes
+#### Deliberately not included: saldering arbitrage
 
-| Mode | Name | What it does |
-|---|---|---|
-| `self_consumption` | **Self-consumption** / *Eigen verbruik* | Charges in the cheap hours and keeps that energy for the house. Work mode: zero export to load. |
-| `arbitrage` | **Saldering arbitrage** / *Salderingsarbitrage* | Buys in the cheapest hour, **holds** the charge, then returns it to the grid in the most expensive hour. Work mode: selling first. |
-
-Arbitrage only makes sense while saldering still applies, so it is built around
-three guards:
-
-- **Netting headroom is a hard cap.** Export beyond your own annual consumption
-  only earns the feed-in price, which turns a profit into a loss. The plan caps
-  the trade at `imported − exported` for the current year, straight from the grid
-  ledger, so it shrinks by itself as the year fills up.
-- **The trade only runs with a positive spread** — `η × sell price − buy price` —
-  and says "no spread" instead of cycling the battery for nothing.
-- **It ends with saldering.** Nothing special is needed: from 1 January 2027 the
-  feed-in price is far below import, so the spread disappears and the planner
-  stops trading on its own.
-
-The inverter encoding reflects the intent: charge slot at target SOC, an extra
-**hold slot at target SOC** at the end of charging (so the energy is not leaked
-into the house early), then a **sell slot at the reserve SOC** where the battery
-discharges to the grid.
-
-Because providers differ, whether saldering actually nets grid-charged battery
-energy is a setting. Turn it off and arbitrage will not run — Zonneplan nets it
-through 2026; check yours.
+While saldering runs (until 1 January 2027), energy returned to the grid is
+worth the import tariff of that moment, so buying in the cheapest hour and
+selling in the most expensive one is genuinely profitable — around
+`η × sell − buy` per kWh. It was built and then removed on purpose: a few weeks
+of extra cycles are not worth the battery health, and it only pays while your
+export stays below your own annual consumption. The grid ledger still tracks
+that headroom (`imported − exported`), so the numbers are there if the trade
+ever becomes attractive again.
 
 #### Automatic control, and releasing it safely
 
@@ -627,7 +609,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 221 tests
+.venv/bin/python -m pytest        # 215 tests
 .venv/bin/ruff check custom_components tests
 ```
 

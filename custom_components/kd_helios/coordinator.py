@@ -19,7 +19,6 @@ from .battery import (
     WorkMode,
     build_restore_programs,
     build_tou_programs,
-    plan_arbitrage,
     plan_charge,
     should_apply,
 )
@@ -192,12 +191,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         if enabled:
             if self.battery_plan is None or self.tou_plan is None:
                 raise ValueError("There is no charge plan to write yet")
-            await async_write_tou(
-                self.hass,
-                device_id,
-                self.tou_plan,
-                work_mode=config.control_work_mode,
-            )
+            await async_write_tou(self.hass, device_id, self.tou_plan)
             self.applied_plan = AppliedPlan.from_plan(
                 self.battery_plan, self.tou_plan, dt_util.utcnow()
             )
@@ -243,12 +237,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         ):
             return
         try:
-            await async_write_tou(
-                self.hass,
-                config.inverter_device_id,
-                tou,
-                work_mode=config.control_work_mode,
-            )
+            await async_write_tou(self.hass, config.inverter_device_id, tou)
         except Exception as err:  # noqa: BLE001 - never break accounting
             self.last_control_error = str(err)
             _LOGGER.error("Could not write the time-of-use programs: %s", err)
@@ -300,27 +289,15 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             series_for_plan = available_series or PriceSeries.empty(
                 self.prices.provider, self.prices.interval
             )
-            config = self.battery_config
-            soc = read_number(self.hass, config.soc_entity)
-            if config.is_arbitrage:
-                headroom = 0.0
-                if self.grid_tracker is not None:
-                    headroom = max(
-                        0.0,
-                        self.grid_tracker.acc.imported_kwh
-                        - self.grid_tracker.acc.exported_kwh,
-                    )
-                battery_plan = plan_arbitrage(
-                    series_for_plan, config.settings, now, soc, headroom
-                )
-            else:
-                battery_plan = plan_charge(series_for_plan, config.settings, now, soc)
+            battery_plan = plan_charge(
+                series_for_plan,
+                self.battery_config.settings,
+                now,
+                read_number(self.hass, self.battery_config.soc_entity),
+            )
             self.battery_plan = battery_plan
             self.tou_plan = build_tou_programs(
-                battery_plan,
-                config.settings,
-                now,
-                arbitrage=config.is_arbitrage,
+                battery_plan, self.battery_config.settings, now
             )
             await self._async_sync_inverter(now)
 
