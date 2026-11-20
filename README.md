@@ -249,6 +249,9 @@ restart continues where it left off instead of resetting to zero.
   consumption. Use a metered energy entity for those.
 - **Dynamic contracts only.** Fixed and variable contracts are not modelled in
   this version, and gas is out of scope.
+- **A reload during an API outage** (for example while adding a device) puts the
+  entry in retry until epexprijzen.nl answers again, because prices are not
+  cached across restarts. Home Assistant retries automatically.
 
 ---
 
