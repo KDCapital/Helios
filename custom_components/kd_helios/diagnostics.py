@@ -52,6 +52,28 @@ async def async_get_config_entry_diagnostics(
             if runtime.engine.grid_tracker is not None
             else None
         ),
+        "battery": {
+            "plan": (
+                {
+                    "reason": runtime.engine.battery_plan.reason,
+                    "energy_kwh": runtime.engine.battery_plan.energy_kwh,
+                    "expected_saving": runtime.engine.battery_plan.expected_saving,
+                    "windows": len(runtime.engine.battery_plan.windows),
+                }
+                if runtime.engine.battery_plan
+                else None
+            ),
+            "applied": (
+                runtime.engine.applied_plan.as_dict()
+                if runtime.engine.applied_plan
+                else None
+            ),
+            "tou_programs": (
+                len(runtime.engine.tou_plan.programs)
+                if runtime.engine.tou_plan
+                else None
+            ),
+        },
         "devices": {
             subentry_id: {
                 "subentry_type": subentry.subentry_type,

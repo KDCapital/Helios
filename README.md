@@ -249,9 +249,24 @@ battery discharge into the expensive ones.
 | **Inverter device** | The Solarman inverter, needed before writes can be enabled. |
 | **Allow writing to the inverter** | Off by default. |
 
-`Planned charge`, `Planned saving` and `Next charge start` appear on the battery
-device. The plan sensor carries the windows and the exact six programs that
-would be written as attributes.
+`Planned charge`, `Planned saving`, `Applied plan saving` and
+`Next charge start` appear on the battery device.
+
+#### Proposed versus applied
+
+The plan is recomputed on every tick, so it moves as prices and the state of
+charge change. That is the **proposal**. The moment you write it, the exact
+plan and the programs derived from it are stored as the **applied plan**:
+
+- `Applied plan saving` is the saving the plan in force was predicted to
+  deliver, with `applied_at`, the state of charge at the time, the windows and
+  the six programs as attributes.
+- `Planned charge` reports whether the proposal still matches what is in force
+  (`applied_matches_proposal`), so drift is visible instead of silent.
+- Both survive a restart, and both appear in diagnostics.
+
+Without that snapshot, the number that justified writing to the inverter would
+be overwritten a minute later and you could never check what it was.
 
 #### Reading the market, not just the price list
 
@@ -378,7 +393,8 @@ A plain cost tracker would have reported €3.82 and missed the entire story.
 | Entity | Description |
 |---|---|
 | `sensor.<battery>_planned_charge` | kWh the plan wants to buy, with the windows and programs as attributes |
-| `sensor.<battery>_planned_saving` | Expected profit of that plan, in euros |
+| `sensor.<battery>_planned_saving` | Expected profit of the proposal, in euros |
+| `sensor.<battery>_applied_saving` | Expected profit of the plan actually written, with its windows and programs |
 | `sensor.<battery>_next_charge_start` | When the next planned window begins |
 
 The `grid_cost` sensor exposes `billing_year`, `saldering_active`,
@@ -488,7 +504,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 186 tests
+.venv/bin/python -m pytest        # 191 tests
 .venv/bin/ruff check custom_components tests
 ```
 
@@ -502,7 +518,8 @@ flows end to end, and entity cleanup when a device loses a feature. There is
 also a guard that no translation contains an unresolved ``%key`` reference.
 The battery planner is covered separately: which hours it buys, how capacity and
 charge power cap the plan, when it declines to cycle at all, and the exact
-register payload written to the inverter. Coverage is 95%.
+register payload written to the inverter, plus that the applied plan and its
+predicted saving survive a restart. Coverage is 95%.
 
 ---
 

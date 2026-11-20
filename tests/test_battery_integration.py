@@ -385,3 +385,110 @@ async def test_plan_horizon_is_respected(hass: HomeAssistant) -> None:
     assert plan is not None
     for window in plan.windows:
         assert window.start <= plan.generated_at + timedelta(hours=6)
+
+
+async def test_applied_plan_is_recorded_with_its_prediction(
+    hass: HomeAssistant,
+) -> None:
+    """Writing a plan stores it, with the saving it was expected to deliver."""
+
+    async def fake_write(call) -> None:
+        return None
+
+    hass.services.async_register(
+        "solarman", "write_multiple_holding_registers", fake_write
+    )
+    entry = await _setup_with_battery(
+        hass,
+        **{
+            CONF_ALLOW_INVERTER_WRITES: True,
+            CONF_INVERTER_DEVICE: "inverter-device-id",
+        },
+    )
+    engine = entry.runtime_data.engine
+    proposal = engine.battery_plan
+    assert proposal is not None
+
+    result = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_APPLY_TOU,
+        {"entry_id": entry.entry_id, "confirm": True},
+        blocking=True,
+        return_response=True,
+    )
+    await hass.async_block_till_done()
+
+    applied = engine.applied_plan
+    assert applied is not None
+    assert applied.expected_saving == pytest.approx(proposal.expected_saving)
+    assert applied.energy_kwh == pytest.approx(proposal.energy_kwh)
+    # The action rounds its response to four decimals.
+    assert result["expected_saving"] == pytest.approx(
+        proposal.expected_saving, abs=0.001
+    )
+
+    registry = er.async_get(hass)
+    item = next(
+        item
+        for item in registry.entities.values()
+        if item.config_entry_id == entry.entry_id
+        and item.translation_key == "battery_applied_saving"
+    )
+    state = hass.states.get(item.entity_id)
+    assert state is not None
+    assert float(state.state) == pytest.approx(proposal.expected_saving, abs=0.01)
+    assert state.attributes["applied_at"]
+    assert len(state.attributes["tou_programs"]) == 6
+
+
+async def test_applied_plan_survives_a_reload(hass: HomeAssistant) -> None:
+    """The plan in force, and its prediction, are still there after a restart."""
+
+    async def fake_write(call) -> None:
+        return None
+
+    hass.services.async_register(
+        "solarman", "write_multiple_holding_registers", fake_write
+    )
+    entry = await _setup_with_battery(
+        hass,
+        **{
+            CONF_ALLOW_INVERTER_WRITES: True,
+            CONF_INVERTER_DEVICE: "inverter-device-id",
+        },
+    )
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_APPLY_TOU,
+        {"entry_id": entry.entry_id, "confirm": True},
+        blocking=True,
+    )
+    applied = entry.runtime_data.engine.applied_plan
+    assert applied is not None
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    restored = entry.runtime_data.engine.applied_plan
+    assert restored is not None
+    assert restored.expected_saving == pytest.approx(applied.expected_saving)
+    assert [program.hhmm for program in restored.programs] == [
+        program.hhmm for program in applied.programs
+    ]
+
+
+async def test_diagnostics_include_both_plans(hass: HomeAssistant) -> None:
+    """Diagnostics show the live proposal and the applied plan."""
+    from custom_components.kd_helios.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+
+    entry = await _setup_with_battery(hass)
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert diagnostics["battery"]["plan"] is not None
+    assert diagnostics["battery"]["applied"] is None
+    assert diagnostics["battery"]["tou_programs"] == 6

@@ -25,7 +25,9 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.util import dt as dt_util
 
+from .battery import AppliedPlan
 from .const import DOMAIN, SERVICE_APPLY_TOU, SOLARMAN_WRITE_SERVICE
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,7 +93,10 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 translation_key="solarman_unavailable",
             )
 
-        registers = engine.tou_plan.registers()
+        applied = AppliedPlan.from_plan(
+            engine.battery_plan, engine.tou_plan, dt_util.utcnow()
+        )
+        registers = applied and engine.tou_plan.registers()
         for index, (register, values) in enumerate(registers.items()):
             if index:
                 await asyncio.sleep(WRITE_PAUSE)
@@ -112,8 +117,19 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 values,
             )
 
+        # Remember what is actually programmed, so the saving it was expected to
+        # deliver stays visible instead of being overwritten by the next tick.
+        engine.applied_plan = applied
+        engine.storage.async_set_battery(applied.as_dict())
+        await engine.storage.async_save()
+        # Refresh listeners so the applied-plan sensors show it immediately
+        # instead of waiting for the next accounting tick.
+        engine.async_set_updated_data(engine.data)
+
         return {
             "entry_id": entry_id,
+            "expected_saving": round(applied.expected_saving, 4),
+            "energy_kwh": round(applied.energy_kwh, 4),
             "registers": {
                 str(register): values for register, values in registers.items()
             },

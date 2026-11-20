@@ -11,7 +11,13 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .accounting import DeviceSnapshot, DeviceTracker
-from .battery import ChargePlan, TouPlan, build_tou_programs, plan_charge
+from .battery import (
+    AppliedPlan,
+    ChargePlan,
+    TouPlan,
+    build_tou_programs,
+    plan_charge,
+)
 from .const import (
     ACCOUNTING_UPDATE_INTERVAL,
     DOMAIN,
@@ -137,6 +143,11 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         )
         self.battery_plan: ChargePlan | None = None
         self.tou_plan: TouPlan | None = None
+        self.applied_plan: AppliedPlan | None = (
+            AppliedPlan.from_dict(storage.battery_state())
+            if self.battery_config is not None
+            else None
+        )
 
         grid_subentries = entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)
         self.grid_tracker: GridTracker | None = (

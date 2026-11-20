@@ -27,7 +27,7 @@ from homeassistant.util import dt as dt_util
 
 from . import HeliosConfigEntry
 from .accounting import DeviceSnapshot
-from .battery import ChargePlan
+from .battery import AppliedPlan, ChargePlan
 from .const import (
     CURRENCY,
     DOMAIN,
@@ -402,9 +402,14 @@ def _grid_descriptions_for(config: GridConfig) -> list[HeliosGridSensorDescripti
 
 @dataclass(frozen=True, kw_only=True)
 class HeliosBatterySensorDescription(SensorEntityDescription):
-    """Describes a battery planning sensor."""
+    """Describes a battery planning sensor.
 
-    value_fn: Callable[[ChargePlan, datetime], StateType]
+    A sensor either reports something about the live plan, or something about
+    the plan that was actually written to the inverter.
+    """
+
+    value_fn: Callable[[ChargePlan, datetime], StateType] | None = None
+    applied_fn: Callable[[AppliedPlan], StateType] | None = None
 
 
 BATTERY_SENSORS: tuple[HeliosBatterySensorDescription, ...] = (
@@ -425,6 +430,15 @@ BATTERY_SENSORS: tuple[HeliosBatterySensorDescription, ...] = (
         suggested_display_precision=2,
         icon="mdi:piggy-bank-outline",
         value_fn=lambda plan, _now: plan.expected_saving,
+    ),
+    HeliosBatterySensorDescription(
+        key="battery_applied_saving",
+        translation_key="battery_applied_saving",
+        native_unit_of_measurement=CURRENCY,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        icon="mdi:cash-check",
+        applied_fn=lambda applied: applied.expected_saving,
     ),
     HeliosBatterySensorDescription(
         key="battery_next_charge",
@@ -690,16 +704,28 @@ class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
         return data.battery if data is not None else None
 
     @property
+    def _applied(self) -> AppliedPlan | None:
+        """Return the plan currently programmed into the inverter."""
+        return self.coordinator.applied_plan
+
+    @property
     def native_value(self) -> StateType:
         """Return the current sensor value."""
+        if self.entity_description.applied_fn is not None:
+            applied = self._applied
+            if applied is None:
+                return None
+            return self.entity_description.applied_fn(applied)
         plan = self._plan
-        if plan is None:
+        if plan is None or self.entity_description.value_fn is None:
             return None
         return self.entity_description.value_fn(plan, dt_util.utcnow())
 
     @property
     def extra_state_attributes(self) -> dict[str, object] | None:
-        """Expose the windows and the programs that would be written."""
+        """Expose the plan, or the one that is actually in force."""
+        if self.entity_description.key == "battery_applied_saving":
+            return self._applied_attributes()
         if self.entity_description.key != "battery_charge_energy":
             return None
         plan = self._plan
@@ -707,8 +733,15 @@ class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
             return None
         now = dt_util.utcnow()
         tou = self.coordinator.tou_plan
+        applied = self._applied
+        applied_matches = bool(applied) and [
+            window.start for window in applied.windows
+        ] == [window.start for window in plan.windows]
         return {
             "reason": plan.reason,
+            "applied_saving": applied.expected_saving if applied else None,
+            "applied_at": applied.applied_at.isoformat() if applied else None,
+            "applied_matches_proposal": applied_matches,
             "soc_pct": plan.soc_pct,
             "charge_now": plan.active_window(now) is not None,
             "capacity_kwh": self._config.capacity_kwh,
@@ -737,6 +770,40 @@ class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
                     "source": int(program.source),
                 }
                 for program in (tou.programs if tou else ())
+            ],
+        }
+
+    def _applied_attributes(self) -> dict[str, object] | None:
+        """Describe the plan that is currently programmed."""
+        applied = self._applied
+        if applied is None:
+            return None
+        now = dt_util.utcnow()
+        return {
+            "applied_at": applied.applied_at.isoformat(),
+            "soc_at_apply_pct": applied.soc_pct,
+            "energy_kwh": round(applied.energy_kwh, 3),
+            "cost": round(applied.cost, 2),
+            "truncated": applied.truncated,
+            "charging_now": applied.active_window(now) is not None,
+            "windows": [
+                {
+                    "start": window.start.isoformat(),
+                    "end": window.end.isoformat(),
+                    "energy_kwh": round(window.energy_kwh, 3),
+                    "average_price": round(window.average_price, 5),
+                    "expected_profit": round(window.profit, 2),
+                }
+                for window in applied.windows
+            ],
+            "tou_programs": [
+                {
+                    "start": f"{program.hhmm:04d}",
+                    "power_w": program.power_w,
+                    "soc_pct": program.soc_pct,
+                    "source": int(program.source),
+                }
+                for program in applied.programs
             ],
         }
 

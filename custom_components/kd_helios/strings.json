@@ -402,6 +402,9 @@
       },
       "battery_next_charge": {
         "name": "Next charge start"
+      },
+      "battery_applied_saving": {
+        "name": "Applied plan saving"
       }
     },
     "binary_sensor": {

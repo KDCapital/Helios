@@ -17,6 +17,7 @@ Everything here is side-effect free: no Home Assistant state, no Modbus.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import IntEnum
@@ -155,6 +156,171 @@ class TouPlan:
                 int(program.source) for program in self.programs
             ],
         }
+
+
+@dataclass(frozen=True, slots=True)
+class AppliedPlan:
+    """The plan that was actually written to the inverter.
+
+    The live plan is recomputed on every tick, so it drifts as prices and the
+    state of charge move. This is the snapshot that is in force on the inverter,
+    kept so the saving it was expected to deliver stays auditable instead of
+    being overwritten a minute later.
+    """
+
+    applied_at: datetime
+    soc_pct: float | None
+    energy_kwh: float
+    cost: float
+    expected_saving: float
+    truncated: bool
+    programs: tuple[TouProgram, ...]
+    windows: tuple[ChargeWindow, ...]
+
+    @classmethod
+    def from_plan(
+        cls,
+        plan: ChargePlan,
+        tou: TouPlan,
+        applied_at: datetime,
+    ) -> AppliedPlan:
+        """Snapshot a plan and the programs derived from it."""
+        return cls(
+            applied_at=dt_util.as_utc(applied_at),
+            soc_pct=plan.soc_pct,
+            energy_kwh=plan.energy_kwh,
+            cost=plan.cost,
+            expected_saving=plan.expected_saving,
+            truncated=tou.truncated,
+            programs=tou.programs,
+            windows=plan.windows,
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        """Return a JSON serialisable representation."""
+        return {
+            "applied_at": self.applied_at.isoformat(),
+            "soc_pct": self.soc_pct,
+            "energy_kwh": self.energy_kwh,
+            "cost": self.cost,
+            "expected_saving": self.expected_saving,
+            "truncated": self.truncated,
+            "programs": [
+                {
+                    "start": program.hhmm,
+                    "power_w": program.power_w,
+                    "soc_pct": program.soc_pct,
+                    "source": int(program.source),
+                }
+                for program in self.programs
+            ],
+            "windows": [
+                {
+                    "start": window.start.isoformat(),
+                    "end": window.end.isoformat(),
+                    "energy_kwh": window.energy_kwh,
+                    "cost": window.cost,
+                    "value": window.value,
+                    "average_price": window.average_price,
+                    "discharge_price": window.discharge_price,
+                    "expected_profit": window.profit,
+                }
+                for window in self.windows
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object] | None) -> AppliedPlan | None:
+        """Restore a snapshot, returning None when there is nothing usable."""
+        if not data:
+            return None
+        applied_at = _parse_datetime(data.get("applied_at"))
+        if applied_at is None:
+            return None
+
+        programs: list[TouProgram] = []
+        for raw in data.get("programs") or []:
+            if not isinstance(raw, Mapping):
+                continue
+            start = _as_int(raw.get("start"))
+            if start is None:
+                continue
+            programs.append(
+                TouProgram(
+                    start_minute=(start // 100) * 60 + start % 100,
+                    power_w=_as_int(raw.get("power_w")) or 0,
+                    soc_pct=_as_int(raw.get("soc_pct")) or 0,
+                    source=ChargeSource(_as_int(raw.get("source")) or 0),
+                )
+            )
+
+        windows: list[ChargeWindow] = []
+        for raw in data.get("windows") or []:
+            if not isinstance(raw, Mapping):
+                continue
+            start = _parse_datetime(raw.get("start"))
+            end = _parse_datetime(raw.get("end"))
+            if start is None or end is None:
+                continue
+            profit = _as_float(raw.get("expected_profit")) or 0.0
+            energy = _as_float(raw.get("energy_kwh")) or 0.0
+            cost = _as_float(raw.get("cost")) or 0.0
+            value = _as_float(raw.get("value")) or (cost + profit)
+            windows.append(
+                ChargeWindow(
+                    start=start,
+                    end=end,
+                    energy_kwh=energy,
+                    cost=cost,
+                    value=value,
+                    profit=profit,
+                    average_price=_as_float(raw.get("average_price")) or 0.0,
+                    discharge_price=_as_float(raw.get("discharge_price")) or 0.0,
+                )
+            )
+
+        return cls(
+            applied_at=applied_at,
+            soc_pct=_as_float(data.get("soc_pct")),
+            energy_kwh=_as_float(data.get("energy_kwh")) or 0.0,
+            cost=_as_float(data.get("cost")) or 0.0,
+            expected_saving=_as_float(data.get("expected_saving")) or 0.0,
+            truncated=bool(data.get("truncated")),
+            programs=tuple(programs),
+            windows=tuple(windows),
+        )
+
+    def active_window(self, when: datetime) -> ChargeWindow | None:
+        """Return the window of the applied plan covering ``when``."""
+        when = dt_util.as_utc(when)
+        for window in self.windows:
+            if window.start <= when < window.end:
+                return window
+        return None
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    """Parse a stored timestamp."""
+    if not isinstance(value, str):
+        return None
+    parsed = dt_util.parse_datetime(value)
+    return dt_util.as_utc(parsed) if parsed else None
+
+
+def _as_float(value: object) -> float | None:
+    """Coerce a stored value to float."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_int(value: object) -> int | None:
+    """Coerce a stored value to int."""
+    number = _as_float(value)
+    return int(number) if number is not None else None
 
 
 def _minute_of_day(when: datetime) -> int:

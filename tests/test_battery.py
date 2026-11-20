@@ -255,3 +255,31 @@ def test_plan_reports_active_and_next_window() -> None:
     assert plan.active_window(window.end) is None
     assert plan.next_window(NOON - timedelta(minutes=5)) is window
     assert plan.next_window(NOON) is None
+
+
+def test_applied_plan_round_trips_through_storage() -> None:
+    """The snapshot that is in force survives a restart unchanged."""
+    from custom_components.kd_helios.battery import AppliedPlan
+
+    plan = plan_charge(make_prices(NOON, DAY), SETTINGS, NOON, soc_pct=20.0)
+    tou = build_tou_programs(plan, SETTINGS, NOON)
+    applied = AppliedPlan.from_plan(plan, tou, NOON)
+
+    restored = AppliedPlan.from_dict(applied.as_dict())
+
+    assert restored == applied
+    assert restored is not None
+    assert restored.expected_saving == pytest.approx(plan.expected_saving)
+    assert len(restored.programs) == TOU_SLOTS
+    assert [program.hhmm for program in restored.programs] == [
+        program.hhmm for program in tou.programs
+    ]
+
+
+def test_applied_plan_ignores_empty_state() -> None:
+    """No stored plan is not an error."""
+    from custom_components.kd_helios.battery import AppliedPlan
+
+    assert AppliedPlan.from_dict(None) is None
+    assert AppliedPlan.from_dict({}) is None
+    assert AppliedPlan.from_dict({"applied_at": "not a date"}) is None

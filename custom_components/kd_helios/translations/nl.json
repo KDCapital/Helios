@@ -402,6 +402,9 @@
       },
       "battery_next_charge": {
         "name": "Volgende laadstart"
+      },
+      "battery_applied_saving": {
+        "name": "Besparing toegepast plan"
       }
     },
     "binary_sensor": {
