@@ -268,8 +268,16 @@ later screen is composition rather than plumbing.
 - The config flows now abort with a `panel` signpost that says where the
   settings live.
 
-Still phase A backlog: the battery, grid and car forms (they list but do not yet
-edit inline), the wizard screens, and moving control into Settings.
+- Every section now edits inline through one field table (`FIELDS`), so a field
+  cannot exist in a section form and be missing from the wizard: devices, cars,
+  battery and grid all create, edit and remove from the panel.
+- The wizard renders as a five-screen flow (welcome, connection, grid, car,
+  control) that reuses those same forms, saves progress after every step and can
+  be skipped; an unfinished setup shows a banner on the Overview.
+- A render test proves the wizard's first screen comes out of the real payload.
+
+Still phase A backlog: the contract step (it edits entry data, not a subentry),
+the control switch inside Settings, and the audit log.
 
 ## 10. Open questions
 

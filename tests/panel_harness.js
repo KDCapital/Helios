@@ -33,7 +33,7 @@ global.window = {
   clearInterval: () => 0,
 };
 
-const [, , source, payloadPath] = process.argv;
+const [, , source, payloadPath, section] = process.argv;
 new Function(fs.readFileSync(source, "utf8"))();
 
 const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
@@ -43,6 +43,7 @@ element._hass = {
   user: { name: "Jules" },
 };
 element._data = payload;
+if (section) element._section = section;
 element._render();
 
 process.stdout.write(element.shadowRoot.innerHTML);
