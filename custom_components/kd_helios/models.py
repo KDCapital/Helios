@@ -28,6 +28,7 @@ from .const import (
     CONF_EV_DEPARTURE_ENTITY,
     CONF_EV_DEPARTURE_WEEKDAY,
     CONF_EV_DEPARTURE_WEEKEND,
+    CONF_EV_DEVICE,
     CONF_EV_PACK_KWH,
     CONF_EV_POWER_ENTITY,
     CONF_EV_SOC_ENTITY,
@@ -251,6 +252,8 @@ class DeviceConfig:
     ev_target_soc: float = 100.0
     ev_departure_weekday: str = ""
     ev_departure_weekend: str = ""
+    #: EVCC device; its entities are derived from it.
+    ev_device_id: str | None = None
     ev_soc_entity: str | None = None
     ev_capacity_entity: str | None = None
     ev_power_entity: str | None = None
@@ -308,6 +311,7 @@ class DeviceConfig:
             ev_target_soc=as_float(data.get(CONF_EV_TARGET_SOC), 100.0),
             ev_departure_weekday=str(data.get(CONF_EV_DEPARTURE_WEEKDAY) or ""),
             ev_departure_weekend=str(data.get(CONF_EV_DEPARTURE_WEEKEND) or ""),
+            ev_device_id=str(data.get(CONF_EV_DEVICE) or "") or None,
             ev_soc_entity=as_entity_id(data.get(CONF_EV_SOC_ENTITY)),
             ev_capacity_entity=as_entity_id(data.get(CONF_EV_CAPACITY_ENTITY)),
             ev_power_entity=as_entity_id(data.get(CONF_EV_POWER_ENTITY)),

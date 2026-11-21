@@ -319,3 +319,75 @@ def test_an_explicit_sensor_beats_the_derived_one(hass) -> None:
         subentry_id="b", inverter_device_id="some-device", soc_entity="sensor.mine"
     )
     assert resolve_battery(hass, config).soc_entity == "sensor.mine"
+
+
+def test_the_car_is_filled_in_from_evcc(hass) -> None:
+    """Picking the EVCC device supplies the car sensors."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.kd_helios.models import DeviceConfig
+    from custom_components.kd_helios.resolve import resolve_ev
+
+    owner = MockConfigEntry(domain="evcc", data={}, entry_id="evcc-entry")
+    owner.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=owner.entry_id,
+        identifiers={("evcc", "lp1")},
+        name="Laadpaal",
+    )
+    registry = er.async_get(hass)
+    for unique, object_id, name in (
+        ("soc", "evcc_car_soc", "Vehicle SOC"),
+        ("power", "evcc_charge_power", "Charge power"),
+        ("dep", "evcc_plan_end", "Plan projected end"),
+    ):
+        registry.async_get_or_create(
+            "sensor",
+            "evcc",
+            unique,
+            suggested_object_id=object_id,
+            original_name=name,
+            device_id=device.id,
+        )
+
+    resolved = resolve_ev(
+        hass, DeviceConfig(subentry_id="ev", name="Car", ev_device_id=device.id)
+    )
+    assert resolved.ev_soc_entity == "sensor.evcc_car_soc"
+    assert resolved.ev_power_entity == "sensor.evcc_charge_power"
+    assert resolved.ev_departure_entity == "sensor.evcc_plan_end"
+
+
+def test_joulo_supplies_the_ere_sensors(hass) -> None:
+    """ERE mode joulo finds its counters without asking for ids."""
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.kd_helios.const import EreMode
+    from custom_components.kd_helios.models import DeviceConfig, EreConfig
+    from custom_components.kd_helios.resolve import resolve_joulo
+
+    owner = MockConfigEntry(domain="joulo", data={}, entry_id="joulo-entry")
+    owner.add_to_hass(hass)
+    registry = er.async_get(hass)
+    for unique, object_id, name in (
+        ("credits", "joulo_total_ere_credits", "Total ERE credits"),
+        ("kwh", "joulo_total_all_kwh", "Total all kWh"),
+    ):
+        registry.async_get_or_create(
+            "sensor",
+            "joulo",
+            unique,
+            suggested_object_id=object_id,
+            original_name=name,
+            config_entry=owner,
+        )
+
+    config = DeviceConfig(
+        subentry_id="ev", name="Car", ere=EreConfig(mode=EreMode.JOULO)
+    )
+    resolved = resolve_joulo(hass, config)
+    assert resolved.ere.credits_entity == "sensor.joulo_total_ere_credits"
+    assert resolved.ere.kwh_entity == "sensor.joulo_total_all_kwh"

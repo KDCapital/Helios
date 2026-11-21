@@ -68,7 +68,7 @@ from .prices import (
     build_price_series,
 )
 from .profile import LoadProfile
-from .resolve import resolve_grid
+from .resolve import resolve_ev, resolve_grid, resolve_joulo
 from .sources import read_number
 from .storage import HeliosStorage
 
@@ -176,7 +176,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.storage = storage
         self.trackers: dict[str, DeviceTracker] = {}
         for subentry in device_subentries(entry):
-            config = DeviceConfig.from_subentry(subentry)
+            config = resolve_joulo(
+                hass, resolve_ev(hass, DeviceConfig.from_subentry(subentry))
+            )
             self.trackers[config.subentry_id] = DeviceTracker(
                 hass,
                 config,
@@ -451,6 +453,19 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             state = self.hass.states.get(config.ev_departure_entity)
             if state is not None and state.state not in ("unknown", "unavailable"):
                 parsed = dt_util.parse_datetime(state.state)
+                if parsed is None:
+                    # EVCC may publish a clock time rather than a timestamp.
+                    clock = dt_util.parse_time(state.state)
+                    if clock is not None:
+                        day = dt_util.as_local(now).replace(
+                            hour=clock.hour,
+                            minute=clock.minute,
+                            second=0,
+                            microsecond=0,
+                        )
+                        if day <= dt_util.as_local(now):
+                            day += timedelta(days=1)
+                        return dt_util.as_utc(day)
                 if parsed is not None:
                     return dt_util.as_utc(parsed)
 

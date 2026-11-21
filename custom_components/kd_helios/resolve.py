@@ -12,12 +12,27 @@ from dataclasses import replace
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .models import BatteryConfig, GridConfig
+from .models import BatteryConfig, DeviceConfig, GridConfig
 
 #: Name hints per battery field, tried in order.
 BATTERY_HINTS: dict[str, tuple[str, ...]] = {
     "soc_entity": ("state of charge", "battery soc", "soc"),
     "house_load_entity": ("total load", "load power", "house consumption"),
+}
+
+#: Name hints per car field for an EVCC loadpoint.
+EV_HINTS: dict[str, tuple[str, ...]] = {
+    "ev_soc_entity": ("vehicle soc", "car soc", "soc"),
+    "ev_power_entity": ("charge power", "power"),
+    "ev_departure_entity": ("plan", "departure", "target time"),
+    "ev_capacity_entity": ("capacity", "battery size"),
+}
+
+#: Name hints for the Joulo ERE sensors.
+JOULO_HINTS: dict[str, tuple[str, ...]] = {
+    "credits_entity": ("credits", "ere"),
+    "kwh_entity": ("total all kwh", "kwh"),
+    "price_entity": ("marktprijs", "price"),
 }
 
 #: Name hints per grid field for a P1 meter.
@@ -90,3 +105,44 @@ def resolve_grid(hass: HomeAssistant, config: GridConfig) -> GridConfig:
         if config.export_power_entity is None:
             changes["export_power_entity"] = found["import_power_entity"]
     return replace(config, **changes) if changes else config
+
+
+def resolve_ev(hass: HomeAssistant, config: DeviceConfig) -> DeviceConfig:
+    """Fill the car's sensors from the EVCC device that was picked."""
+    if config.ev_device_id is None:
+        return config
+
+    found = match_for_device(hass, config.ev_device_id, EV_HINTS)
+    changes: dict[str, str] = {}
+    for field in EV_HINTS:
+        if getattr(config, field) is None and field in found:
+            changes[field] = found[field]
+    return replace(config, **changes) if changes else config
+
+
+def resolve_joulo(hass: HomeAssistant, config: DeviceConfig) -> DeviceConfig:
+    """Fill the ERE sensors from Joulo, when it is installed."""
+    ere = config.ere
+    if ere.mode.value != "joulo":
+        return config
+    registry = er.async_get(hass)
+    available: list[tuple[str, str]] = []
+    for item in registry.entities.values():
+        if item.platform != "joulo" or item.disabled_by is not None:
+            continue
+        label = " ".join(
+            part for part in (item.original_name, item.entity_id) if part
+        ).lower()
+        available.append((item.entity_id, label))
+
+    changes: dict[str, str] = {}
+    for field, needles in JOULO_HINTS.items():
+        if getattr(ere, field, None) is not None:
+            continue
+        for entity_id, label in available:
+            if any(needle in label for needle in needles):
+                changes[field] = entity_id
+                break
+    if not changes:
+        return config
+    return replace(config, ere=replace(ere, **changes))
