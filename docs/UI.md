@@ -248,6 +248,23 @@ later screen is composition rather than plumbing.
 - Nothing in the panel can enable hardware writes without the explicit control
   step and, once enabled, every write appears in the audit log.
 
+## 9b. Phase A: what is built
+
+- `management.py` holds the whole configuration surface: validation, create,
+  update, delete, the wizard's position and integration detection.
+- Six WebSocket commands expose it (`kd_helios/setup`, `setup/advance`,
+  `sections`, `subentry/create|update|delete`), and every mutating one refuses
+  non-admins.
+- The panel has a section bar (Overview / Devices / Car / Battery / Grid /
+  History / Settings), lists each subentry with its stored fields, removes one
+  with a confirmation, and adds a device from an inline form with an entity
+  datalist.
+- The config flows now abort with a `panel` signpost that says where the
+  settings live.
+
+Still phase A backlog: the battery, grid and car forms (they list but do not yet
+edit inline), the wizard screens, and moving control into Settings.
+
 ## 10. Open questions
 
 1. **Provider list** — 34 providers today; should the wizard offer a search box

@@ -712,6 +712,12 @@ class HeliosConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=_provider_schema(), errors=errors
         )
 
+    async def async_step_panel(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Send people to the panel, which owns the configuration."""
+        return self.async_abort(reason="panel")
+
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:

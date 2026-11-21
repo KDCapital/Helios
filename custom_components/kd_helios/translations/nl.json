@@ -33,7 +33,11 @@
     },
     "abort": {
       "already_configured": "Deze leverancier met dit prijsinterval is al ingesteld.",
-      "reconfigure_successful": "De energieleverancier is bijgewerkt."
+      "reconfigure_successful": "De energieleverancier is bijgewerkt.",
+      "panel": {
+        "title": "Beheer in het KD Helios-paneel",
+        "description": "Open KD Helios in de zijbalk om providers, apparaten, de auto, de batterij en het net te wijzigen."
+      }
     }
   },
   "config_subentries": {
