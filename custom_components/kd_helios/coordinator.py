@@ -13,12 +13,15 @@ from homeassistant.util import dt as dt_util
 
 from .accounting import DeviceSnapshot, DeviceTracker
 from .battery import (
+    TOU_REGISTERS,
     AppliedPlan,
     ChargePlan,
+    ChargeSource,
     TouPlan,
     WorkMode,
     build_restore_programs,
     build_tou_programs,
+    charge_power_limit,
     plan_charge,
     should_apply,
 )
@@ -28,9 +31,10 @@ from .const import (
     PRICE_UPDATE_INTERVAL,
     SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_GRID,
+    DeviceKind,
 )
 from .grid import GridSnapshot, GridTracker
-from .inverter import async_write_tou
+from .inverter import async_write_registers, async_write_tou
 from .models import BatteryConfig, DeviceConfig, GridConfig, device_subentries
 from .prices import (
     PriceApiError,
@@ -155,6 +159,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.control_enabled: bool = bool(storage.control_state().get("enabled", False))
         self.last_control_error: str | None = None
         self._last_apply: datetime | None = None
+        self._applied_cap: float | None = None
 
         grid_subentries = entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)
         self.grid_tracker: GridTracker | None = (
@@ -247,6 +252,72 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.applied_plan = AppliedPlan.from_plan(plan, tou, now)
         self.storage.async_set_battery(self.applied_plan.as_dict())
 
+    async def _async_update_power_cap(self, now, snapshots, grid_snapshot) -> None:
+        """Hold the battery back while the car charges, and under the cap.
+
+        The plan says "charge at full power", but the car may already be using
+        that capacity. Rewriting only the power block leaves the schedule intact
+        and reacts within a tick, which is what stops the battery from swallowing
+        the capacity the car frees when it pauses for grid rewards.
+        """
+        config = self.battery_config
+        if (
+            config is None
+            or self.tou_plan is None
+            or not self.control_enabled
+            or not config.allow_writes
+            or config.inverter_device_id is None
+        ):
+            return
+
+        ev_kw = (
+            sum(
+                (snapshots[sid].power or 0.0)
+                for sid, tracker in self.trackers.items()
+                if tracker.config.kind is DeviceKind.EV_CHARGER and sid in snapshots
+            )
+            / 1000.0
+        )
+        grid_kw = (grid_snapshot.import_power or 0.0) / 1000.0 if grid_snapshot else 0.0
+        limit = charge_power_limit(
+            config.settings.max_charge_kw,
+            config.import_cap_kw,
+            grid_kw,
+            ev_kw,
+            config.priority,
+        )
+
+        has_grid_slot = any(
+            program.source is ChargeSource.GRID for program in self.tou_plan.programs
+        )
+        if not has_grid_slot:
+            return
+        if self._applied_cap is not None and abs(limit - self._applied_cap) < 0.25:
+            return
+
+        values = [
+            round(limit * 1000)
+            if program.source is ChargeSource.GRID
+            else program.power_w
+            for program in self.tou_plan.programs
+        ]
+        if values == [program.power_w for program in self.tou_plan.programs]:
+            # The plan already asks for exactly this, nothing to change.
+            self._applied_cap = limit
+            return
+        try:
+            await async_write_registers(
+                self.hass,
+                config.inverter_device_id,
+                {TOU_REGISTERS["power"]: values},
+            )
+        except Exception as err:  # noqa: BLE001 - never break accounting
+            self.last_control_error = str(err)
+            _LOGGER.error("Could not cap the charge power: %s", err)
+            return
+        self._applied_cap = limit
+        _LOGGER.debug("Charge power limited to %s kW", limit)
+
     @callback
     def async_prices_updated(self) -> None:
         """Recompute snapshots when a new price series arrives.
@@ -300,5 +371,6 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 battery_plan, self.battery_config.settings, now
             )
             await self._async_sync_inverter(now)
+            await self._async_update_power_cap(now, snapshots, grid_snapshot)
 
         return EngineData(devices=snapshots, grid=grid_snapshot, battery=battery_plan)

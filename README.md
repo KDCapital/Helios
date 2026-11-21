@@ -323,6 +323,21 @@ export stays below your own annual consumption. The grid ledger still tracks
 that headroom (`imported − exported`), so the numbers are there if the trade
 ever becomes attractive again.
 
+#### EV priority and the import cap
+
+When a car is charging, filling the battery at the same time doubles the import
+— and if the car pauses for a grid reward, the battery swallows the freed
+capacity and undoes the pause it was paid for. Two settings bound that:
+
+- **Priority** (`EV first`, the default): while a car draws more than 500 W, the
+  battery takes 0 kW from the grid. `Battery first` removes that rule.
+- **Maximum grid import**: the battery only takes `cap − current import`, so car
+  and battery together cannot exceed what the connection carries.
+
+The cap is reactive: it rewrites the time-of-use power block when the allowed
+power changes by more than 0.25 kW, without touching the schedule, so it reacts
+within a coordinator tick instead of waiting for a new plan.
+
 #### Automatic control, and releasing it safely
 
 `switch.<battery>_inverter_control` is the runtime toggle. Turn it on and KD
@@ -627,7 +642,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 221 tests
+.venv/bin/python -m pytest        # 224 tests
 .venv/bin/ruff check custom_components tests
 ```
 

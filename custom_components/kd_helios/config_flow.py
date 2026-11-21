@@ -39,6 +39,7 @@ from .const import (
     CONF_EXPORT_PRICE_SOURCE,
     CONF_GRID_FEE_MONTHLY,
     CONF_GRID_POWER_ENTITY,
+    CONF_IMPORT_CAP_KW,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
     CONF_INVERTER_DEVICE,
@@ -48,6 +49,7 @@ from .const import (
     CONF_NAME,
     CONF_POWER_ENTITY,
     CONF_PRICE_INTERVAL,
+    CONF_PRIORITY,
     CONF_PROVIDER,
     CONF_REIMBURSEMENT_BASIS,
     CONF_REIMBURSEMENT_INTERVAL,
@@ -92,6 +94,7 @@ from .const import (
     ExportPriceSource,
     MarketPriceBasis,
     PriceInterval,
+    Priority,
     ReimbursementMode,
 )
 from .feedin import FEED_IN_SNAPSHOT_DATE, feed_in_deduction
@@ -423,8 +426,26 @@ def _battery_schema() -> vol.Schema:
                 ),
             ),
             vol.Required(
-                CONF_ALLOW_INVERTER_WRITES, default=False
+                CONF_ALLOW_INVERTER_WRITES, CONF_IMPORT_CAP_KW, default=False
             ): selector.BooleanSelector(),
+            vol.Required(
+                CONF_PRIORITY, default=Priority.EV.value
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[priority.value for priority in Priority],
+                    mode=selector.SelectSelectorMode.LIST,
+                    translation_key="priority",
+                )
+            ),
+            vol.Optional(CONF_IMPORT_CAP_KW): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=60,
+                    step=0.5,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="kW",
+                )
+            ),
             vol.Required(
                 CONF_RESTORE_WORK_MODE,
                 default=str(WorkMode.ZERO_EXPORT_TO_LOAD.value),

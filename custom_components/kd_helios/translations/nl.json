@@ -209,7 +209,9 @@
             "battery_horizon_hours": "Planningshorizon",
             "inverter_device": "Omvormerapparaat",
             "allow_inverter_writes": "Schrijven naar de omvormer toestaan",
-            "restore_work_mode": "Bij loslaten: werkmodus"
+            "restore_work_mode": "Bij loslaten: werkmodus",
+            "priority": "Prioriteit",
+            "import_cap_kw": "Maximale netafname"
           },
           "data_description": {
             "soc_entity": "De laadtoestand van de batterij, bijvoorbeeld de Solarman batterij-SOC-sensor.",
@@ -221,7 +223,9 @@
             "battery_horizon_hours": "Hoe ver vooruit wordt gezocht naar een duurder uur om in te ontladen. Prijzen dekken vandaag en morgen.",
             "inverter_device": "Het Solarman-omvormerapparaat, nodig voordat schrijven aangezet kan worden.",
             "allow_inverter_writes": "Standaard uit. Schrijven verandert het gedrag van je batterij en moet bewust worden gestart.",
-            "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net."
+            "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net.",
+            "priority": "**EV** geeft een ladende auto de goedkope uren en houdt de batterij tegen, zodat die niet wordt volgeladen om een auto te dekken die al laadt. **Batterij** vult eerst de batterij.",
+            "import_cap_kw": "Houdt auto en batterij samen onder wat je aansluiting aankan. Laat leeg voor geen limiet."
           }
         },
         "reconfigure": {
@@ -237,13 +241,17 @@
             "battery_horizon_hours": "Planningshorizon",
             "inverter_device": "Omvormerapparaat",
             "allow_inverter_writes": "Schrijven naar de omvormer toestaan",
-            "restore_work_mode": "Bij loslaten: werkmodus"
+            "restore_work_mode": "Bij loslaten: werkmodus",
+            "priority": "Prioriteit",
+            "import_cap_kw": "Maximale netafname"
           },
           "data_description": {
             "reserve_soc": "Hieronder wordt nooit ontladen gepland.",
             "target_soc": "Koop alleen energie tot deze laadtoestand.",
             "allow_inverter_writes": "Standaard uit. Schrijven moet bewust worden gestart.",
-            "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net."
+            "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net.",
+            "priority": "**EV** geeft een ladende auto de goedkope uren en houdt de batterij tegen, zodat die niet wordt volgeladen om een auto te dekken die al laadt. **Batterij** vult eerst de batterij.",
+            "import_cap_kw": "Houdt auto en batterij samen onder wat je aansluiting aankan. Laat leeg voor geen limiet."
           }
         }
       },
@@ -500,6 +508,12 @@
         "0": "Verkopen eerst",
         "1": "Geen export naar belasting",
         "2": "Geen export naar CT"
+      }
+    },
+    "priority": {
+      "options": {
+        "ev": "EV eerst",
+        "battery": "Batterij eerst"
       }
     }
   },

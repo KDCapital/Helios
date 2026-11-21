@@ -323,3 +323,32 @@ def test_the_charging_slot_is_what_decides_a_rewrite() -> None:
         horizon_hours=SETTINGS.horizon_hours,
     )
     assert should_apply(plan, applied, stricter)
+
+
+# -- priority and import cap ------------------------------------------------
+def test_a_charging_car_stops_the_battery_filling() -> None:
+    """With the EV first, the battery does not charge under a charging car."""
+    from custom_components.kd_helios.battery import charge_power_limit
+    from custom_components.kd_helios.const import Priority
+
+    assert charge_power_limit(11.0, 0.0, 6.0, 11.0, Priority.EV) == 0.0
+    # The same situation with the battery first still fills it.
+    assert charge_power_limit(11.0, 0.0, 6.0, 11.0, Priority.BATTERY) == 11.0
+
+
+def test_a_trickle_load_does_not_count_as_charging() -> None:
+    """An idle car drawing a few hundred watts is not charging."""
+    from custom_components.kd_helios.battery import charge_power_limit
+    from custom_components.kd_helios.const import Priority
+
+    assert charge_power_limit(11.0, 0.0, 0.3, 0.2, Priority.EV) == 11.0
+
+
+def test_the_import_cap_leaves_room_for_the_house() -> None:
+    """The battery only takes what is left under the connection limit."""
+    from custom_components.kd_helios.battery import charge_power_limit
+    from custom_components.kd_helios.const import Priority
+
+    assert charge_power_limit(11.0, 17.0, 5.0, 0.0, Priority.EV) == 11.0
+    assert charge_power_limit(11.0, 17.0, 15.0, 0.0, Priority.BATTERY) == 2.0
+    assert charge_power_limit(11.0, 17.0, 20.0, 0.0, Priority.BATTERY) == 0.0

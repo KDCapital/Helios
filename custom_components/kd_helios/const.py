@@ -68,6 +68,8 @@ CONF_BATTERY_HORIZON_HOURS: Final = "battery_horizon_hours"
 CONF_INVERTER_DEVICE: Final = "inverter_device"
 CONF_ALLOW_INVERTER_WRITES: Final = "allow_inverter_writes"
 CONF_RESTORE_WORK_MODE: Final = "restore_work_mode"
+CONF_PRIORITY: Final = "priority"
+CONF_IMPORT_CAP_KW: Final = "import_cap_kw"
 
 
 class DeviceKind(StrEnum):
@@ -99,6 +101,16 @@ class MarketPriceBasis(StrEnum):
     SPOT = "spot"
     # Provider all-in price, including VAT and energy tax.
     ALL_IN = "all_in"
+
+
+class Priority(StrEnum):
+    """Who gets the cheap energy first when both want it."""
+
+    #: The car charges from the grid; the battery waits. Avoids cycling the
+    #: battery to cover a car that is already charging cheaply.
+    EV = "ev"
+    #: The battery fills first, the car gets what is left.
+    BATTERY = "battery"
 
 
 class ExportPriceSource(StrEnum):

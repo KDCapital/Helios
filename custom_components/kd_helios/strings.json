@@ -209,7 +209,9 @@
             "battery_horizon_hours": "Planning horizon",
             "inverter_device": "Inverter device",
             "allow_inverter_writes": "Allow writing to the inverter",
-            "restore_work_mode": "On release: work mode"
+            "restore_work_mode": "On release: work mode",
+            "priority": "Priority",
+            "import_cap_kw": "Maximum grid import"
           },
           "data_description": {
             "soc_entity": "The battery state of charge, for example the Solarman battery SOC sensor.",
@@ -221,7 +223,9 @@
             "battery_horizon_hours": "How far ahead to look for a cheaper hour to discharge into. Battery prices cover today and tomorrow.",
             "inverter_device": "The Solarman inverter device, required before writes can be enabled.",
             "allow_inverter_writes": "Off by default. Writes change how your battery behaves and must be triggered explicitly.",
-            "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid."
+            "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid.",
+            "priority": "**EV** gives a charging car the cheap hours and holds the battery back, so it is never filled just to cover a car that is already charging. **Battery** fills the battery first.",
+            "import_cap_kw": "Keeps the car and the battery together under what your connection can carry. Leave empty for no cap."
           }
         },
         "reconfigure": {
@@ -237,13 +241,17 @@
             "battery_horizon_hours": "Planning horizon",
             "inverter_device": "Inverter device",
             "allow_inverter_writes": "Allow writing to the inverter",
-            "restore_work_mode": "On release: work mode"
+            "restore_work_mode": "On release: work mode",
+            "priority": "Priority",
+            "import_cap_kw": "Maximum grid import"
           },
           "data_description": {
             "reserve_soc": "Never plan to discharge below this.",
             "target_soc": "Only buy energy up to this state of charge.",
             "allow_inverter_writes": "Off by default. Writes must be triggered explicitly.",
-            "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid."
+            "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid.",
+            "priority": "**EV** gives a charging car the cheap hours and holds the battery back, so it is never filled just to cover a car that is already charging. **Battery** fills the battery first.",
+            "import_cap_kw": "Keeps the car and the battery together under what your connection can carry. Leave empty for no cap."
           }
         }
       },
@@ -500,6 +508,12 @@
         "0": "Selling first",
         "1": "Zero export to load",
         "2": "Zero export to CT"
+      }
+    },
+    "priority": {
+      "options": {
+        "ev": "EV first",
+        "battery": "Battery first"
       }
     }
   },

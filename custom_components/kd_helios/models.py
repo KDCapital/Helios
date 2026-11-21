@@ -28,6 +28,7 @@ from .const import (
     CONF_EXPORT_PRICE_SOURCE,
     CONF_GRID_FEE_MONTHLY,
     CONF_GRID_POWER_ENTITY,
+    CONF_IMPORT_CAP_KW,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
     CONF_INVERTER_DEVICE,
@@ -36,6 +37,7 @@ from .const import (
     CONF_METER_DEVICE,
     CONF_NAME,
     CONF_POWER_ENTITY,
+    CONF_PRIORITY,
     CONF_REIMBURSEMENT_BASIS,
     CONF_REIMBURSEMENT_INTERVAL,
     CONF_REIMBURSEMENT_MODE,
@@ -61,6 +63,7 @@ from .const import (
     ExportPriceSource,
     MarketPriceBasis,
     PriceInterval,
+    Priority,
     ReimbursementMode,
 )
 from .prices import PricePoint
@@ -360,6 +363,10 @@ class BatteryConfig:
     horizon_hours: int = 36
     inverter_device_id: str | None = None
     allow_writes: bool = False
+    #: Who may use the cheap hours first.
+    priority: Priority = Priority.EV
+    #: Maximum total grid import; 0 disables the cap.
+    import_cap_kw: float = 0.0
     #: Work mode written when control is released, back to self-consumption.
     restore_work_mode: int = 1
 
@@ -396,6 +403,8 @@ class BatteryConfig:
             horizon_hours=int(as_float(data.get(CONF_BATTERY_HORIZON_HOURS), 36.0)),
             inverter_device_id=as_entity_id(data.get(CONF_INVERTER_DEVICE)),
             allow_writes=as_bool(data.get(CONF_ALLOW_INVERTER_WRITES)),
+            priority=_as_enum(Priority, data.get(CONF_PRIORITY), Priority.EV),
+            import_cap_kw=as_float(data.get(CONF_IMPORT_CAP_KW)),
             restore_work_mode=int(as_float(data.get(CONF_RESTORE_WORK_MODE), 1.0)),
         )
 

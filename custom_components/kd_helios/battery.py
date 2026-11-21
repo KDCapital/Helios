@@ -24,6 +24,7 @@ from enum import IntEnum
 
 from homeassistant.util import dt as dt_util
 
+from .const import Priority
 from .prices import PriceSeries
 
 _LOGGER = logging.getLogger(__name__)
@@ -628,3 +629,33 @@ def should_apply(
     if not charging:
         return True
     return charging[0].soc_pct != target
+
+
+#: An EV drawing more than this counts as charging.
+EV_CHARGING_WATTS = 500
+
+
+def charge_power_limit(
+    max_charge_kw: float,
+    import_cap_kw: float,
+    grid_import_kw: float,
+    ev_power_kw: float,
+    priority: Priority,
+) -> float:
+    """Return how much power the battery may take from the grid right now.
+
+    Two things bound it. With the EV first, a car that is charging gets the
+    cheap hours to itself: filling the battery at the same time doubles the
+    import, and when the car pauses for grid rewards the battery would swallow
+    the freed capacity, undoing the pause it is being paid for. The import cap
+    keeps the combined draw under what the connection can carry.
+    """
+    from .const import Priority
+
+    limit = max(0.0, max_charge_kw)
+    if priority is Priority.EV and ev_power_kw * 1000 >= EV_CHARGING_WATTS:
+        return 0.0
+    if import_cap_kw > 0:
+        headroom = import_cap_kw - max(0.0, grid_import_kw)
+        limit = min(limit, max(0.0, headroom))
+    return round(limit, 3)
