@@ -176,9 +176,15 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.storage = storage
         self.trackers: dict[str, DeviceTracker] = {}
         for subentry in device_subentries(entry):
-            config = resolve_joulo(
-                hass, resolve_ev(hass, DeviceConfig.from_subentry(subentry))
-            )
+            try:
+                config = resolve_joulo(
+                    hass, resolve_ev(hass, DeviceConfig.from_subentry(subentry))
+                )
+            except Exception:
+                _LOGGER.exception(
+                    "Could not read the configuration of %s", subentry.title
+                )
+                config = DeviceConfig.from_subentry(subentry)
             self.trackers[config.subentry_id] = DeviceTracker(
                 hass,
                 config,

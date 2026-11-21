@@ -286,3 +286,15 @@ async def test_history_command_is_registered(hass) -> None:
     handlers = hass.data[websocket_api.DOMAIN]
     assert "kd_helios/history" in handlers
     assert "kd_helios/dashboard" in handlers
+
+
+async def test_the_version_does_not_touch_the_disk(hass, monkeypatch) -> None:
+    """Reading the manifest on the event loop is what HA warns about."""
+    from custom_components.kd_helios import panel
+
+    def forbid(*args, **kwargs):
+        raise AssertionError("the panel must not read files on the event loop")
+
+    monkeypatch.setattr(Path, "read_text", forbid)
+    version = await panel._version(hass)
+    assert isinstance(version, str) and version

@@ -8,7 +8,6 @@ there is no template or REST plumbing in between.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from homeassistant.components import panel_custom
 from homeassistant.components.frontend import DATA_PANELS
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
+from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
 
@@ -30,13 +30,18 @@ PANEL_ICON = "mdi:home-lightning-bolt-outline"
 ASSET_DIR = Path(__file__).parent / "frontend"
 
 
-def _version() -> str:
-    """Return the integration version, used to bypass the module cache."""
-    path = Path(__file__).with_name("manifest.json")
+async def _version(hass: HomeAssistant) -> str:
+    """Return the integration version, used to bypass the module cache.
+
+    Read from the loader rather than from disk: touching the filesystem on the
+    event loop is exactly what Home Assistant warns about, and the loader already
+    holds the parsed manifest.
+    """
     try:
-        return str(json.loads(path.read_text(encoding="utf-8")).get("version", "0"))
-    except (OSError, ValueError):
+        integration = await async_get_integration(hass, DOMAIN)
+    except Exception:  # noqa: BLE001 - a missing version is not fatal
         return "0"
+    return str(integration.version or "0")
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:
@@ -49,7 +54,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
 
     # The query string is what makes the browser fetch a new bundle after an
     # update; without it an upgraded integration keeps running old JavaScript.
-    module_url = f"/{DOMAIN}/{PANEL_JS}?v={_version()}"
+    module_url = f"/{DOMAIN}/{PANEL_JS}?v={await _version(hass)}"
     asset_path = f"/{DOMAIN}/{PANEL_JS}"
     try:
         await hass.http.async_register_static_paths(
