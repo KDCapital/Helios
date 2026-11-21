@@ -264,6 +264,8 @@ class KdHeliosPanel extends HTMLElement {
     this._notice = null;
     this._editing = null;
     this._wizardStep = 0;
+    this._suggestions = {};
+    this._contract = null;
   }
 
   set hass(hass) {
@@ -297,6 +299,8 @@ class KdHeliosPanel extends HTMLElement {
     try {
       const state = await this._hass.callWS({ type: "kd_helios/setup" });
       this._setup = state.setup;
+      this._suggestions = state.suggestions || {};
+      this._contract = state.contract || null;
       const sections = await this._hass.callWS({ type: "kd_helios/sections" });
       this._sections = sections.sections;
     } catch (err) {
@@ -325,7 +329,11 @@ class KdHeliosPanel extends HTMLElement {
   }
 
   _fieldValue(item, field) {
-    if (!item) return "";
+    if (!item) {
+      const kind = this._editingKind;
+      const suggested = kind && this._suggestions[kind];
+      return (suggested && suggested[field.key]) || "";
+    }
     const value = item.data[field.key];
     return value === undefined || value === null ? "" : String(value);
   }
@@ -1034,6 +1042,41 @@ class KdHeliosPanel extends HTMLElement {
     this._render();
   }
 
+  _contractCard() {
+    const contract = this._contract;
+    if (!contract) return "";
+    const providers = (contract.providers || [])
+      .map(
+        ([key, label]) =>
+          `<option value="${key}" ${contract.provider === key ? "selected" : ""}>${label}</option>`
+      )
+      .join("");
+    const intervals = (contract.intervals || [])
+      .map(
+        (key) => `<option value="${key}" ${contract.interval === key ? "selected" : ""}>${key}</option>`
+      )
+      .join("");
+    return `<div class="rows" style="margin-top:10px">
+      <div class="row"><span class="grow">Provider</span>
+        <select data-contract="provider">${providers}</select></div>
+      <div class="row"><span class="grow">Price interval</span>
+        <select data-contract="interval">${intervals}</select></div>
+      <div class="actions"><button class="primary" data-contract-save="1">Save contract</button></div>
+    </div>`;
+  }
+
+  async _saveContract() {
+    const root = this.shadowRoot;
+    const provider = root.querySelector('[data-contract="provider"]');
+    const interval = root.querySelector('[data-contract="interval"]');
+    if (!provider || !interval) return;
+    await this._call("kd_helios/contract", {
+      provider: provider.value,
+      interval: interval.value,
+    });
+    await this._load();
+  }
+
   _sectionBody() {
     const setup = this._setup;
 
@@ -1072,6 +1115,11 @@ class KdHeliosPanel extends HTMLElement {
         ${rows ? `<div class="rows" style="margin-top:10px">${rows}</div>` : `<p class="muted">${empty}</p>`}
         ${form}
         ${
+          this._editing === "new" && this._suggestions[kind]
+            ? `<p class="muted">Some fields were filled in from what is installed. Check them before saving.</p>`
+            : ""
+        }
+        ${
           this._section === "car" && !(setup && setup.detected && setup.detected.evcc)
             ? `<p class="muted">The car's schedule comes from EVCC:
                <a href="https://github.com/marq24/ha-evcc" target="_blank" rel="noreferrer">install ha-evcc</a>.</p>`
@@ -1082,6 +1130,7 @@ class KdHeliosPanel extends HTMLElement {
       const profile = this._data.load_profile || {};
       return `<div class="card"><div class="head"><div><h2>Settings</h2>
         <p class="sub">Safety, learning and diagnostics</p></div></div>
+        ${this._contractCard()}
         <div class="rows">
           <div class="row"><span class="grow">Automatic control</span>
             <span class="num">${this._data.battery && this._data.battery.control_enabled ? "on" : "off"}</span></div>
@@ -1316,9 +1365,14 @@ class KdHeliosPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-add]").forEach((button) => {
       button.addEventListener("click", () => {
         this._editing = "new";
+        this._editingKind = button.dataset.add;
         this._render();
       });
     });
+    const contractSave = this.shadowRoot.querySelector("[data-contract-save]");
+    if (contractSave) {
+      contractSave.addEventListener("click", () => this._saveContract());
+    }
     this.shadowRoot.querySelectorAll("[data-wizard]").forEach((button) => {
       button.addEventListener("click", () => this._wizardMove(button.dataset.wizard));
     });

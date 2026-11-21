@@ -31,8 +31,10 @@ from custom_components.kd_helios.management import (
     create_subentry,
     delete_subentry,
     detect,
+    detect_entities,
     list_sections,
     setup_state,
+    update_contract,
     update_subentry,
 )
 from tests.test_panel import FROZEN, _setup_entry
@@ -193,3 +195,45 @@ def test_a_non_admin_cannot_change_configuration(hass) -> None:
         user=SimpleNamespace(is_admin=True), send_error=lambda *a: None
     )
     assert _admin_error(admin, {"id": 7}) is False
+
+
+async def test_the_contract_can_be_changed_from_the_panel(hass) -> None:
+    """Provider and interval are entry data, not a subentry."""
+    entry = await _entry(hass)
+    result = update_contract(hass, entry, "vandebron", "hourly")
+
+    assert result == {"provider": "vandebron", "interval": "hourly"}
+    assert entry.data[CONF_PROVIDER] == "vandebron"
+    assert entry.data[CONF_PRICE_INTERVAL] == "hourly"
+
+
+async def test_an_unknown_provider_is_refused(hass) -> None:
+    """The catalogue is the authority, not the panel."""
+    entry = await _entry(hass)
+    with pytest.raises(ConfigError):
+        update_contract(hass, entry, "not-a-provider", "hourly")
+    with pytest.raises(ConfigError):
+        update_contract(hass, entry, "zonneplan", "yearly")
+
+
+def test_detection_offers_what_it_recognises(hass) -> None:
+    """Sensors are offered by name and never forced on the user."""
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        "sensor",
+        "evcc",
+        "evcc-car-soc",
+        suggested_object_id="evcc_car_soc",
+        original_name="Car SOC",
+    )
+
+    suggestions = detect_entities(hass)
+    assert "ev_charger" in suggestions
+    assert suggestions["ev_charger"]["ev_soc_entity"].startswith("sensor.")
+
+
+def test_detection_offers_nothing_when_it_recognises_nothing(hass) -> None:
+    """No guesses: an empty result is a valid answer."""
+    assert detect_entities(hass) == {}

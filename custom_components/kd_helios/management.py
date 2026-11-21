@@ -14,10 +14,15 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     CONF_KIND,
     CONF_NAME,
+    CONF_PRICE_INTERVAL,
+    CONF_PROVIDER,
+    PRICE_INTERVALS,
+    PROVIDERS,
     SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_EV_CHARGER,
@@ -209,3 +214,89 @@ def detect(hass: HomeAssistant) -> dict[str, Any]:
             "evcc_url": "https://github.com/marq24/ha-evcc",
         },
     }
+
+
+def update_contract(
+    hass: HomeAssistant, entry: ConfigEntry, provider: str, interval: str
+) -> dict[str, Any]:
+    """Change the provider and interval from the panel."""
+    if provider not in PROVIDERS:
+        raise ConfigError("invalid", f"Unknown provider: {provider}")
+    if interval not in PRICE_INTERVALS:
+        raise ConfigError("invalid", f"Unknown interval: {interval}")
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **entry.data,
+            CONF_PROVIDER: provider,
+            CONF_PRICE_INTERVAL: interval,
+        },
+    )
+    return {"provider": provider, "interval": interval}
+
+
+def contract(entry: ConfigEntry) -> dict[str, Any]:
+    """Return the current contract and the options to choose from."""
+    return {
+        "provider": entry.data.get(CONF_PROVIDER),
+        "interval": entry.data.get(CONF_PRICE_INTERVAL),
+        "providers": [[key, label] for key, label in sorted(PROVIDERS.items())],
+        "intervals": list(PRICE_INTERVALS),
+    }
+
+
+#: What a sensor name has to contain to be offered for a field, per platform.
+_HINTS: dict[str, dict[str, tuple[str, ...]]] = {
+    "homewizard": {
+        "import_energy_entity": ("import", "total_energy_import"),
+        "export_energy_entity": ("export",),
+        "import_power_entity": ("power", "active_power"),
+    },
+    "solarman": {
+        "soc_entity": ("soc", "state of charge"),
+        "house_load_entity": ("load power", "total load"),
+    },
+    "evcc": {
+        "ev_soc_entity": ("soc",),
+        "ev_power_entity": ("charge power", "power"),
+        "ev_departure_entity": ("plan", "departure", "target time"),
+        "ev_capacity_entity": ("capacity", "battery size"),
+    },
+}
+
+
+def detect_entities(hass: HomeAssistant) -> dict[str, dict[str, str]]:
+    """Offer entity ids for the fields a user would otherwise have to find.
+
+    Deliberately a suggestion: the panel prefills the form, the user confirms.
+    Name matching is crude by nature, so anything ambiguous is simply not
+    offered rather than guessed wrong.
+    """
+    registry = er.async_get(hass)
+    by_platform: dict[str, list[tuple[str, str]]] = {}
+    for item in registry.entities.values():
+        if item.disabled_by is not None:
+            continue
+        label = " ".join(
+            part for part in (item.original_name, item.entity_id) if part
+        ).lower()
+        by_platform.setdefault(item.platform, []).append((item.entity_id, label))
+
+    suggestions: dict[str, dict[str, str]] = {}
+    for kind, fields in _HINTS.items():
+        available = by_platform.get(kind, [])
+        found: dict[str, str] = {}
+        for field, needles in fields.items():
+            for entity_id, label in available:
+                if any(needle in label for needle in needles):
+                    found[field] = entity_id
+                    break
+        if not found:
+            continue
+        if kind == "homewizard":
+            suggestions["grid"] = found
+        elif kind == "solarman":
+            suggestions["battery"] = found
+        elif kind == "evcc":
+            suggestions["ev_charger"] = found
+    return suggestions

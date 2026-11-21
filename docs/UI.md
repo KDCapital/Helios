@@ -276,8 +276,13 @@ later screen is composition rather than plumbing.
   be skipped; an unfinished setup shows a banner on the Overview.
 - A render test proves the wizard's first screen comes out of the real payload.
 
-Still phase A backlog: the contract step (it edits entry data, not a subentry),
-the control switch inside Settings, and the audit log.
+- The contract is editable in Settings (`kd_helios/contract`), so provider and
+  interval no longer need a config flow.
+- Detection (`detect_entities`) offers entity ids for grid, battery and car by
+  platform and sensor name; a new form prefills them and says so. Detection
+  never forces a value: the user confirms.
+
+Still phase A backlog: the control switch inside Settings and the audit log.
 
 ## 10. Open questions
 

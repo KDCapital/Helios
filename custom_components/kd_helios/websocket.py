@@ -22,11 +22,14 @@ from .management import (
     KINDS,
     ConfigError,
     async_advance_setup,
+    contract,
     create_subentry,
     delete_subentry,
     detect,
+    detect_entities,
     list_sections,
     setup_state,
+    update_contract,
     update_subentry,
 )
 
@@ -358,6 +361,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_history)
     websocket_api.async_register_command(hass, websocket_setup)
     websocket_api.async_register_command(hass, websocket_setup_advance)
+    websocket_api.async_register_command(hass, websocket_contract)
     websocket_api.async_register_command(hass, websocket_sections)
     websocket_api.async_register_command(hass, websocket_subentry_create)
     websocket_api.async_register_command(hass, websocket_subentry_update)
@@ -384,7 +388,13 @@ async def websocket_setup(hass, connection, msg) -> None:
         connection.send_error(msg["id"], "not_found", "No KD Helios entry is loaded")
         return
     connection.send_result(
-        msg["id"], {"setup": setup_state(entry), "detected": detect(hass)}
+        msg["id"],
+        {
+            "setup": setup_state(entry),
+            "detected": detect(hass),
+            "suggestions": detect_entities(hass),
+            "contract": contract(entry),
+        },
     )
 
 
@@ -509,3 +519,28 @@ async def websocket_subentry_delete(hass, connection, msg) -> None:
         connection.send_error(msg["id"], err.code, err.message)
         return
     connection.send_result(msg["id"], {"sections": list_sections(hass, entry)})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "kd_helios/contract",
+        vol.Optional("entry_id"): str,
+        vol.Required("provider"): str,
+        vol.Required("interval"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_contract(hass, connection, msg) -> None:
+    """Change the provider and interval from the panel."""
+    if _admin_error(connection, msg):
+        return
+    entry = _loaded_entry(hass, msg.get("entry_id"))
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "No KD Helios entry is loaded")
+        return
+    try:
+        result = update_contract(hass, entry, msg["provider"], msg["interval"])
+    except ConfigError as err:
+        connection.send_error(msg["id"], err.code, err.message)
+        return
+    connection.send_result(msg["id"], result)
