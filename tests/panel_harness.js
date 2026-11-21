@@ -43,7 +43,13 @@ element._hass = {
   user: { name: "Jules" },
 };
 element._data = payload;
-if (section) element._section = section;
+if (section === "onboarding") {
+  // The panel fetches this over the socket; the harness sets it directly.
+  element._setup = { completed: false, step: "welcome", steps: [], skipped: [], device_count: 0 };
+  element._sections = [];
+} else if (section) {
+  element._section = section;
+}
 element._render();
 
 process.stdout.write(element.shadowRoot.innerHTML);

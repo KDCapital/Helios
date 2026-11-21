@@ -167,6 +167,9 @@ const STYLE = `
   .muted { color: var(--secondary-text-color); font-size: 12.5px; margin: 8px 0 0; }
   .error { color: var(--error-color); }
   .actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .locked { opacity: .3; pointer-events: none; filter: grayscale(.4); }
+  .locked * { user-select: none; }
+  .onboarding-note { color: var(--secondary-text-color); font-size: 12.5px; margin: 0 0 4px; }
   .ranges { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px;
     background: var(--secondary-background-color); border: 1px solid var(--helios-line); }
   .ranges button { border: none; background: transparent; padding: 5px 11px; border-radius: 999px; }
@@ -299,6 +302,10 @@ class KdHeliosPanel extends HTMLElement {
     try {
       const state = await this._hass.callWS({ type: "kd_helios/setup" });
       this._setup = state.setup;
+      if (state.setup && state.setup.step) {
+        const index = WIZARD.findIndex((spec) => spec.step === state.setup.step);
+        if (index >= 0) this._wizardStep = index;
+      }
       this._suggestions = state.suggestions || {};
       this._contract = state.contract || null;
       const sections = await this._hass.callWS({ type: "kd_helios/sections" });
@@ -686,7 +693,7 @@ class KdHeliosPanel extends HTMLElement {
     if (!ev.length) {
       return `<div class="card"><div class="head"><div><h2>EV charging</h2>
         <p class="sub">No EV charger configured</p></div></div>
-        <p class="muted">Add an EV charger from the integration page to track charging, reimbursement and ERE value.</p></div>`;
+        <p class="muted">Add an EV charger in the Car section to track charging, reimbursement and ERE value.</p></div>`;
     }
     const rows = ev
       .map(
@@ -731,7 +738,7 @@ class KdHeliosPanel extends HTMLElement {
     if (!devices.length) {
       return `<div class="card"><div class="head"><div><h2>Device cost breakdown</h2>
         <p class="sub">Nothing tracked yet</p></div></div>
-        <p class="muted">Add devices from the integration page to see where the money goes.</p></div>`;
+        <p class="muted">Add devices in the Devices section to see where the money goes.</p></div>`;
     }
     const today = devices
       .map((device) => ({ ...device, spend: Math.max(0, device.cost_today || 0) }))
@@ -823,7 +830,7 @@ class KdHeliosPanel extends HTMLElement {
     if (!battery) {
       return `<div class="card"><div class="head"><div><h2>Home battery</h2>
         <p class="sub">No battery configured</p></div></div>
-        <p class="muted">Add a home battery to plan charging against the tariff.</p></div>`;
+        <p class="muted">Add a home battery in the Battery section to plan charging against the tariff.</p></div>`;
     }
     const plan = battery.plan;
     const applied = battery.applied;
@@ -927,7 +934,7 @@ class KdHeliosPanel extends HTMLElement {
     if (!grid) {
       return `<div class="card"><div class="head"><div><h2>Grid connection</h2>
         <p class="sub">Not configured</p></div></div>
-        <p class="muted">Add a grid connection to see what you pay the energy company.</p></div>`;
+        <p class="muted">Add a grid connection in the Grid section to see what you pay the energy company.</p></div>`;
     }
     const rows = [
       ["Imported today", `${this._number(grid.imported_kwh_today, 2)} kWh`],
@@ -1119,10 +1126,6 @@ class KdHeliosPanel extends HTMLElement {
   _sectionBody() {
     const setup = this._setup;
 
-    if (this._section === "wizard") {
-      return this._wizard();
-    }
-
     const describe = {
       devices: ["device", "Devices", "Tracked loads and what they cost", "Nothing tracked yet."],
       car: ["ev_charger", "Car", "EV charging, reimbursement and ERE", "No car configured yet."],
@@ -1203,6 +1206,9 @@ class KdHeliosPanel extends HTMLElement {
       return;
     }
 
+    const onboarding = Boolean(
+      this._setup && !this._setup.completed && this._section === "overview"
+    );
     const { entry, prices, grid, battery, devices, summary } = this._data;
     const history = this._history && this._history.available ? this._history : null;
 
@@ -1332,14 +1338,9 @@ class KdHeliosPanel extends HTMLElement {
           </div>
         </div>
 
-        ${
-          this._section === "overview" && this._setup && !this._setup.completed
-            ? `<div class="card kpi" style="min-height:0;flex-direction:row;align-items:center;gap:14px">
-                 <span class="grow">Setup is not finished yet — ${this._setup.device_count} device(s) tracked.</span>
-                 <button class="primary" data-setup="1">Continue setup</button>
-               </div>`
-            : ""
-        }
+        ${onboarding ? this._wizard() : ""}
+        ${onboarding ? `<p class="onboarding-note">Finish the setup to unlock the dashboard. Everything below fills in as soon as there is data.</p>` : ""}
+        <div class="${onboarding ? "locked" : ""}" ${onboarding ? "inert" : ""}>
         ${this._section === "overview" ? `<div class="kpis">${kpis}</div>` : ""}
 
         ${
@@ -1415,13 +1416,6 @@ class KdHeliosPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-wizard]").forEach((button) => {
       button.addEventListener("click", () => this._wizardMove(button.dataset.wizard));
     });
-    const setupButton = this.shadowRoot.querySelector("[data-setup]");
-    if (setupButton) {
-      setupButton.addEventListener("click", () => {
-        this._section = "wizard";
-        this._render();
-      });
-    }
     this.shadowRoot.querySelectorAll("[data-range]").forEach((button) => {
       button.addEventListener("click", () => this._setRange(button.dataset.range));
     });

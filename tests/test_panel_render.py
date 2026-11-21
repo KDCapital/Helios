@@ -121,7 +121,7 @@ async def test_the_wizard_renders_its_first_step(hass, tmp_path) -> None:
 
     result = await asyncio.to_thread(
         subprocess.run,
-        ["node", str(HARNESS), str(BUNDLE), str(payload_path), "wizard"],
+        ["node", str(HARNESS), str(BUNDLE), str(payload_path), "onboarding"],
         capture_output=True,
         text=True,
         timeout=30,
@@ -133,3 +133,7 @@ async def test_the_wizard_renders_its_first_step(hass, tmp_path) -> None:
     assert "Setup 1 of 5" in html
     assert "Welcome to KD Helios" in html
     assert "Skip" in html
+    # The dashboard is present but locked until the setup finishes.
+    assert 'class="locked"' in html
+    assert "inert" in html
+    assert "Finish the setup to unlock the dashboard" in html
