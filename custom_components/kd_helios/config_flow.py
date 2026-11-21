@@ -24,6 +24,8 @@ from .const import (
     CONF_ALLOW_INVERTER_WRITES,
     CONF_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_HORIZON_HOURS,
+    CONF_BATTERY_POWER_ENTITY,
+    CONF_BATTERY_TEMP_ENTITY,
     CONF_EFFICIENCY,
     CONF_ENERGY_ENTITY,
     CONF_ERE_CREDITS_ENTITY,
@@ -56,6 +58,7 @@ from .const import (
     CONF_INVERTER_DEVICE,
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
+    CONF_MAX_DISCHARGE_KW,
     CONF_METER_DEVICE,
     CONF_NAME,
     CONF_PHASES,
@@ -73,14 +76,26 @@ from .const import (
     CONF_RESTORE_WORK_MODE,
     CONF_SALDERING,
     CONF_SOC_ENTITY,
+    CONF_SOLAR_FORECAST_ENTITY,
+    CONF_SOLAR_HOLD_ENABLED,
     CONF_SUPPLY_COST_MONTHLY,
     CONF_TARGET_SOC,
+    CONF_TEMP_CHARGE_LIMIT_BAND_C,
+    CONF_TEMP_CHARGE_LIMIT_C,
+    CONF_TEMP_CHARGE_LIMIT_ENABLED,
+    CONF_TEMP_CHARGE_LIMIT_FLOOR_PCT,
+    CONF_WEEKLY_FULL_CHARGE_DAY,
+    CONF_WEEKLY_FULL_CHARGE_ENABLED,
     DEFAULT_ERE_MODE,
     DEFAULT_MARKET_PRICE_BASIS,
     DEFAULT_PRICE_INTERVAL,
     DEFAULT_REIMBURSEMENT_INTERVAL,
     DEFAULT_REIMBURSEMENT_MODE,
     DEFAULT_REIMBURSEMENT_PERCENT,
+    DEFAULT_TEMP_CHARGE_LIMIT_BAND_C,
+    DEFAULT_TEMP_CHARGE_LIMIT_C,
+    DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT,
+    DEFAULT_WEEKLY_FULL_CHARGE_DAY,
     DOMAIN,
     MAX_BATTERY_CAPACITY_KWH,
     MAX_BATTERY_HORIZON_HOURS,
@@ -482,7 +497,7 @@ def _battery_schema() -> vol.Schema:
                 ),
             ),
             vol.Required(
-                CONF_ALLOW_INVERTER_WRITES, CONF_IMPORT_CAP_KW, default=False
+                CONF_ALLOW_INVERTER_WRITES, default=False
             ): selector.BooleanSelector(),
             vol.Required(
                 CONF_PRIORITY, default=Priority.EV.value
@@ -539,6 +554,70 @@ def _battery_schema() -> vol.Schema:
                     mode=selector.SelectSelectorMode.LIST,
                     translation_key="work_mode",
                 )
+            ),
+            vol.Optional(CONF_MAX_DISCHARGE_KW): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.1,
+                    max=MAX_CHARGE_POWER_KW,
+                    step=0.1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="kW",
+                )
+            ),
+            vol.Optional(CONF_BATTERY_POWER_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Optional(CONF_BATTERY_TEMP_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Required(
+                CONF_TEMP_CHARGE_LIMIT_ENABLED, default=False
+            ): selector.BooleanSelector(),
+            vol.Required(
+                CONF_TEMP_CHARGE_LIMIT_C, default=DEFAULT_TEMP_CHARGE_LIMIT_C
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=20,
+                    max=80,
+                    step=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="°C",
+                )
+            ),
+            vol.Required(
+                CONF_TEMP_CHARGE_LIMIT_BAND_C,
+                default=DEFAULT_TEMP_CHARGE_LIMIT_BAND_C,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=30,
+                    step=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="°C",
+                )
+            ),
+            vol.Required(
+                CONF_TEMP_CHARGE_LIMIT_FLOOR_PCT,
+                default=DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT,
+            ): _percent_field(0, 100),
+            vol.Required(
+                CONF_WEEKLY_FULL_CHARGE_ENABLED, default=False
+            ): selector.BooleanSelector(),
+            vol.Required(
+                CONF_WEEKLY_FULL_CHARGE_DAY,
+                default=str(DEFAULT_WEEKLY_FULL_CHARGE_DAY),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[str(index) for index in range(7)],
+                    mode=selector.SelectSelectorMode.LIST,
+                    translation_key="weekday",
+                )
+            ),
+            vol.Required(
+                CONF_SOLAR_HOLD_ENABLED, default=False
+            ): selector.BooleanSelector(),
+            vol.Optional(CONF_SOLAR_FORECAST_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
             ),
         }
     )
@@ -651,6 +730,16 @@ def _validate_battery(user_input: Mapping[str, Any]) -> dict[str, str]:
     writes = as_bool(user_input.get(CONF_ALLOW_INVERTER_WRITES))
     if writes and as_entity_id(user_input.get(CONF_INVERTER_DEVICE)) is None:
         errors[CONF_INVERTER_DEVICE] = "inverter_required"
+
+    if as_bool(user_input.get(CONF_TEMP_CHARGE_LIMIT_ENABLED)) and (
+        as_entity_id(user_input.get(CONF_BATTERY_TEMP_ENTITY)) is None
+    ):
+        errors[CONF_BATTERY_TEMP_ENTITY] = "temperature_required"
+
+    if as_bool(user_input.get(CONF_SOLAR_HOLD_ENABLED)) and (
+        as_entity_id(user_input.get(CONF_SOLAR_FORECAST_ENTITY)) is None
+    ):
+        errors[CONF_SOLAR_FORECAST_ENTITY] = "solar_forecast_required"
     return errors
 
 

@@ -93,6 +93,12 @@ Capacity, max charge, reserve and target SOC, efficiency, invoice device,
 connection (phases/amps/margin), control switch, applied plan, and the six TOU
 programs as a read-only table.
 
+Below the plan, a **Why** list renders the blocker registry: one row per
+condition that shaped the plan (`The car is charging`, `The connection is at its
+limit`, `Waiting for solar to cover the charge`, `Inverter control is switched
+off`), with the numbers behind it. The same rows appear in English only, like the
+rest of the panel; the sensor attributes keep the machine codes for automations.
+
 The `Write now` action stays, but it is secondary: automatic control is the
 product.
 

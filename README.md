@@ -31,6 +31,8 @@ charge.
 | **Honest net cost** | `net cost = cost − reimbursement − ERE value`, and it may go negative. |
 | **Grid connection** | Import and export metered at the real tariff, with an annual **saldering** ledger and your fixed monthly costs. |
 | **Battery charging** | Works out when charging a home battery is most profitable, and can program the six time-of-use slots of a Deye inverter through Solarman. |
+| **Why it is not charging** | Every condition that shapes a plan — no spread, the car, the fuse, a hot battery, the sun — is named, timed and exposed, not just logged. |
+| **Battery health** | A weekly full charge for cell balancing, a thermal derate while charging, and a Repair when a schedule is in force but delivers nothing. |
 | **Survives restarts** | Totals, integration baselines and daily counters are persisted. |
 | **Exact price boundaries** | Energy consumed across a tariff change is split at the boundary, not priced at a single rate. |
 
@@ -265,9 +267,14 @@ battery discharge into the expensive ones.
 | **Planning horizon** | How far ahead to look for a cheaper hour to charge from and a dearer one to discharge into. |
 | **Inverter device** | The Solarman inverter, needed before writes can be enabled. |
 | **Allow writing to the inverter** | Off by default. |
+| **Maximum discharge power** | Optional. Caps what the evening peak can absorb, so the plan does not buy energy it cannot sell back in time. |
+| **Battery power sensor** | Optional. Signed W, used to notice a schedule that is in force but not running. |
+| **Battery temperature sensor** | Optional. Required for the thermal charge limit. |
+| **Weekly full charge** | Optional, with a day of the week. Charges to 100 % so an LFP pack can balance its cells. |
+| **Wait for solar before charging** | Optional. Buy only what the forecast sun is not expected to deliver. |
 
-`Planned charge`, `Planned saving`, `Applied plan saving` and
-`Next charge start` appear on the battery device.
+`Planned charge`, `Planned saving`, `Applied plan saving`, `Next charge start`
+and `Status` appear on the battery device.
 
 #### Proposed versus applied
 
@@ -284,6 +291,29 @@ plan and the programs derived from it are stored as the **applied plan**:
 
 Without that snapshot, the number that justified writing to the inverter would
 be overwritten a minute later and you could never check what it was.
+
+#### Why the battery is (not) charging
+
+`sensor.<battery>_status` is the short answer — `planned`, `no_spread`, `full`,
+`waiting_for_solar`, `hold_conflict` — and its `blockers` attribute is the full
+one. Each blocker names a source, a reason, the numbers behind it and `since`
+when it started:
+
+```yaml
+blockers:
+  - source: cap
+    reason: ev_charging
+    details: {ev_kw: 11.0}
+    since: "2026-11-20T17:02:11+00:00"
+  - source: write
+    reason: control_off
+    since: "2026-11-20T17:00:00+00:00"
+```
+
+Reasons are kept per source, so the car, the fuse and a hot battery can all be
+on record at once instead of the last one evaluated winning. The panel renders
+the same registry, which is what makes "why is the battery doing this?" a
+question you can answer from the dashboard rather than from the log.
 
 #### Reading the market, not just the price list
 
@@ -378,6 +408,52 @@ Two things make the automatic mode safe:
 The switch is only available when writes were enabled in the battery settings
 and an inverter device is selected — the config permission is the master gate,
 the switch is the runtime one.
+
+#### What the schedule actually did
+
+A write that returns without an exception is not proof the inverter took it: a
+block can be dropped, and a half-applied schedule mixes new times with old
+powers. When Solarman exposes its read service, every block is therefore read
+back and compared after the write, the whole set is rewritten once on a
+mismatch, and a persistent difference raises a **Repair** instead of being
+recorded as applied.
+
+Two more checks cover what a write cannot prove:
+
+- **A schedule in force but not running.** With a battery power sensor
+  configured, a charge window that is active while the battery delivers less
+  than 50 W gets a grace period, then a strike, then a Repair. A battery that
+  accepts the schedule and does nothing otherwise looks identical to a working
+  one in every entity.
+- **A setting that moved.** The plan is rebuilt when anything it reads changes
+  (capacity, power, reserve, target, efficiency, horizon, the weekly cycle), and
+  the throttle that spares the Modbus link is bypassed, so a schedule computed
+  for another question cannot stay in force for ten minutes.
+
+#### Battery health
+
+Two things a battery needs that a price plan does not ask for:
+
+- **Weekly full charge.** On one chosen day the target is temporarily 100 %, the
+  normal plan charges towards it, and the previous target returns once the
+  battery reads 99 % or more. LFP cells only separate enough to be balanced at
+  the top of their range; a pack held between the reserve and 80 % cannot be.
+  The cycle never insists on a claim it cannot verify: an unreadable SOC leaves
+  it open rather than marking it done.
+- **Thermal derate.** Above a configured temperature the charge ceiling falls
+  linearly to a floor and recovers as the battery cools — no latch, no
+  hysteresis. A missing temperature reading passes the limit through unchanged,
+  because a sensor gap must never be the reason a battery stops charging.
+
+#### Waiting for the sun
+
+When a solar forecast sensor and a learned house profile are configured, the
+plan buys the **shortfall**, not the whole target: the forecast production still
+expected today minus the load still expected today, divided by a 1.3 cushion so
+an optimistic sky cannot empty the battery at dusk. Without a forecast — or
+without a learned profile to say what the house will use — nothing is credited
+and the plan behaves exactly as before. The state says which it is:
+`waiting_for_solar`, `partly_solar`, `no_forecast` or `no_consumption_forecast`.
 
 #### Why writing needs two confirmations
 
@@ -557,6 +633,7 @@ A plain cost tracker would have reported €3.82 and missed the entire story.
 | `sensor.<battery>_planned_charge` | kWh the plan wants to buy, with the windows and programs as attributes |
 | `sensor.<battery>_planned_saving` | Expected profit of the proposal, in euros |
 | `sensor.<battery>_applied_saving` | Expected profit of the plan actually written, with its windows and programs |
+| `sensor.<battery>_status` | Why the battery is or is not charging, with every blocker and since when |
 | `sensor.<battery>_next_charge_start` | When the next planned window begins |
 | `switch.<battery>_inverter_control` | Enables or disables automatic control; releasing restores self-consumption and generator-only charging |
 

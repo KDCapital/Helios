@@ -12,6 +12,31 @@
 
 const SOURCE_LABELS = { 0: "Off", 1: "Grid", 2: "Generator", 3: "Grid + gen" };
 
+// Every condition the backend can report, in the words the panel uses. One
+// dictionary so a new reason cannot appear as a bare code on the dashboard.
+const BLOCKER_LABELS = {
+  no_soc: "No battery SOC reading",
+  no_prices: "No prices available",
+  prices_stale: "Prices are from the last successful fetch",
+  full: "Battery is at its target",
+  no_spread: "No profitable spread in the horizon",
+  waiting_for_solar: "Waiting for solar to cover the charge",
+  partly_solar: "Solar covers part of the charge",
+  hold_conflict: "The car's window blocks the cheap hours",
+  slots_truncated: "The plan does not fit the six inverter slots",
+  ev_charging: "The car is charging",
+  import_cap: "The connection is at its limit",
+  temperature: "The battery is hot",
+  control_off: "Inverter control is switched off",
+  writes_disabled: "Inverter writes are disabled",
+  no_inverter: "No inverter selected",
+  write_failed: "The inverter refused the schedule",
+  not_delivering: "The battery is not delivering",
+  weekly_full_charge: "Weekly full charge for cell balancing",
+  no_forecast: "No solar forecast available",
+  no_consumption_forecast: "The house load is not learned yet",
+};
+
 const STYLE = `
   :host {
     display: block;
@@ -553,6 +578,27 @@ class KdHeliosPanel extends HTMLElement {
       </div>`;
   }
 
+  _blockers(blockers) {
+    if (!blockers || !blockers.length) {
+      return "";
+    }
+    const rows = blockers
+      .map((blocker) => {
+        const label = BLOCKER_LABELS[blocker.reason] || blocker.reason;
+        const details = blocker.details || {};
+        const facts = Object.entries(details)
+          .filter(([, value]) => value !== null && value !== undefined && value !== "")
+          .map(([key, value]) => `${key.replace(/_/g, " ")} ${value}`)
+          .join(" · ");
+        return `<div class="row"><span class="grow">${this._esc(label)}</span>
+          <span class="num muted">${this._esc(facts)}</span></div>`;
+      })
+      .join("");
+    return `<div class="rows" style="margin-top:10px">
+      <div class="row"><span class="grow"><strong>Why</strong></span></div>
+      ${rows}</div>`;
+  }
+
   _batteryCard(battery, summary) {
     if (!battery) {
       return `<div class="card"><div class="head"><div><h2>Home battery</h2>
@@ -599,6 +645,7 @@ class KdHeliosPanel extends HTMLElement {
               <div class="value">${applied ? this._time(applied.applied_at, true) : "—"}</div></div>
           </div>
         </div>
+        ${this._blockers(battery.blockers)}
         ${
           programs
             ? `<table><thead><tr><th>Start</th><th class="num">Power</th>

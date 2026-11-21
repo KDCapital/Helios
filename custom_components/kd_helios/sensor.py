@@ -448,6 +448,12 @@ BATTERY_SENSORS: tuple[HeliosBatterySensorDescription, ...] = (
             window.start if (window := plan.next_window(now)) else None
         ),
     ),
+    HeliosBatterySensorDescription(
+        key="battery_status",
+        translation_key="battery_status",
+        icon="mdi:state-machine",
+        value_fn=lambda plan, _now: plan.reason,
+    ),
 )
 
 
@@ -725,6 +731,8 @@ class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
         """Expose the plan, or the one that is actually in force."""
         if self.entity_description.key == "battery_applied_saving":
             return self._applied_attributes()
+        if self.entity_description.key == "battery_status":
+            return self._status_attributes()
         if self.entity_description.key != "battery_charge_energy":
             return None
         plan = self._plan
@@ -738,6 +746,9 @@ class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
         ] == [window.start for window in plan.windows]
         return {
             "reason": plan.reason,
+            "blockers": self.coordinator.blockers.as_list(),
+            "solar_credit_kwh": plan.solar_credit_kwh,
+            "prices_stale": plan.prices_stale,
             "applied_saving": applied.expected_saving if applied else None,
             "applied_at": applied.applied_at.isoformat() if applied else None,
             "applied_matches_proposal": applied_matches,
@@ -754,6 +765,7 @@ class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
                     "start": window.start.isoformat(),
                     "end": window.end.isoformat(),
                     "energy_kwh": round(window.energy_kwh, 3),
+                    "drain_kwh": round(window.drain_kwh, 3),
                     "average_price": round(window.average_price, 5),
                     "discharge_price": round(window.discharge_price, 5),
                     "expected_profit": round(window.profit, 2),
@@ -770,6 +782,25 @@ class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
                 }
                 for program in (tou.programs if tou else ())
             ],
+        }
+
+    def _status_attributes(self) -> dict[str, object] | None:
+        """Explain why the battery is, or is not, charging.
+
+        One row per condition, with the numbers behind it and since when it
+        holds: the same registry drives the panel, the log and this sensor.
+        """
+        plan = self._plan
+        coordinator = self.coordinator
+        weekly = coordinator.weekly_result
+        return {
+            "blockers": coordinator.blockers.as_list(),
+            "reason": plan.reason if plan else None,
+            "solar_credit_kwh": plan.solar_credit_kwh if plan else None,
+            "prices_stale": plan.prices_stale if plan else None,
+            "weekly_full_charge": bool(weekly.active) if weekly else False,
+            "last_control_error": coordinator.last_control_error,
+            "write_verified": (coordinator.last_verification or {}).get("verified"),
         }
 
     def _applied_attributes(self) -> dict[str, object] | None:

@@ -219,7 +219,18 @@
             "phases": "Connection type",
             "fuse_amps": "Main fuse",
             "fuse_margin_pct": "Fuse margin",
-            "house_load_entity": "House load sensor"
+            "house_load_entity": "House load sensor",
+            "max_discharge_kw": "Maximum discharge power",
+            "battery_power_entity": "Battery power sensor",
+            "battery_temp_entity": "Battery temperature sensor",
+            "temp_charge_limit_enabled": "Limit charging when the battery is hot",
+            "temp_charge_limit_c": "Temperature limit",
+            "temp_charge_limit_band_c": "Derate band",
+            "temp_charge_limit_floor_pct": "Minimum charge power",
+            "weekly_full_charge_enabled": "Weekly full charge",
+            "weekly_full_charge_day": "Day of the full charge",
+            "solar_hold_enabled": "Wait for solar before charging",
+            "solar_forecast_entity": "Solar forecast sensor"
           },
           "data_description": {
             "soc_entity": "The battery state of charge, for example the Solarman battery SOC sensor.",
@@ -237,7 +248,18 @@
             "phases": "Single-phase or three-phase.",
             "fuse_amps": "The rating of your main fuse.",
             "fuse_margin_pct": "The share of the fuse rating you allow KD Helios to plan with. Some connections are limited lower by the grid operator than the fuse suggests.",
-            "house_load_entity": "A sensor with the whole-house consumption in W. KD Helios learns an hourly profile from it, which later forecasts are based on."
+            "house_load_entity": "A sensor with the whole-house consumption in W. KD Helios learns an hourly profile from it, which later forecasts are based on.",
+            "max_discharge_kw": "How fast the battery can discharge. Used to check that the energy it buys can actually be sold again before the peak. Leave empty when unknown.",
+            "battery_power_entity": "A signed power sensor for the battery in W. KD Helios uses it to notice a schedule that is in force but not running.",
+            "battery_temp_entity": "The battery's internal temperature in °C. Required for the thermal charge limit.",
+            "temp_charge_limit_enabled": "Reduce the charge power as the battery heats up, before its own management system cuts charging off.",
+            "temp_charge_limit_c": "Full power is allowed at or below this temperature; reduction starts above it.",
+            "temp_charge_limit_band_c": "The temperature span over which the charge power falls to the minimum.",
+            "temp_charge_limit_floor_pct": "The lowest share of the normal charge power, reached at the top of the band.",
+            "weekly_full_charge_enabled": "Charge to 100 percent once a week so the battery can balance its cells. Below the top of the range an LFP pack cannot tell which cell is leading.",
+            "weekly_full_charge_day": "The day the full charge runs. The previous target returns as soon as the battery is full.",
+            "solar_hold_enabled": "Buy only the energy the sun is not expected to deliver. The forecast is discounted by 30 percent before it is credited, so an optimistic sky does not empty the battery at dusk.",
+            "solar_forecast_entity": "A remaining-today production forecast in kWh, for example Solcast or Forecast.Solar."
           }
         },
         "reconfigure": {
@@ -259,7 +281,18 @@
             "phases": "Connection type",
             "fuse_amps": "Main fuse",
             "fuse_margin_pct": "Fuse margin",
-            "house_load_entity": "House load sensor"
+            "house_load_entity": "House load sensor",
+            "max_discharge_kw": "Maximum discharge power",
+            "battery_power_entity": "Battery power sensor",
+            "battery_temp_entity": "Battery temperature sensor",
+            "temp_charge_limit_enabled": "Limit charging when the battery is hot",
+            "temp_charge_limit_c": "Temperature limit",
+            "temp_charge_limit_band_c": "Derate band",
+            "temp_charge_limit_floor_pct": "Minimum charge power",
+            "weekly_full_charge_enabled": "Weekly full charge",
+            "weekly_full_charge_day": "Day of the full charge",
+            "solar_hold_enabled": "Wait for solar before charging",
+            "solar_forecast_entity": "Solar forecast sensor"
           },
           "data_description": {
             "reserve_soc": "Never plan to discharge below this.",
@@ -271,7 +304,18 @@
             "phases": "Single-phase or three-phase.",
             "fuse_amps": "The rating of your main fuse.",
             "fuse_margin_pct": "The share of the fuse rating you allow KD Helios to plan with. Some connections are limited lower by the grid operator than the fuse suggests.",
-            "house_load_entity": "A sensor with the whole-house consumption in W. KD Helios learns an hourly profile from it, which later forecasts are based on."
+            "house_load_entity": "A sensor with the whole-house consumption in W. KD Helios learns an hourly profile from it, which later forecasts are based on.",
+            "max_discharge_kw": "How fast the battery can discharge. Used to check that the energy it buys can actually be sold again before the peak. Leave empty when unknown.",
+            "battery_power_entity": "A signed power sensor for the battery in W. KD Helios uses it to notice a schedule that is in force but not running.",
+            "battery_temp_entity": "The battery's internal temperature in °C. Required for the thermal charge limit.",
+            "temp_charge_limit_enabled": "Reduce the charge power as the battery heats up, before its own management system cuts charging off.",
+            "temp_charge_limit_c": "Full power is allowed at or below this temperature; reduction starts above it.",
+            "temp_charge_limit_band_c": "The temperature span over which the charge power falls to the minimum.",
+            "temp_charge_limit_floor_pct": "The lowest share of the normal charge power, reached at the top of the band.",
+            "weekly_full_charge_enabled": "Charge to 100 percent once a week so the battery can balance its cells. Below the top of the range an LFP pack cannot tell which cell is leading.",
+            "weekly_full_charge_day": "The day the full charge runs. The previous target returns as soon as the battery is full.",
+            "solar_hold_enabled": "Buy only the energy the sun is not expected to deliver. The forecast is discounted by 30 percent before it is credited, so an optimistic sky does not empty the battery at dusk.",
+            "solar_forecast_entity": "A remaining-today production forecast in kWh, for example Solcast or Forecast.Solar."
           }
         }
       },
@@ -280,7 +324,9 @@
         "target_above_reserve": "The target SOC must be above the reserve SOC.",
         "capacity_required": "Enter the battery capacity in kWh.",
         "charge_power_required": "Enter the maximum charge power in kW.",
-        "inverter_required": "Select the inverter device before enabling writes."
+        "inverter_required": "Select the inverter device before enabling writes.",
+        "temperature_required": "Select the battery temperature sensor before enabling the thermal limit.",
+        "solar_forecast_required": "Select a solar forecast sensor before enabling the solar hold."
       },
       "abort": {
         "single_instance": "A battery is already configured.",
@@ -493,6 +539,9 @@
       },
       "battery_applied_saving": {
         "name": "Applied plan saving"
+      },
+      "battery_status": {
+        "name": "Status"
       }
     },
     "binary_sensor": {
@@ -557,12 +606,31 @@
         "1": "1-phase",
         "3": "3-phase"
       }
+    },
+    "weekday": {
+      "options": {
+        "0": "Monday",
+        "1": "Tuesday",
+        "2": "Wednesday",
+        "3": "Thursday",
+        "4": "Friday",
+        "5": "Saturday",
+        "6": "Sunday"
+      }
     }
   },
   "issues": {
     "no_devices": {
       "title": "KD Helios is not tracking any device yet",
       "description": "The tariff is loaded, but nothing is being metered yet.\n\nGo to **Settings → Devices & services → KD Helios** and choose **Add device** to attach a power or energy entity to an appliance, a circuit or an EV charger.\n\nUntil you do, KD Helios only shows the current energy prices."
+    },
+    "inverter_write_failed": {
+      "title": "The inverter is not taking the charge schedule",
+      "description": "KD Helios wrote the time-of-use schedule but the inverter did not read it back correctly, or refused the write.\n\nError: {error}\n\nThe schedule that is in force is not the one that was planned. Check that the inverter is reachable and that its Modbus link is not in use by another client, then switch control off and on again."
+    },
+    "battery_not_delivering": {
+      "title": "The battery is not delivering while a charge window is in force",
+      "description": "A charge window is active but the battery reports {power} W and its state of charge is {soc} percent.\n\nA battery that accepts the schedule and then does nothing looks identical to a working one in every entity. Check the inverter's own display and its grid-charge settings, then switch control off and on again."
     }
   },
   "services": {

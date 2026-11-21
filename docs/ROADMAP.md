@@ -56,7 +56,7 @@ honour them.
 
 ## 3. Where we are (M1 started)
 
-Shipped and tested (235 tests):
+Shipped and tested (322 tests):
 
 - Provider catalogue, price fetching, all-in tariff model, feed-in deductions.
 - Device accounting with source-change rebasing and implausibility guards.
@@ -70,6 +70,18 @@ Shipped and tested (235 tests):
 - M1 started: a learned house-load profile (per weekday and hour, with fallbacks
   for the first days), persisted across restarts and exposed in the dashboard
   payload. A planner benchmark runs a simulated year at 0.3 ms per plan.
+
+- Battery supervision, after the Omnibattery review (see
+  [RESEARCH-OMNIBATTERY.md](RESEARCH-OMNIBATTERY.md)):
+  - a blocker registry: every condition that shapes a plan is named, detailed,
+    timed and exposed on `sensor.<battery>_status`, the panel and diagnostics;
+  - the charge ceiling as a chain of monotone caps (envelope, car, connection,
+    temperature), where a cap can only lower and a missing input passes through;
+  - verified writes: read-back comparison, one retry, a Repair on a persistent
+    mismatch, and a Repair when a window is in force but nothing is delivered;
+  - settings fingerprint: a moved knob rewrites the schedule past the throttle;
+  - weekly full charge for cell balancing, and an optional thermal derate;
+  - a solar hold that buys the shortfall the forecast sun will not cover.
 
 Known gaps, tracked in §8.
 
@@ -259,6 +271,15 @@ Things built but not yet proven on live hardware. Each must be ticked or fixed.
 - [ ] Panel on mobile.
 - [ ] The house-load profile actually fills from a real sensor.
 - [ ] Profile-based forecast still needs solar and price forecasts (M2).
+- [ ] Read-back verification against the Solarman build in use: the read service
+      is optional, so confirm it exists and that the register values match.
+- [ ] A weekly full charge completes on a real Deye, including the target
+      restore after the battery reaches 99 %.
+- [ ] The thermal derate follows the real battery temperature register.
+- [ ] The solar hold against a live Solcast/Forecast.Solar entity, including a
+      house profile that is mature enough to be credited.
+- [ ] The non-delivery Repair does not fire during a normal charge, and the
+      delivery threshold is right for the installed battery power sensor.
 
 ## 9. Decision log
 
@@ -276,3 +297,13 @@ Things built but not yet proven on live hardware. Each must be ticked or fixed.
 - **Home Assistant stays the device bridge.** We do not rebuild device drivers.
 - **The optimiser is a pure function.** It can move to another process without a
   rewrite when measurements say it should.
+- **A missing sensor never throttles a charge.** Every cap passes the limit
+  through unchanged when its input is missing, and the solar credit is zero
+  without a learned load. Fail-open, then say why.
+- **A write that was not read back is not a success.** Where the transport can
+  read registers, a schedule is only recorded as applied once it matches.
+- **Blockers, not log lines.** One registry answers "why?" for the sensor, the
+  panel, the Repairs and the log, so no second explanation can drift.
+- **Savings are claimed on the energy that survives.** With a load forecast, the
+  part the house consumes before the peak is valued at the hours it is used in,
+  and a slow discharge caps what is bought rather than overfilling the battery.

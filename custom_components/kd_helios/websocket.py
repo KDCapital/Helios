@@ -73,6 +73,14 @@ def _battery_payload(runtime: Any, now: Any) -> dict[str, Any] | None:
         "has_inverter": config.inverter_device_id is not None,
         "control_enabled": runtime.engine.control_enabled,
         "restore_work_mode": config.restore_work_mode,
+        "blockers": runtime.engine.blockers.as_list(),
+        "weekly_full_charge": bool(
+            getattr(runtime.engine.weekly_result, "active", False)
+        ),
+        "write_verified": (
+            getattr(runtime.engine, "last_verification", None) or {}
+        ).get("verified"),
+        "last_control_error": runtime.engine.last_control_error,
         "plan": None,
         "applied": None,
     }
@@ -84,11 +92,14 @@ def _battery_payload(runtime: Any, now: Any) -> dict[str, Any] | None:
             "cost": _round(plan.cost, 2),
             "expected_saving": _round(plan.expected_saving, 2),
             "charging_now": plan.active_window(now) is not None,
+            "solar_credit_kwh": _round(plan.solar_credit_kwh, 2),
+            "prices_stale": plan.prices_stale,
             "windows": [
                 {
                     "start": window.start.isoformat(),
                     "end": window.end.isoformat(),
                     "energy_kwh": _round(window.energy_kwh, 2),
+                    "drain_kwh": _round(window.drain_kwh, 2),
                     "average_price": _round(window.average_price, 5),
                     "expected_profit": _round(window.profit, 2),
                 }

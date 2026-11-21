@@ -17,14 +17,21 @@ Everything here is side-effect free: no Home Assistant state, no Modbus.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import IntEnum
 
 from homeassistant.util import dt as dt_util
 
-from .const import Priority
+from .caps import apply_caps, charge_caps
+from .const import (
+    DEFAULT_TEMP_CHARGE_LIMIT_BAND_C,
+    DEFAULT_TEMP_CHARGE_LIMIT_C,
+    DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT,
+    Priority,
+)
+from .decisions import SOURCE_PLAN, Blocker
 from .prices import PriceSeries
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,6 +64,9 @@ AUTO_APPLY_TOLERANCE = timedelta(minutes=5)
 
 #: A slot cannot be shorter than this; minute resolution matches the HHMM field.
 MIN_SLOT = timedelta(minutes=1)
+
+#: Expected house energy between two instants, in kWh, or None when unknown.
+LoadForecast = Callable[[datetime, datetime], float | None]
 
 
 class ChargeSource(IntEnum):
@@ -112,6 +122,15 @@ class ChargeWindow:
     profit: float
     average_price: float
     discharge_price: float
+    #: Part of ``energy_kwh`` the house is expected to consume before the peak
+    #: it was bought for. That energy saves the tariff of the hours it is used
+    #: in, not the peak price, so counting it at the peak overstates the saving.
+    drain_kwh: float = 0.0
+
+    @property
+    def discharge_kwh(self) -> float:
+        """Return the energy still stored when the expensive hours arrive."""
+        return max(0.0, self.energy_kwh - self.drain_kwh)
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +144,12 @@ class ChargePlan:
     cost: float = 0.0
     expected_saving: float = 0.0
     reason: str = "planned"
+    #: Every condition that shaped this plan, including the ones that lost.
+    blockers: tuple[Blocker, ...] = ()
+    #: Energy the sun is expected to deliver, so not bought.
+    solar_credit_kwh: float = 0.0
+    #: True when the prices came from the last good fetch rather than this one.
+    prices_stale: bool = False
 
     @property
     def has_windows(self) -> bool:
@@ -351,9 +376,40 @@ def _minute_of_day(when: datetime) -> int:
     return local.hour * 60 + local.minute
 
 
-def _empty(now: datetime, soc: float | None, reason: str) -> ChargePlan:
-    """Return a plan that buys nothing."""
-    return ChargePlan(generated_at=now, soc_pct=soc, reason=reason)
+def _plan_reason(
+    windows: tuple[ChargeWindow, ...],
+    blockers: tuple[Blocker, ...],
+) -> str:
+    """Return the one-word reason shown to the user.
+
+    A plan with windows succeeds; otherwise the first blocker explains why not.
+    The full list stays available in ``ChargePlan.blockers``; this keeps the
+    long-standing single-string contract of the sensor and the panel.
+    """
+    if windows:
+        return "planned"
+    for blocker in blockers:
+        return blocker.reason
+    return "planned"
+
+
+def _empty(
+    now: datetime,
+    soc: float | None,
+    blockers: tuple[Blocker, ...] = (),
+    *,
+    solar_credit_kwh: float = 0.0,
+    prices_stale: bool = False,
+) -> ChargePlan:
+    """Return a plan that buys nothing, with the reasons why."""
+    return ChargePlan(
+        generated_at=now,
+        soc_pct=soc,
+        reason=_plan_reason((), blockers),
+        blockers=tuple(blockers),
+        solar_credit_kwh=solar_credit_kwh,
+        prices_stale=prices_stale,
+    )
 
 
 def plan_charge(
@@ -361,6 +417,12 @@ def plan_charge(
     settings: BatterySettings,
     now: datetime,
     soc_pct: float | None,
+    *,
+    load_forecast: LoadForecast | None = None,
+    solar_credit_kwh: float = 0.0,
+    max_discharge_kw: float = 0.0,
+    stale_prices: bool = False,
+    suppressed: tuple[datetime, datetime] | None = None,
 ) -> ChargePlan:
     """Return the cheapest way to fill the battery over the horizon.
 
@@ -368,65 +430,182 @@ def plan_charge(
     the round-trip efficiency: that is the import it displaces when the battery
     discharges into the expensive hours. Slots whose spread does not cover the
     losses are not bought at all.
+
+    Three refinements keep the estimate honest rather than merely optimistic:
+
+    * ``solar_credit_kwh`` is energy the sun is expected to deliver, so it is
+      subtracted from what the plan buys.
+    * ``load_forecast`` says how much the house will draw between a window and
+      the peak it is bought for. That energy still displaces import, but at the
+      prices of the hours it is used in, not at the peak price ``drain_kwh``.
+    * ``max_discharge_kw`` caps what can leave the battery in the peak, so a
+      slow inverter is not credited with a peak it cannot serve.
+
+    ``suppressed`` is an interval the battery must not charge in (the car's
+    window). Buying and spending energy inside one interval only pays the
+    round-trip losses, so those candidates are dropped and the conflict is
+    reported rather than silently planned.
     """
     now = dt_util.as_utc(now)
+    blockers: list[Blocker] = []
+
     if soc_pct is None:
-        return _empty(now, None, "no_soc")
+        return _empty(
+            now,
+            None,
+            (Blocker(SOURCE_PLAN, "no_soc"),),
+            prices_stale=stale_prices,
+        )
 
     horizon_end = now + timedelta(hours=max(1, settings.horizon_hours))
     slots = series.priced_slots(now, horizon_end)
     if not slots:
-        return _empty(now, soc_pct, "no_prices")
-
-    energy_needed = settings.capacity_kwh * (settings.target_soc_pct - soc_pct) / 100.0
-    if energy_needed <= 1e-6:
-        return _empty(now, soc_pct, "full")
+        reason = "prices_stale" if stale_prices else "no_prices"
+        return _empty(
+            now,
+            soc_pct,
+            (Blocker(SOURCE_PLAN, reason),),
+            prices_stale=stale_prices,
+        )
 
     efficiency = settings.efficiency
+    energy_needed = settings.capacity_kwh * (settings.target_soc_pct - soc_pct) / 100.0
+    if energy_needed <= 1e-6:
+        return _empty(
+            now,
+            soc_pct,
+            (Blocker(SOURCE_PLAN, "full"),),
+            prices_stale=stale_prices,
+        )
+
+    credit = max(0.0, min(float(solar_credit_kwh), energy_needed))
+    shortfall = energy_needed - credit
+    if shortfall <= 1e-6:
+        return _empty(
+            now,
+            soc_pct,
+            (
+                Blocker(
+                    SOURCE_PLAN,
+                    "waiting_for_solar",
+                    {"needed_kwh": round(energy_needed, 2)},
+                ),
+            ),
+            solar_credit_kwh=credit,
+            prices_stale=stale_prices,
+        )
+
     prices = [price for _, _, price in slots]
 
-    candidates: list[tuple[datetime, datetime, float, float, float]] = []
+    candidates: list[_Candidate] = []
+    suppressed_slots = 0
     for index, (start, end, price) in enumerate(slots):
         later = prices[index + 1 :]
         if not later:
             continue
-        discharge_price = max(later)
-        profit_per_kwh = discharge_price * efficiency - price
-        if profit_per_kwh <= 0:
+        peak_price = max(later)
+        if peak_price * efficiency - price <= 0:
             continue
         hours = (end - start).total_seconds() / 3600.0
         if hours <= 0:
             continue
+        if suppressed is not None and _overlaps(
+            start, end, suppressed[0], suppressed[1]
+        ):
+            suppressed_slots += 1
+            continue
         max_kwh = min(settings.max_charge_kw * hours, settings.capacity_kwh)
         if max_kwh <= 0:
             continue
+
+        peak_index = index + 1 + later.index(peak_price)
+        # The whole run at the peak price is what the battery can serve, not
+        # just the first quarter hour of it.
+        peak_end_index = peak_index
+        while (
+            peak_end_index + 1 < len(slots)
+            and abs(slots[peak_end_index + 1][2] - peak_price) < 1e-12
+        ):
+            peak_end_index += 1
+        peak_start = slots[peak_index][0]
+        peak_end = slots[peak_end_index][1]
         candidates.append(
-            (start, end, price, discharge_price, profit_per_kwh * max_kwh)
+            _Candidate(
+                start=start,
+                end=end,
+                price=price,
+                peak_price=peak_price,
+                kwh=max_kwh,
+                peak_hours=max(0.0, (peak_end - peak_start).total_seconds() / 3600.0),
+                peak_start=peak_start,
+            )
+        )
+
+    if suppressed_slots:
+        blockers.append(
+            Blocker(SOURCE_PLAN, "hold_conflict", {"slots": suppressed_slots})
         )
 
     if not candidates:
-        return _empty(now, soc_pct, "no_spread")
+        if not suppressed_slots:
+            blockers.append(Blocker(SOURCE_PLAN, "no_spread"))
+        return _empty(
+            now,
+            soc_pct,
+            tuple(blockers),
+            solar_credit_kwh=credit,
+            prices_stale=stale_prices,
+        )
 
-    candidates.sort(key=lambda item: item[4], reverse=True)
+    candidates.sort(key=lambda item: item.profit(efficiency), reverse=True)
 
-    remaining = energy_needed
-    chosen: list[tuple[datetime, datetime, float, float, float]] = []
+    remaining = shortfall
+    chosen: list[_Candidate] = []
+    # One budget per peak run: several cheap slots can feed the same expensive
+    # evening, and the peak can only absorb max_discharge_kw for its length.
+    budgets: dict[datetime, float] = {}
     for candidate in candidates:
         if remaining <= 1e-9:
             break
-        start, end, price, discharge_price, _ = candidate
-        hours = (end - start).total_seconds() / 3600.0
-        kwh = min(settings.max_charge_kw * hours, remaining)
+        kwh = min(candidate.kwh, remaining)
         if kwh <= 0:
             continue
-        chosen.append((start, end, price, discharge_price, kwh))
+        if max_discharge_kw > 0 and candidate.peak_hours > 0:
+            budget = budgets.setdefault(
+                candidate.peak_start,
+                max_discharge_kw * candidate.peak_hours,
+            )
+            # The peak cannot absorb more than this, so do not buy more: an
+            # overfilled battery is energy bought and never returned.
+            kwh = min(kwh, budget)
+            budgets[candidate.peak_start] = max(0.0, budget - kwh)
+        if kwh <= 0:
+            continue
+        chosen.append(
+            _Candidate(
+                start=candidate.start,
+                end=candidate.end,
+                price=candidate.price,
+                peak_price=candidate.peak_price,
+                kwh=kwh,
+                peak_hours=candidate.peak_hours,
+                peak_start=candidate.peak_start,
+            )
+        )
         remaining -= kwh
 
     if not chosen:
-        return _empty(now, soc_pct, "no_spread")
+        blockers.append(Blocker(SOURCE_PLAN, "no_spread"))
+        return _empty(
+            now,
+            soc_pct,
+            tuple(blockers),
+            solar_credit_kwh=credit,
+            prices_stale=stale_prices,
+        )
 
-    chosen.sort(key=lambda item: item[0])
-    windows = _merge_windows(chosen, efficiency)
+    chosen.sort(key=lambda item: item.start)
+    windows = _windows_from_candidates(chosen, efficiency, slots, load_forecast)
     total_cost = sum(window.cost for window in windows)
     total_value = sum(window.value for window in windows)
     return ChargePlan(
@@ -437,27 +616,122 @@ def plan_charge(
         cost=total_cost,
         expected_saving=total_value - total_cost,
         reason="planned",
+        blockers=tuple(blockers),
+        solar_credit_kwh=credit,
+        prices_stale=stale_prices,
     )
 
 
-def _merge_windows(
-    chosen: list[tuple[datetime, datetime, float, float, float]],
+@dataclass(frozen=True, slots=True)
+class _Candidate:
+    """One priced slot being considered for a charge."""
+
+    start: datetime
+    end: datetime
+    price: float
+    peak_price: float
+    kwh: float
+    peak_hours: float
+    peak_start: datetime
+
+    @property
+    def cost(self) -> float:
+        """Return what the energy costs to buy."""
+        return self.kwh * self.price
+
+    def profit(self, efficiency: float) -> float:
+        """Return what the energy is expected to earn at the peak."""
+        return self.kwh * self.peak_price * efficiency - self.cost
+
+
+def _overlaps(
+    start: datetime,
+    end: datetime,
+    other_start: datetime,
+    other_end: datetime,
+) -> bool:
+    """Return True when two half-open intervals share any time."""
+    return start < other_end and other_start < end
+
+
+def _expected_drain(
+    load_forecast: LoadForecast | None,
+    from_when: datetime,
+    until_when: datetime,
+    slots: list[tuple[datetime, datetime, float]],
+    kwh: float,
+    peak_price: float,
+) -> tuple[float, float]:
+    """Return the house energy expected before the peak, and at what price.
+
+    The drain belongs to the window as a whole, not to each quarter hour of it:
+    charging earlier in the same window does not make the house consume twice.
+    Without a forecast there is nothing to say, and the plan keeps valuing
+    everything at the peak exactly as it did before.
+    """
+    if load_forecast is None or until_when <= from_when:
+        return 0.0, peak_price
+    try:
+        energy = load_forecast(from_when, until_when)
+    except Exception:  # noqa: BLE001 - a broken forecast must not stop planning
+        _LOGGER.debug("Load forecast failed; valuing at the peak price")
+        return 0.0, peak_price
+    if energy is None:
+        return 0.0, peak_price
+    try:
+        energy = max(0.0, float(energy))
+    except (TypeError, ValueError):
+        return 0.0, peak_price
+    if energy <= 0.0:
+        return 0.0, peak_price
+
+    between = [
+        price for start, end, price in slots if start >= from_when and end <= until_when
+    ]
+    price = sum(between) / len(between) if between else peak_price
+    return min(energy, kwh), price
+
+
+def _windows_from_candidates(
+    chosen: list[_Candidate],
     efficiency: float,
-) -> list[ChargeWindow]:
-    """Merge adjacent chosen slots into windows."""
-    windows: list[list] = []
-    for start, end, price, discharge_price, kwh in chosen:
-        if windows and windows[-1][1] == start:
-            windows[-1][1] = end
-            windows[-1][2] += kwh
-            windows[-1][3] += kwh * price
-            windows[-1][4] = max(windows[-1][4], discharge_price)
+    slots: list[tuple[datetime, datetime, float]],
+    load_forecast: LoadForecast | None,
+) -> tuple[ChargeWindow, ...]:
+    """Merge adjacent chosen slots into windows.
+
+    Values are accumulated per slot rather than recomputed from the merged
+    totals, because two adjacent slots can serve two different peaks and the
+    drained energy is worth what the hours it is used in cost.
+    """
+    merged: list[list] = []
+    for candidate in chosen:
+        if merged and merged[-1][1] == candidate.start:
+            merged[-1][1] = candidate.end
+            merged[-1][2] += candidate.kwh
+            merged[-1][3] += candidate.cost
+            if candidate.peak_price > merged[-1][4]:
+                merged[-1][4] = candidate.peak_price
+                merged[-1][5] = candidate.peak_start
             continue
-        windows.append([start, end, kwh, kwh * price, discharge_price])
+        merged.append(
+            [
+                candidate.start,
+                candidate.end,
+                candidate.kwh,
+                candidate.cost,
+                candidate.peak_price,
+                candidate.peak_start,
+            ]
+        )
 
     result: list[ChargeWindow] = []
-    for start, end, kwh, cost, discharge_price in windows:
-        value = kwh * efficiency * discharge_price
+    for start, end, kwh, cost, peak_price, peak_start in merged:
+        drain, drain_price = _expected_drain(
+            load_forecast, end, peak_start, slots, kwh, peak_price
+        )
+        delivered = max(0.0, kwh - drain)
+        value = efficiency * (delivered * peak_price + drain * drain_price)
         result.append(
             ChargeWindow(
                 start=start,
@@ -467,10 +741,11 @@ def _merge_windows(
                 value=value,
                 profit=value - cost,
                 average_price=cost / kwh if kwh else 0.0,
-                discharge_price=discharge_price,
+                discharge_price=peak_price,
+                drain_kwh=drain,
             )
         )
-    return result
+    return tuple(result)
 
 
 def build_tou_programs(
@@ -587,6 +862,23 @@ def build_restore_programs(
     return TouPlan(programs=programs, truncated=False)
 
 
+def settings_fingerprint(settings: BatterySettings) -> tuple[float, ...]:
+    """Return the settings a plan depends on, in one comparable tuple.
+
+    The live plan is compared against this so that a moved knob rewrites the
+    inverter immediately, while the many ticks that change nothing about the
+    settings keep honouring the write throttle.
+    """
+    return (
+        round(float(settings.capacity_kwh), 3),
+        round(float(settings.max_charge_kw), 3),
+        round(float(settings.reserve_soc_pct), 2),
+        round(float(settings.target_soc_pct), 2),
+        round(float(settings.efficiency_pct), 2),
+        float(settings.horizon_hours),
+    )
+
+
 def should_apply(
     plan: ChargePlan,
     applied: AppliedPlan | None,
@@ -594,6 +886,7 @@ def should_apply(
     *,
     last_apply: datetime | None = None,
     now: datetime | None = None,
+    force: bool = False,
 ) -> bool:
     """Return True when the proposal is worth writing to the inverter.
 
@@ -602,7 +895,13 @@ def should_apply(
     decision therefore looks only at what matters for the schedule -- whether
     there is a charge window at all, when the next one starts, and the target
     state of charge.
+
+    ``force`` bypasses the throttle: a setting the plan reads has changed, so the
+    schedule in force was computed for a different question and must be replaced
+    even if the plan it replaced looked similar.
     """
+    if force:
+        return True
     if applied is None:
         return True
 
@@ -636,8 +935,32 @@ def should_apply(
     return charging[0].soc_pct != target
 
 
-#: An EV drawing more than this counts as charging.
-EV_CHARGING_WATTS = 500
+def charge_power_caps(
+    max_charge_kw: float,
+    import_cap_kw: float,
+    grid_import_kw: float,
+    ev_power_kw: float,
+    priority: Priority,
+    *,
+    temperature_c: float | None = None,
+    temp_limit_c: float = DEFAULT_TEMP_CHARGE_LIMIT_C,
+    temp_band_c: float = DEFAULT_TEMP_CHARGE_LIMIT_BAND_C,
+    temp_floor_pct: float = DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT,
+) -> tuple[float, tuple[Blocker, ...]]:
+    """Return the charge ceiling and every cap that lowered it."""
+    caps = charge_caps(
+        max_charge_kw,
+        import_cap_kw,
+        grid_import_kw,
+        ev_power_kw,
+        priority,
+        temperature_c=temperature_c,
+        temp_limit_c=temp_limit_c,
+        temp_band_c=temp_band_c,
+        temp_floor_pct=temp_floor_pct,
+    )
+    limit, blockers = apply_caps(max_charge_kw, caps)
+    return round(limit, 3), blockers
 
 
 def charge_power_limit(
@@ -646,24 +969,36 @@ def charge_power_limit(
     grid_import_kw: float,
     ev_power_kw: float,
     priority: Priority,
+    *,
+    temperature_c: float | None = None,
+    temp_limit_c: float = DEFAULT_TEMP_CHARGE_LIMIT_C,
+    temp_band_c: float = DEFAULT_TEMP_CHARGE_LIMIT_BAND_C,
+    temp_floor_pct: float = DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT,
 ) -> float:
     """Return how much power the battery may take from the grid right now.
 
-    Two things bound it. With the EV first, a car that is charging gets the
-    cheap hours to itself: filling the battery at the same time doubles the
-    import, and when the car pauses for grid rewards the battery would swallow
-    the freed capacity, undoing the pause it is being paid for. The import cap
-    keeps the combined draw under what the connection can carry.
-    """
-    from .const import Priority
+    A chain of caps rather than one formula, because the reasons differ: a car
+    that is charging, a connection with no room left and a hot battery all
+    lower the same number, and the user is entitled to know which one did.
 
-    limit = max(0.0, max_charge_kw)
-    if priority is Priority.EV and ev_power_kw * 1000 >= EV_CHARGING_WATTS:
-        return 0.0
-    if import_cap_kw > 0:
-        headroom = import_cap_kw - max(0.0, grid_import_kw)
-        limit = min(limit, max(0.0, headroom))
-    return round(limit, 3)
+    With the EV first, a car that is charging gets the cheap hours to itself:
+    filling the battery at the same time doubles the import, and when the car
+    pauses for grid rewards the battery would swallow the freed capacity,
+    undoing the pause it is being paid for. The import cap keeps the combined
+    draw under what the connection can carry.
+    """
+    limit, _ = charge_power_caps(
+        max_charge_kw,
+        import_cap_kw,
+        grid_import_kw,
+        ev_power_kw,
+        priority,
+        temperature_c=temperature_c,
+        temp_limit_c=temp_limit_c,
+        temp_band_c=temp_band_c,
+        temp_floor_pct=temp_floor_pct,
+    )
+    return limit
 
 
 def _apply_hold(

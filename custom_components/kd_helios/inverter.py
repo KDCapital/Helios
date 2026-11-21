@@ -1,31 +1,45 @@
 """Writing the time-of-use programs to a Deye inverter.
 
-All writes go through the Solarman integration's generic register service: its
+All writes go through the Solarman integration's generic register services: its
 Deye definition does not expose the time-of-use block as entities, and its
 entities are read-only. Blocks are written one at a time with a pause, because
 the inverter's Modbus link is easily overrun by back-to-back writes.
+
+A write that returns without an exception is not proof that the inverter took
+it: the link can drop a block, and a half-applied schedule is worse than the
+old one because it mixes new times with old powers. When Solarman exposes its
+read service, every block is therefore read back and compared, and the whole
+set is written again once before the caller is told it failed.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from .battery import TOU_REGISTERS, WORK_MODE_REGISTER, TouPlan, WorkMode
-from .const import SOLARMAN_WRITE_SERVICE
+from .battery import (
+    TOU_REGISTERS,
+    TOU_SLOTS,
+    WORK_MODE_REGISTER,
+    TouPlan,
+    WorkMode,
+)
+from .const import SOLARMAN_WRITE_SERVICE, WRITE_VERIFY_RETRIES
 
 _LOGGER = logging.getLogger(__name__)
 
 SOLARMAN_DOMAIN = "solarman"
+SOLARMAN_READ_SERVICE = "read_multiple_holding_registers"
 WRITE_PAUSE = 0.3
 
 
 class InverterWriteError(HomeAssistantError):
-    """Raised when the inverter cannot be written."""
+    """Raised when the inverter cannot be written, or did not take the write."""
 
 
 def _ensure_write_service(hass: HomeAssistant) -> None:
@@ -35,6 +49,91 @@ def _ensure_write_service(hass: HomeAssistant) -> None:
             "The Solarman integration does not expose "
             f"{SOLARMAN_DOMAIN}.{SOLARMAN_WRITE_SERVICE}"
         )
+
+
+async def async_read_registers(
+    hass: HomeAssistant,
+    device_id: str,
+    register: int,
+    count: int,
+) -> dict[int, int] | None:
+    """Read a block of holding registers, or None when reading is not available.
+
+    ``None`` is not a failure: older Solarman builds expose only the write
+    services, and a missing read must degrade verification, never block control.
+    """
+    if not hass.services.has_service(SOLARMAN_DOMAIN, SOLARMAN_READ_SERVICE):
+        return None
+    try:
+        response = await hass.services.async_call(
+            SOLARMAN_DOMAIN,
+            SOLARMAN_READ_SERVICE,
+            {"device": device_id, "register": register, "count": count},
+            blocking=True,
+            return_response=True,
+        )
+    except Exception as err:  # noqa: BLE001 - a read failure must not stop control
+        _LOGGER.warning(
+            "Could not read back registers %s..%s: %s",
+            register,
+            register + count - 1,
+            err,
+        )
+        return None
+    if not isinstance(response, Mapping):
+        return None
+    values: dict[int, int] = {}
+    for key, value in response.items():
+        try:
+            values[int(key)] = int(value)
+        except (TypeError, ValueError):
+            continue
+    return values or None
+
+
+async def async_read_tou(
+    hass: HomeAssistant,
+    device_id: str,
+) -> dict[int, list[int]] | None:
+    """Return the schedule the inverter actually holds, or None if unreadable."""
+    blocks: dict[int, list[int]] = {}
+    for register in TOU_REGISTERS.values():
+        block = await async_read_registers(hass, device_id, register, TOU_SLOTS)
+        if block is None:
+            return None
+        blocks[register] = [
+            block.get(register + offset, 0) for offset in range(TOU_SLOTS)
+        ]
+    return blocks
+
+
+async def _verify_registers(
+    hass: HomeAssistant,
+    device_id: str,
+    registers: dict[int, list[int]],
+) -> dict[int, dict[str, int | None]] | None:
+    """Return register mismatches, or None when the read is not available."""
+    mismatches: dict[int, dict[str, int | None]] = {}
+    checked = False
+    for register, expected in registers.items():
+        actual_block = await async_read_registers(
+            hass, device_id, register, len(expected)
+        )
+        if actual_block is None:
+            return None
+        checked = True
+        for offset, value in enumerate(expected):
+            actual = actual_block.get(register + offset)
+            # A register the device did not answer for is as bad as a wrong
+            # one: the schedule cannot be confirmed either way.
+            if actual != value:
+                mismatches[register + offset] = {
+                    "expected": value,
+                    "actual": actual,
+                }
+    if not checked:
+        return None
+    return mismatches
 
 
 async def async_write_registers(
@@ -108,6 +207,52 @@ async def async_write_tou(
             for program in tou.programs
         ],
     }
+
+
+async def async_write_tou_verified(
+    hass: HomeAssistant,
+    device_id: str,
+    tou: TouPlan,
+    *,
+    work_mode: WorkMode | int | None = None,
+    retries: int = WRITE_VERIFY_RETRIES,
+) -> dict[str, Any]:
+    """Write the schedule and prove the inverter took it.
+
+    Returns ``verified`` True when every register read back as written, False
+    when a mismatch survived the retry, and None when the transport cannot read
+    at all (the write is then accepted on trust, as it was before).
+    """
+    registers = tou.registers()
+    attempts = max(1, retries + 1)
+    mismatches: dict[int, dict[str, int | None]] = {}
+
+    for attempt in range(1, attempts + 1):
+        await async_write_registers(hass, device_id, registers, work_mode=work_mode)
+        read_back = await _verify_registers(hass, device_id, registers)
+        if read_back is None:
+            _LOGGER.debug(
+                "Solarman cannot read registers; accepting the write on trust"
+            )
+            return {
+                "verified": None,
+                "attempts": attempt,
+                "mismatches": {},
+            }
+        if not read_back:
+            return {"verified": True, "attempts": attempt, "mismatches": {}}
+        mismatches = read_back
+        _LOGGER.warning(
+            "Inverter did not take the schedule (attempt %s/%s): %s",
+            attempt,
+            attempts,
+            read_back,
+        )
+
+    raise InverterWriteError(
+        f"The inverter did not accept the schedule after {attempts} attempts: "
+        f"{mismatches}"
+    )
 
 
 def register_order() -> list[int]:

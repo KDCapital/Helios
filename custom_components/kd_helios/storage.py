@@ -32,6 +32,8 @@ class HeliosStorage:
         self._battery: dict[str, Any] = {}
         self._control: dict[str, Any] = {}
         self._profile: dict[str, Any] = {}
+        self._weekly: dict[str, Any] = {}
+        self._integrity: dict[str, Any] = {}
 
     async def async_load(self) -> None:
         """Load persisted state, tolerating a missing or corrupt file."""
@@ -42,6 +44,8 @@ class HeliosStorage:
             self._battery = {}
             self._control = {}
             self._profile = {}
+            self._weekly = {}
+            self._integrity = {}
             return
 
         devices = data.get("devices")
@@ -66,6 +70,12 @@ class HeliosStorage:
 
         control = data.get("battery_control")
         self._control = dict(control) if isinstance(control, dict) else {}
+
+        weekly = data.get("weekly_charge")
+        self._weekly = dict(weekly) if isinstance(weekly, dict) else {}
+
+        integrity = data.get("integrity")
+        self._integrity = dict(integrity) if isinstance(integrity, dict) else {}
 
     def device_state(self, subentry_id: str) -> dict[str, Any]:
         """Return the persisted state for one device, if any."""
@@ -108,6 +118,28 @@ class HeliosStorage:
         self._control = control
         self._store.async_delay_save(self._as_payload, STORAGE_SAVE_DELAY)
 
+    def weekly_state(self) -> dict[str, Any]:
+        """Return the persisted weekly full-charge marker."""
+        return self._weekly
+
+    def async_set_weekly(self, weekly: dict[str, Any]) -> None:
+        """Replace the weekly full-charge marker and schedule a write."""
+        if weekly == self._weekly:
+            return
+        self._weekly = weekly
+        self._store.async_delay_save(self._as_payload, STORAGE_SAVE_DELAY)
+
+    def integrity_state(self) -> dict[str, Any]:
+        """Return the persisted write/integrity counter state."""
+        return self._integrity
+
+    def async_set_integrity(self, integrity: dict[str, Any]) -> None:
+        """Replace the integrity counters and schedule a write."""
+        if integrity == self._integrity:
+            return
+        self._integrity = integrity
+        self._store.async_delay_save(self._as_payload, STORAGE_SAVE_DELAY)
+
     def async_set_devices(self, devices: dict[str, dict[str, Any]]) -> None:
         """Replace the stored device state and schedule a debounced write."""
         if devices == self._devices:
@@ -130,6 +162,8 @@ class HeliosStorage:
             "battery": self._battery,
             "battery_control": self._control,
             "load_profile": self._profile,
+            "weekly_charge": self._weekly,
+            "integrity": self._integrity,
         }
 
     async def async_save(self) -> None:

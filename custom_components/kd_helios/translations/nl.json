@@ -219,7 +219,18 @@
             "phases": "Soort aansluiting",
             "fuse_amps": "Hoofdzekering",
             "fuse_margin_pct": "Zekeringsmarge",
-            "house_load_entity": "Sensor huisverbruik"
+            "house_load_entity": "Sensor huisverbruik",
+            "max_discharge_kw": "Maximaal ontlaadvermogen",
+            "battery_power_entity": "Batterijvermogen-sensor",
+            "battery_temp_entity": "Batterijtemperatuur-sensor",
+            "temp_charge_limit_enabled": "Laadvermogen beperken als de batterij heet is",
+            "temp_charge_limit_c": "Temperatuurlimiet",
+            "temp_charge_limit_band_c": "Terugregelband",
+            "temp_charge_limit_floor_pct": "Minimaal laadvermogen",
+            "weekly_full_charge_enabled": "Wekelijkse volledige lading",
+            "weekly_full_charge_day": "Dag van de volledige lading",
+            "solar_hold_enabled": "Wacht op zon voordat er geladen wordt",
+            "solar_forecast_entity": "Zonnevoorspelling-sensor"
           },
           "data_description": {
             "soc_entity": "De laadtoestand van de batterij, bijvoorbeeld de Solarman batterij-SOC-sensor.",
@@ -237,7 +248,18 @@
             "phases": "Eenfasig of driefasig.",
             "fuse_amps": "De waarde van je hoofdzekering.",
             "fuse_margin_pct": "Het deel van de zekering dat KD Helios mag gebruiken. Sommige aansluitingen zijn door de netbeheerder lager begrensd dan de zekering suggereert.",
-            "house_load_entity": "Een sensor met het totale verbruik van het huis in W. KD Helios leert daar een uurprofiel van, waar latere voorspellingen op rusten."
+            "house_load_entity": "Een sensor met het totale verbruik van het huis in W. KD Helios leert daar een uurprofiel van, waar latere voorspellingen op rusten.",
+            "max_discharge_kw": "Hoe snel de batterij kan ontladen. Hiermee wordt gecontroleerd of de gekochte energie voor de piek nog verkocht kan worden. Leeg laten als het onbekend is.",
+            "battery_power_entity": "Een vermogensensor van de batterij in W (met teken). KD Helios ziet daarmee een schema dat wel geldt maar niet loopt.",
+            "battery_temp_entity": "De interne temperatuur van de batterij in °C. Nodig voor de temperatuurlimiet.",
+            "temp_charge_limit_enabled": "Verlaag het laadvermogen terwijl de batterij warm wordt, voordat het eigen beheersysteem het laden afkapt.",
+            "temp_charge_limit_c": "Op of onder deze temperatuur is vol vermogen toegestaan; daarboven begint de verlaging.",
+            "temp_charge_limit_band_c": "Het temperatuurbereik waarin het laadvermogen naar het minimum zakt.",
+            "temp_charge_limit_floor_pct": "Het laagste deel van het normale laadvermogen, bereikt boven aan de band.",
+            "weekly_full_charge_enabled": "Laad één keer per week naar 100 procent zodat de batterij zijn cellen kan balanceren. Onder de top van het bereik ziet een LFP-pack niet welke cel voorloopt.",
+            "weekly_full_charge_day": "De dag waarop de volledige lading loopt. Het oude doel komt terug zodra de batterij vol is.",
+            "solar_hold_enabled": "Koop alleen de energie die de zon naar verwachting niet levert. De voorspelling wordt met 30 procent verdisconteerd voordat hij meetelt, zodat een optimistische lucht de batterij bij zonsondergang niet leeg achterlaat.",
+            "solar_forecast_entity": "Een voorspelling van de resterende productie vandaag in kWh, bijvoorbeeld Solcast of Forecast.Solar."
           }
         },
         "reconfigure": {
@@ -259,7 +281,18 @@
             "phases": "Soort aansluiting",
             "fuse_amps": "Hoofdzekering",
             "fuse_margin_pct": "Zekeringsmarge",
-            "house_load_entity": "Sensor huisverbruik"
+            "house_load_entity": "Sensor huisverbruik",
+            "max_discharge_kw": "Maximaal ontlaadvermogen",
+            "battery_power_entity": "Batterijvermogen-sensor",
+            "battery_temp_entity": "Batterijtemperatuur-sensor",
+            "temp_charge_limit_enabled": "Laadvermogen beperken als de batterij heet is",
+            "temp_charge_limit_c": "Temperatuurlimiet",
+            "temp_charge_limit_band_c": "Terugregelband",
+            "temp_charge_limit_floor_pct": "Minimaal laadvermogen",
+            "weekly_full_charge_enabled": "Wekelijkse volledige lading",
+            "weekly_full_charge_day": "Dag van de volledige lading",
+            "solar_hold_enabled": "Wacht op zon voordat er geladen wordt",
+            "solar_forecast_entity": "Zonnevoorspelling-sensor"
           },
           "data_description": {
             "reserve_soc": "Hieronder wordt nooit ontladen gepland.",
@@ -271,7 +304,18 @@
             "phases": "Eenfasig of driefasig.",
             "fuse_amps": "De waarde van je hoofdzekering.",
             "fuse_margin_pct": "Het deel van de zekering dat KD Helios mag gebruiken. Sommige aansluitingen zijn door de netbeheerder lager begrensd dan de zekering suggereert.",
-            "house_load_entity": "Een sensor met het totale verbruik van het huis in W. KD Helios leert daar een uurprofiel van, waar latere voorspellingen op rusten."
+            "house_load_entity": "Een sensor met het totale verbruik van het huis in W. KD Helios leert daar een uurprofiel van, waar latere voorspellingen op rusten.",
+            "max_discharge_kw": "Hoe snel de batterij kan ontladen. Hiermee wordt gecontroleerd of de gekochte energie voor de piek nog verkocht kan worden. Leeg laten als het onbekend is.",
+            "battery_power_entity": "Een vermogensensor van de batterij in W (met teken). KD Helios ziet daarmee een schema dat wel geldt maar niet loopt.",
+            "battery_temp_entity": "De interne temperatuur van de batterij in °C. Nodig voor de temperatuurlimiet.",
+            "temp_charge_limit_enabled": "Verlaag het laadvermogen terwijl de batterij warm wordt, voordat het eigen beheersysteem het laden afkapt.",
+            "temp_charge_limit_c": "Op of onder deze temperatuur is vol vermogen toegestaan; daarboven begint de verlaging.",
+            "temp_charge_limit_band_c": "Het temperatuurbereik waarin het laadvermogen naar het minimum zakt.",
+            "temp_charge_limit_floor_pct": "Het laagste deel van het normale laadvermogen, bereikt boven aan de band.",
+            "weekly_full_charge_enabled": "Laad één keer per week naar 100 procent zodat de batterij zijn cellen kan balanceren. Onder de top van het bereik ziet een LFP-pack niet welke cel voorloopt.",
+            "weekly_full_charge_day": "De dag waarop de volledige lading loopt. Het oude doel komt terug zodra de batterij vol is.",
+            "solar_hold_enabled": "Koop alleen de energie die de zon naar verwachting niet levert. De voorspelling wordt met 30 procent verdisconteerd voordat hij meetelt, zodat een optimistische lucht de batterij bij zonsondergang niet leeg achterlaat.",
+            "solar_forecast_entity": "Een voorspelling van de resterende productie vandaag in kWh, bijvoorbeeld Solcast of Forecast.Solar."
           }
         }
       },
@@ -280,7 +324,9 @@
         "target_above_reserve": "De doel-SOC moet hoger zijn dan de reserve-SOC.",
         "capacity_required": "Vul de batterijcapaciteit in kWh in.",
         "charge_power_required": "Vul het maximale laadvermogen in kW in.",
-        "inverter_required": "Kies het omvormerapparaat voordat je schrijven aanzet."
+        "inverter_required": "Kies het omvormerapparaat voordat je schrijven aanzet.",
+        "temperature_required": "Kies de batterijtemperatuur-sensor voordat je de temperatuurlimiet aanzet.",
+        "solar_forecast_required": "Kies een zonnevoorspelling-sensor voordat je wachten op zon aanzet."
       },
       "abort": {
         "single_instance": "Er is al een batterij ingesteld.",
@@ -493,6 +539,9 @@
       },
       "battery_applied_saving": {
         "name": "Besparing toegepast plan"
+      },
+      "battery_status": {
+        "name": "Status"
       }
     },
     "binary_sensor": {
@@ -557,12 +606,31 @@
         "1": "1-fase",
         "3": "3-fase"
       }
+    },
+    "weekday": {
+      "options": {
+        "0": "maandag",
+        "1": "dinsdag",
+        "2": "woensdag",
+        "3": "donderdag",
+        "4": "vrijdag",
+        "5": "zaterdag",
+        "6": "zondag"
+      }
     }
   },
   "issues": {
     "no_devices": {
       "title": "KD Helios meet nog geen enkel apparaat",
       "description": "Het tarief is geladen, maar er wordt nog niets gemeten.\n\nGa naar **Instellingen → Apparaten & diensten → KD Helios** en kies **Apparaat toevoegen** om een vermogens- of energiesensor te koppelen aan een apparaat, een groep of een laadpaal.\n\nTot die tijd toont KD Helios alleen de actuele energieprijzen."
+    },
+    "inverter_write_failed": {
+      "title": "De omvormer neemt het laadschema niet over",
+      "description": "KD Helios heeft het tijdschema geschreven, maar de omvormer leest het niet correct terug of weigerde de schrijfactie.\n\nFout: {error}\n\nHet schema dat nu geldt is niet het geplande schema. Controleer of de omvormer bereikbaar is en of een andere client de Modbus-verbinding niet bezet houdt, en zet de regeling daarna uit en weer aan."
+    },
+    "battery_not_delivering": {
+      "title": "De batterij levert niets terwijl er een laadvenster geldt",
+      "description": "Er is een laadvenster actief, maar de batterij meldt {power} W bij een SOC van {soc} procent.\n\nEen batterij die het schema aanneemt en daarna niets doet, ziet er in elke entiteit hetzelfde uit als een werkende. Controleer het display van de omvormer en de laadinstellingen, en zet de regeling daarna uit en weer aan."
     }
   },
   "services": {

@@ -83,6 +83,19 @@ CONF_EV_CAPACITY_ENTITY: Final = "ev_capacity_entity"
 CONF_EV_POWER_ENTITY: Final = "ev_power_entity"
 CONF_EV_DEPARTURE_ENTITY: Final = "ev_departure_entity"
 
+# Battery supervision
+CONF_MAX_DISCHARGE_KW: Final = "max_discharge_kw"
+CONF_BATTERY_POWER_ENTITY: Final = "battery_power_entity"
+CONF_BATTERY_TEMP_ENTITY: Final = "battery_temp_entity"
+CONF_TEMP_CHARGE_LIMIT_ENABLED: Final = "temp_charge_limit_enabled"
+CONF_TEMP_CHARGE_LIMIT_C: Final = "temp_charge_limit_c"
+CONF_TEMP_CHARGE_LIMIT_BAND_C: Final = "temp_charge_limit_band_c"
+CONF_TEMP_CHARGE_LIMIT_FLOOR_PCT: Final = "temp_charge_limit_floor_pct"
+CONF_WEEKLY_FULL_CHARGE_ENABLED: Final = "weekly_full_charge_enabled"
+CONF_WEEKLY_FULL_CHARGE_DAY: Final = "weekly_full_charge_day"
+CONF_SOLAR_HOLD_ENABLED: Final = "solar_hold_enabled"
+CONF_SOLAR_FORECAST_ENTITY: Final = "solar_forecast_entity"
+
 
 class DeviceKind(StrEnum):
     """Kind of metered device."""
@@ -265,6 +278,32 @@ MIN_ERE_PER_KWH: Final = 0.0
 
 #: Repair issue shown while the entry has no tracked devices yet.
 ISSUE_NO_DEVICES: Final = "no_devices"
+#: Repair issue when the inverter refuses or corrupts a schedule write.
+ISSUE_INVERTER_WRITE_FAILED: Final = "inverter_write_failed"
+#: Repair issue when a charge window is in force but the battery delivers nothing.
+ISSUE_BATTERY_NOT_DELIVERING: Final = "battery_not_delivering"
+
+# ---------------------------------------------------------------------------
+# Battery supervision
+# ---------------------------------------------------------------------------
+#: Defaults for the thermal charge derate. Full power at or below the limit,
+#: ramping linearly to the floor across the band, and back up as it cools.
+DEFAULT_TEMP_CHARGE_LIMIT_C: Final = 40.0
+DEFAULT_TEMP_CHARGE_LIMIT_BAND_C: Final = 10.0
+DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT: Final = 40.0
+
+#: The day the weekly full charge runs. Python weekday order: Monday is 0.
+DEFAULT_WEEKLY_FULL_CHARGE_DAY: Final = 6
+
+#: Below this power a battery that is being told to charge counts as idle.
+NOT_DELIVERING_POWER_W: Final = 50.0
+#: How long a charge window may be in force with nothing delivered before it
+#: counts as a strike, and how many strikes before a Repair is raised.
+NOT_DELIVERING_GRACE: Final = timedelta(minutes=10)
+NOT_DELIVERING_STRIKES: Final = 3
+
+#: How many extra attempts a refused register write gets before it is reported.
+WRITE_VERIFY_RETRIES: Final = 1
 
 STORAGE_VERSION: Final = 1
 STORAGE_SAVE_DELAY: Final = 15

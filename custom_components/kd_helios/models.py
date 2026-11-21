@@ -14,6 +14,8 @@ from .const import (
     CONF_ALLOW_INVERTER_WRITES,
     CONF_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_HORIZON_HOURS,
+    CONF_BATTERY_POWER_ENTITY,
+    CONF_BATTERY_TEMP_ENTITY,
     CONF_EFFICIENCY,
     CONF_ENERGY_ENTITY,
     CONF_ERE_CREDITS_ENTITY,
@@ -45,6 +47,7 @@ from .const import (
     CONF_INVERTER_DEVICE,
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
+    CONF_MAX_DISCHARGE_KW,
     CONF_METER_DEVICE,
     CONF_NAME,
     CONF_PHASES,
@@ -60,14 +63,26 @@ from .const import (
     CONF_RESTORE_WORK_MODE,
     CONF_SALDERING,
     CONF_SOC_ENTITY,
+    CONF_SOLAR_FORECAST_ENTITY,
+    CONF_SOLAR_HOLD_ENABLED,
     CONF_SUPPLY_COST_MONTHLY,
     CONF_TARGET_SOC,
+    CONF_TEMP_CHARGE_LIMIT_BAND_C,
+    CONF_TEMP_CHARGE_LIMIT_C,
+    CONF_TEMP_CHARGE_LIMIT_ENABLED,
+    CONF_TEMP_CHARGE_LIMIT_FLOOR_PCT,
+    CONF_WEEKLY_FULL_CHARGE_DAY,
+    CONF_WEEKLY_FULL_CHARGE_ENABLED,
     DEFAULT_DEVICE_KIND,
     DEFAULT_ERE_MODE,
     DEFAULT_MARKET_PRICE_BASIS,
     DEFAULT_REIMBURSEMENT_INTERVAL,
     DEFAULT_REIMBURSEMENT_MODE,
     DEFAULT_REIMBURSEMENT_PERCENT,
+    DEFAULT_TEMP_CHARGE_LIMIT_BAND_C,
+    DEFAULT_TEMP_CHARGE_LIMIT_C,
+    DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT,
+    DEFAULT_WEEKLY_FULL_CHARGE_DAY,
     SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_EV_CHARGER,
     DeviceKind,
@@ -411,6 +426,22 @@ class BatteryConfig:
     fuse_margin_pct: float = 90.0
     #: Work mode written when control is released, back to self-consumption.
     restore_work_mode: int = 1
+    #: How fast the battery can discharge; 0 means unknown, so no peak is capped.
+    max_discharge_kw: float = 0.0
+    #: Signed battery power in W, used to notice a schedule that is not running.
+    battery_power_entity: str | None = None
+    #: Battery internal temperature in °C, used to derate a hot charge.
+    battery_temp_entity: str | None = None
+    temp_charge_limit_enabled: bool = False
+    temp_charge_limit_c: float = DEFAULT_TEMP_CHARGE_LIMIT_C
+    temp_charge_limit_band_c: float = DEFAULT_TEMP_CHARGE_LIMIT_BAND_C
+    temp_charge_limit_floor_pct: float = DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT
+    #: One full charge a week, for cell balancing.
+    weekly_full_charge_enabled: bool = False
+    weekly_full_charge_day: int = DEFAULT_WEEKLY_FULL_CHARGE_DAY
+    #: Buy only what the sun is not expected to deliver.
+    solar_hold_enabled: bool = False
+    solar_forecast_entity: str | None = None
 
     @property
     def model_name(self) -> str:
@@ -463,6 +494,32 @@ class BatteryConfig:
             fuse_amps=as_float(data.get(CONF_FUSE_AMPS)),
             fuse_margin_pct=as_float(data.get(CONF_FUSE_MARGIN_PCT), 90.0),
             restore_work_mode=int(as_float(data.get(CONF_RESTORE_WORK_MODE), 1.0)),
+            max_discharge_kw=as_float(data.get(CONF_MAX_DISCHARGE_KW)),
+            battery_power_entity=as_entity_id(data.get(CONF_BATTERY_POWER_ENTITY)),
+            battery_temp_entity=as_entity_id(data.get(CONF_BATTERY_TEMP_ENTITY)),
+            temp_charge_limit_enabled=as_bool(data.get(CONF_TEMP_CHARGE_LIMIT_ENABLED)),
+            temp_charge_limit_c=as_float(
+                data.get(CONF_TEMP_CHARGE_LIMIT_C), DEFAULT_TEMP_CHARGE_LIMIT_C
+            ),
+            temp_charge_limit_band_c=as_float(
+                data.get(CONF_TEMP_CHARGE_LIMIT_BAND_C),
+                DEFAULT_TEMP_CHARGE_LIMIT_BAND_C,
+            ),
+            temp_charge_limit_floor_pct=as_float(
+                data.get(CONF_TEMP_CHARGE_LIMIT_FLOOR_PCT),
+                DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT,
+            ),
+            weekly_full_charge_enabled=as_bool(
+                data.get(CONF_WEEKLY_FULL_CHARGE_ENABLED)
+            ),
+            weekly_full_charge_day=int(
+                as_float(
+                    data.get(CONF_WEEKLY_FULL_CHARGE_DAY),
+                    float(DEFAULT_WEEKLY_FULL_CHARGE_DAY),
+                )
+            ),
+            solar_hold_enabled=as_bool(data.get(CONF_SOLAR_HOLD_ENABLED)),
+            solar_forecast_entity=as_entity_id(data.get(CONF_SOLAR_FORECAST_ENTITY)),
         )
 
 
