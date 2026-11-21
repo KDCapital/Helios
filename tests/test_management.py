@@ -391,3 +391,44 @@ def test_joulo_supplies_the_ere_sensors(hass) -> None:
     resolved = resolve_joulo(hass, config)
     assert resolved.ere.credits_entity == "sensor.joulo_total_ere_credits"
     assert resolved.ere.kwh_entity == "sensor.joulo_total_all_kwh"
+
+
+def test_the_grid_is_filled_in_from_the_meter(hass) -> None:
+    """The derived field names must be the ones GridConfig actually has."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.kd_helios.models import GridConfig
+    from custom_components.kd_helios.resolve import resolve_grid
+
+    owner = MockConfigEntry(domain="homewizard", data={}, entry_id="hw-entry")
+    owner.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=owner.entry_id,
+        identifiers={("homewizard", "p1")},
+        name="P1 meter",
+    )
+    registry = er.async_get(hass)
+    for unique, object_id, name in (
+        ("import", "p1_total_energy_import_kwh", "Total energy import"),
+        ("export", "p1_total_energy_export_kwh", "Total energy export"),
+        ("power", "p1_active_power", "Active power"),
+    ):
+        registry.async_get_or_create(
+            "sensor",
+            "homewizard",
+            unique,
+            suggested_object_id=object_id,
+            original_name=name,
+            device_id=device.id,
+        )
+
+    resolved = resolve_grid(
+        hass, GridConfig(subentry_id="g", meter_device_id=device.id)
+    )
+    assert resolved.import_entity == "sensor.p1_total_energy_import_kwh"
+    assert resolved.export_entity == "sensor.p1_total_energy_export_kwh"
+    assert resolved.import_power_entity == "sensor.p1_active_power"
+    # A signed power sensor serves both directions.
+    assert resolved.export_power_entity == resolved.import_power_entity

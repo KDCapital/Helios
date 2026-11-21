@@ -37,8 +37,8 @@ JOULO_HINTS: dict[str, tuple[str, ...]] = {
 
 #: Name hints per grid field for a P1 meter.
 GRID_HINTS: dict[str, tuple[str, ...]] = {
-    "import_energy_entity": ("total_energy_import", "energy import", "import"),
-    "export_energy_entity": ("total_energy_export", "energy export", "export"),
+    "import_entity": ("total_energy_import", "energy import", "import"),
+    "export_entity": ("total_energy_export", "energy export", "export"),
     "import_power_entity": ("active_power", "power"),
     "export_power_entity": ("active_power", "power"),
 }
@@ -96,7 +96,7 @@ def resolve_grid(hass: HomeAssistant, config: GridConfig) -> GridConfig:
 
     found = match_for_device(hass, config.meter_device_id, GRID_HINTS)
     changes: dict[str, str] = {}
-    for field in ("import_energy_entity", "export_energy_entity"):
+    for field in ("import_entity", "export_entity"):
         if getattr(config, field) is None and field in found:
             changes[field] = found[field]
     if config.import_power_entity is None and "import_power_entity" in found:

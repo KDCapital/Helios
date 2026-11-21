@@ -233,8 +233,8 @@ const FIELDS = {
   ],
   grid: [
     { key: "meter_device", label: "Meter (HomeWizard P1)", type: "device", platform: "homewizard" },
-    { key: "import_energy_entity", label: "Import energy", type: "entity", advanced: true },
-    { key: "export_energy_entity", label: "Export energy", type: "entity", advanced: true },
+    { key: "import_entity", label: "Import energy", type: "entity", advanced: true },
+    { key: "export_entity", label: "Export energy", type: "entity", advanced: true },
     { key: "import_power_entity", label: "Import power (CT)", type: "entity", advanced: true },
     { key: "export_power_entity", label: "Export power", type: "entity", advanced: true },
     { key: "saldering", label: "Saldering applies", type: "bool" },
