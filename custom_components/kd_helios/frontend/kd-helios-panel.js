@@ -214,14 +214,14 @@ const FIELDS = {
     { key: "ere_price", label: "Price per ERE", type: "number", step: "0.01" },
   ],
   battery: [
-    { key: "soc_entity", label: "SOC sensor", type: "entity" },
+    { key: "soc_entity", label: "SOC sensor", type: "entity", derived: "Taken from the inverter" },
     { key: "battery_capacity_kwh", label: "Capacity", type: "number", unit: "kWh", step: "0.1" },
     { key: "max_charge_kw", label: "Max charge", type: "number", unit: "kW", step: "0.1" },
     { key: "reserve_soc", label: "Reserve SOC", type: "number", unit: "%", step: "1" },
     { key: "target_soc", label: "Target SOC", type: "number", unit: "%", step: "1" },
     { key: "efficiency", label: "Efficiency", type: "number", unit: "%", step: "1" },
-    { key: "house_load_entity", label: "House load sensor", type: "entity" },
-    { key: "inverter_device", label: "Inverter (Solarman)", type: "device" },
+    { key: "house_load_entity", label: "House load sensor", type: "entity", derived: "Taken from the inverter" },
+    { key: "inverter_device", label: "Inverter (Solarman)", type: "device", platform: "solarman" },
     { key: "phases", label: "Connection", type: "select",
       options: [["1", "1-phase"], ["3", "3-phase"]] },
     { key: "fuse_amps", label: "Main fuse", type: "number", unit: "A", step: "1" },
@@ -231,10 +231,11 @@ const FIELDS = {
     { key: "allow_inverter_writes", label: "Allow writes to the inverter", type: "bool" },
   ],
   grid: [
-    { key: "import_energy_entity", label: "Import energy", type: "entity" },
-    { key: "export_energy_entity", label: "Export energy", type: "entity" },
-    { key: "import_power_entity", label: "Import power (CT)", type: "entity" },
-    { key: "export_power_entity", label: "Export power", type: "entity" },
+    { key: "meter_device", label: "Meter (HomeWizard P1)", type: "device", platform: "homewizard" },
+    { key: "import_energy_entity", label: "Import energy", type: "entity", derived: "Taken from the meter" },
+    { key: "export_energy_entity", label: "Export energy", type: "entity", derived: "Taken from the meter" },
+    { key: "import_power_entity", label: "Import power (CT)", type: "entity", derived: "Taken from the meter" },
+    { key: "export_power_entity", label: "Export power", type: "entity", derived: "Taken from the meter" },
     { key: "saldering", label: "Saldering applies", type: "bool" },
     { key: "supply_cost_monthly", label: "Supply cost", type: "number", unit: "/month", step: "0.01" },
     { key: "grid_fee_monthly", label: "Grid fee", type: "number", unit: "/month", step: "0.01" },
@@ -377,17 +378,19 @@ class KdHeliosPanel extends HTMLElement {
     return model ? `${name} · ${model}` : name;
   }
 
-  _solarmanDevices() {
+  _devicesFor(platform) {
     const found = new Set();
     for (const entry of Object.values(this._hass.entities || {})) {
-      if (entry.platform === "solarman" && entry.device_id) found.add(entry.device_id);
+      if (entry.device_id && (!platform || entry.platform === platform)) {
+        found.add(entry.device_id);
+      }
     }
     // Fall back to everything, so a differently named integration still works.
     return found.size ? [...found] : Object.keys(this._hass.devices || {});
   }
 
   _deviceSelect(field, value) {
-    const ids = this._solarmanDevices();
+    const ids = this._devicesFor(field.platform);
     if (value && !ids.includes(value)) ids.push(value);
     const options = ids
       .map(
@@ -414,7 +417,7 @@ class KdHeliosPanel extends HTMLElement {
         (field) => `
         <div class="row"><span class="grow">${field.label}${
           field.unit ? ` <span class="tag">${field.unit}</span>` : ""
-        }</span>${this._fieldInput(item, field)}</div>`
+        }${field.derived ? `<div class="tag">${field.derived} if left empty</div>` : ""}</span>${this._fieldInput(item, field)}</div>`
       )
       .join("");
     return `<form class="rows" data-kind="${kind}" style="margin-top:10px">

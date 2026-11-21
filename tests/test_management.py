@@ -267,3 +267,55 @@ def test_detection_offers_the_solarman_device_for_the_inverter(hass) -> None:
     suggestions = detect_entities(hass)["battery"]
     assert suggestions["inverter_device"] == device.id
     assert suggestions["soc_entity"].startswith("sensor.")
+
+
+def test_the_inverter_supplies_soc_and_house_load(hass) -> None:
+    """Picking the inverter is enough; the sensors are derived from it."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.kd_helios.models import BatteryConfig
+    from custom_components.kd_helios.resolve import resolve_battery
+
+    owner = MockConfigEntry(domain="solarman", data={}, entry_id="solarman-entry")
+    owner.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=owner.entry_id,
+        identifiers={("solarman", "77")},
+        name="Deye",
+    )
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        "sensor",
+        "solarman",
+        "solarman-soc",
+        suggested_object_id="deye_battery_soc",
+        original_name="Battery SOC",
+        device_id=device.id,
+    )
+    registry.async_get_or_create(
+        "sensor",
+        "solarman",
+        "solarman-load",
+        suggested_object_id="deye_load_power",
+        original_name="Load Power",
+        device_id=device.id,
+    )
+
+    resolved = resolve_battery(
+        hass, BatteryConfig(subentry_id="b", inverter_device_id=device.id)
+    )
+    assert resolved.soc_entity == "sensor.deye_battery_soc"
+    assert resolved.house_load_entity == "sensor.deye_load_power"
+
+
+def test_an_explicit_sensor_beats_the_derived_one(hass) -> None:
+    """A value the user set is never overwritten by a guess."""
+    from custom_components.kd_helios.models import BatteryConfig
+    from custom_components.kd_helios.resolve import resolve_battery
+
+    config = BatteryConfig(
+        subentry_id="b", inverter_device_id="some-device", soc_entity="sensor.mine"
+    )
+    assert resolve_battery(hass, config).soc_entity == "sensor.mine"

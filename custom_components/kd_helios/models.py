@@ -381,12 +381,12 @@ class GridConfig:
         return cls(
             subentry_id=subentry.subentry_id,
             name=as_entity_id(data.get(CONF_NAME)) or subentry.title or "Grid",
-            meter_device_id=as_entity_id(data.get(CONF_METER_DEVICE)),
             import_entity=as_entity_id(data.get(CONF_IMPORT_ENTITY)),
             export_entity=as_entity_id(data.get(CONF_EXPORT_ENTITY)),
             import_power_entity=as_entity_id(data.get(CONF_IMPORT_POWER_ENTITY)),
             export_power_entity=as_entity_id(data.get(CONF_EXPORT_POWER_ENTITY)),
             grid_power_entity=as_entity_id(data.get(CONF_GRID_POWER_ENTITY)),
+            meter_device_id=str(data.get(CONF_METER_DEVICE) or "") or None,
             saldering=as_bool(data.get(CONF_SALDERING)),
             export_deduction=as_float(data.get(CONF_EXPORT_DEDUCTION)),
             supply_cost_monthly=as_float(data.get(CONF_SUPPLY_COST_MONTHLY)),

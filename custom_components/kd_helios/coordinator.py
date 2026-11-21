@@ -68,6 +68,7 @@ from .prices import (
     build_price_series,
 )
 from .profile import LoadProfile
+from .resolve import resolve_grid
 from .sources import read_number
 from .storage import HeliosStorage
 
@@ -230,7 +231,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.grid_tracker: GridTracker | None = (
             GridTracker(
                 hass,
-                GridConfig.from_subentry(grid_subentries[0]),
+                resolve_grid(hass, GridConfig.from_subentry(grid_subentries[0])),
                 storage.grid_state(),
             )
             if grid_subentries
