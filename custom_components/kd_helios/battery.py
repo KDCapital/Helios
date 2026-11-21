@@ -477,6 +477,8 @@ def build_tou_programs(
     plan: ChargePlan,
     settings: BatterySettings,
     now: datetime,
+    *,
+    hold: tuple[datetime, datetime, float] | None = None,
 ) -> TouPlan:
     """Turn a charge plan into the inverter's six time-of-use programs.
 
@@ -517,6 +519,9 @@ def build_tou_programs(
             slots.setdefault(
                 end_minute, TouProgram(end_minute, power_w, reserve, ChargeSource.OFF)
             )
+
+    if hold is not None:
+        slots = _apply_hold(slots, hold, power_w, reserve)
 
     if not slots:
         # Nothing worth buying: charge nowhere, allow discharge to the reserve.
@@ -659,3 +664,43 @@ def charge_power_limit(
         headroom = import_cap_kw - max(0.0, grid_import_kw)
         limit = min(limit, max(0.0, headroom))
     return round(limit, 3)
+
+
+def _apply_hold(
+    slots: dict[int, TouProgram],
+    hold: tuple[datetime, datetime, float],
+    power_w: int,
+    reserve: int,
+) -> dict[int, TouProgram]:
+    """Hold the battery through the car's window instead of discharging.
+
+    Slots inside the window that do not charge are rewritten to the SOC the
+    battery has right now, so the car is served by the grid. That is what stops
+    a car resuming after a pause from draining the battery, while the car's
+    expensive hours outside the window still run off the battery.
+    """
+    start, end, soc_pct = hold
+    hold_soc = round(min(100.0, max(0.0, soc_pct)))
+    if hold_soc <= reserve:
+        return slots
+
+    start_minute = _minute_of_day(start)
+    end_minute = _minute_of_day(end)
+    result = dict(slots)
+    # The window needs a slot of its own, otherwise the inverter keeps whatever
+    # the previous slot told it to do.
+    result[start_minute] = TouProgram(start_minute, power_w, hold_soc, ChargeSource.OFF)
+    if end_minute != start_minute:
+        result.setdefault(
+            end_minute, TouProgram(end_minute, power_w, reserve, ChargeSource.OFF)
+        )
+    for minute, program in slots.items():
+        inside = (
+            start_minute <= minute < end_minute
+            if start_minute <= end_minute
+            else minute >= start_minute or minute < end_minute
+        )
+        if not inside or program.source is ChargeSource.GRID:
+            continue
+        result[minute] = TouProgram(minute, power_w, hold_soc, ChargeSource.OFF)
+    return result

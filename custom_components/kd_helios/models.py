@@ -22,10 +22,20 @@ from .const import (
     CONF_ERE_PER_KWH,
     CONF_ERE_PRICE,
     CONF_ERE_PRICE_ENTITY,
+    CONF_EV_CAPACITY_ENTITY,
+    CONF_EV_DEPARTURE_ENTITY,
+    CONF_EV_DEPARTURE_WEEKDAY,
+    CONF_EV_DEPARTURE_WEEKEND,
+    CONF_EV_PACK_KWH,
+    CONF_EV_POWER_ENTITY,
+    CONF_EV_SOC_ENTITY,
+    CONF_EV_TARGET_SOC,
     CONF_EXPORT_DEDUCTION,
     CONF_EXPORT_ENTITY,
     CONF_EXPORT_POWER_ENTITY,
     CONF_EXPORT_PRICE_SOURCE,
+    CONF_FUSE_AMPS,
+    CONF_FUSE_MARGIN_PCT,
     CONF_GRID_FEE_MONTHLY,
     CONF_GRID_POWER_ENTITY,
     CONF_IMPORT_CAP_KW,
@@ -36,6 +46,7 @@ from .const import (
     CONF_MAX_CHARGE_KW,
     CONF_METER_DEVICE,
     CONF_NAME,
+    CONF_PHASES,
     CONF_POWER_ENTITY,
     CONF_PRIORITY,
     CONF_REIMBURSEMENT_BASIS,
@@ -219,6 +230,15 @@ class DeviceConfig:
     energy_entity: str | None = None
     reimbursement: ReimbursementConfig = ReimbursementConfig()
     ere: EreConfig = EreConfig()
+    #: Car schedule, only meaningful for an EV charger.
+    ev_pack_kwh: float = 0.0
+    ev_target_soc: float = 100.0
+    ev_departure_weekday: str = ""
+    ev_departure_weekend: str = ""
+    ev_soc_entity: str | None = None
+    ev_capacity_entity: str | None = None
+    ev_power_entity: str | None = None
+    ev_departure_entity: str | None = None
 
     @property
     def is_ev_charger(self) -> bool:
@@ -234,6 +254,13 @@ class DeviceConfig:
     def has_ere(self) -> bool:
         """Return True when ERE certificates are valued for this device."""
         return self.ere.enabled
+
+    @property
+    def has_ev_schedule(self) -> bool:
+        """Return True when enough is known to plan the car's window."""
+        return self.kind is DeviceKind.EV_CHARGER and (
+            self.ev_pack_kwh > 0 or self.ev_capacity_entity is not None
+        )
 
     @property
     def has_offsets(self) -> bool:
@@ -261,6 +288,14 @@ class DeviceConfig:
             subentry_id=subentry.subentry_id,
             name=name,
             kind=kind,
+            ev_pack_kwh=as_float(data.get(CONF_EV_PACK_KWH)),
+            ev_target_soc=as_float(data.get(CONF_EV_TARGET_SOC), 100.0),
+            ev_departure_weekday=str(data.get(CONF_EV_DEPARTURE_WEEKDAY) or ""),
+            ev_departure_weekend=str(data.get(CONF_EV_DEPARTURE_WEEKEND) or ""),
+            ev_soc_entity=as_entity_id(data.get(CONF_EV_SOC_ENTITY)),
+            ev_capacity_entity=as_entity_id(data.get(CONF_EV_CAPACITY_ENTITY)),
+            ev_power_entity=as_entity_id(data.get(CONF_EV_POWER_ENTITY)),
+            ev_departure_entity=as_entity_id(data.get(CONF_EV_DEPARTURE_ENTITY)),
             power_entity=as_entity_id(data.get(CONF_POWER_ENTITY)),
             energy_entity=as_entity_id(data.get(CONF_ENERGY_ENTITY)),
             reimbursement=ReimbursementConfig.from_mapping(data),
@@ -367,6 +402,10 @@ class BatteryConfig:
     priority: Priority = Priority.EV
     #: Maximum total grid import; 0 disables the cap.
     import_cap_kw: float = 0.0
+    #: Connection, used to derive the import cap when it is not set directly.
+    phases: int = 3
+    fuse_amps: float = 0.0
+    fuse_margin_pct: float = 90.0
     #: Work mode written when control is released, back to self-consumption.
     restore_work_mode: int = 1
 
@@ -374,6 +413,17 @@ class BatteryConfig:
     def model_name(self) -> str:
         """Return the model shown in the device registry."""
         return "Battery"
+
+    @property
+    def effective_import_cap(self) -> float:
+        """Return the import cap, from the connection when not set directly."""
+        if self.import_cap_kw > 0:
+            return self.import_cap_kw
+        if self.fuse_amps <= 0:
+            return 0.0
+        from .ev import fuse_capacity_kw
+
+        return fuse_capacity_kw(self.phases, self.fuse_amps, self.fuse_margin_pct)
 
     @property
     def settings(self) -> BatterySettings:
@@ -405,6 +455,9 @@ class BatteryConfig:
             allow_writes=as_bool(data.get(CONF_ALLOW_INVERTER_WRITES)),
             priority=_as_enum(Priority, data.get(CONF_PRIORITY), Priority.EV),
             import_cap_kw=as_float(data.get(CONF_IMPORT_CAP_KW)),
+            phases=int(as_float(data.get(CONF_PHASES), 3.0)),
+            fuse_amps=as_float(data.get(CONF_FUSE_AMPS)),
+            fuse_margin_pct=as_float(data.get(CONF_FUSE_MARGIN_PCT), 90.0),
             restore_work_mode=int(as_float(data.get(CONF_RESTORE_WORK_MODE), 1.0)),
         )
 

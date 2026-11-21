@@ -70,6 +70,17 @@ CONF_ALLOW_INVERTER_WRITES: Final = "allow_inverter_writes"
 CONF_RESTORE_WORK_MODE: Final = "restore_work_mode"
 CONF_PRIORITY: Final = "priority"
 CONF_IMPORT_CAP_KW: Final = "import_cap_kw"
+CONF_PHASES: Final = "phases"
+CONF_FUSE_AMPS: Final = "fuse_amps"
+CONF_FUSE_MARGIN_PCT: Final = "fuse_margin_pct"
+CONF_EV_PACK_KWH: Final = "ev_pack_kwh"
+CONF_EV_TARGET_SOC: Final = "ev_target_soc"
+CONF_EV_DEPARTURE_WEEKDAY: Final = "ev_departure_weekday"
+CONF_EV_DEPARTURE_WEEKEND: Final = "ev_departure_weekend"
+CONF_EV_SOC_ENTITY: Final = "ev_soc_entity"
+CONF_EV_CAPACITY_ENTITY: Final = "ev_capacity_entity"
+CONF_EV_POWER_ENTITY: Final = "ev_power_entity"
+CONF_EV_DEPARTURE_ENTITY: Final = "ev_departure_entity"
 
 
 class DeviceKind(StrEnum):

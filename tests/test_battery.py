@@ -352,3 +352,36 @@ def test_the_import_cap_leaves_room_for_the_house() -> None:
     assert charge_power_limit(11.0, 17.0, 5.0, 0.0, Priority.EV) == 11.0
     assert charge_power_limit(11.0, 17.0, 15.0, 0.0, Priority.BATTERY) == 2.0
     assert charge_power_limit(11.0, 17.0, 20.0, 0.0, Priority.BATTERY) == 0.0
+
+
+# -- holding through the car's window --------------------------------------
+def test_the_battery_holds_through_the_cars_window() -> None:
+    """Inside the car's window the battery neither charges nor discharges."""
+    import homeassistant.util.dt as dt_util
+
+    plan = plan_charge(make_prices(NOON, DAY), SETTINGS, NOON, soc_pct=20.0)
+    hold_start = NOON + timedelta(hours=2)
+    hold_end = NOON + timedelta(hours=3)
+
+    tou = build_tou_programs(plan, SETTINGS, NOON, hold=(hold_start, hold_end, 40.0))
+
+    local = dt_util.as_local(hold_start)
+    start_minute = local.hour * 60 + local.minute
+    hold_slot = next(
+        (program for program in tou.programs if program.start_minute == start_minute),
+        None,
+    )
+    assert hold_slot is not None
+    assert hold_slot.source is ChargeSource.OFF
+    assert hold_slot.soc_pct == 40
+
+
+def test_without_a_window_the_battery_still_discharges() -> None:
+    """No car window means the old behaviour: discharge to the reserve."""
+    plan = plan_charge(make_prices(NOON, DAY), SETTINGS, NOON, soc_pct=20.0)
+    tou = build_tou_programs(plan, SETTINGS, NOON)
+    assert all(
+        program.soc_pct is not None
+        for program in tou.programs
+        if program.source is ChargeSource.OFF
+    )

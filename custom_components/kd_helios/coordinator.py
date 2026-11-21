@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -33,6 +33,7 @@ from .const import (
     SUBENTRY_TYPE_GRID,
     DeviceKind,
 )
+from .ev import energy_needed_kwh, ev_charge_window
 from .grid import GridSnapshot, GridTracker
 from .inverter import async_write_registers, async_write_tou
 from .models import BatteryConfig, DeviceConfig, GridConfig, device_subentries
@@ -252,6 +253,71 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.applied_plan = AppliedPlan.from_plan(plan, tou, now)
         self.storage.async_set_battery(self.applied_plan.as_dict())
 
+    def _ev_hold(self, now, series) -> tuple[datetime, datetime, float] | None:
+        """Return the car's window and its SOC, if the battery must hold there."""
+        config = self.battery_config
+        if config is None:
+            return None
+        ev = next(
+            (
+                tracker.config
+                for tracker in self.trackers.values()
+                if tracker.config.has_ev_schedule
+            ),
+            None,
+        )
+        if ev is None:
+            return None
+
+        soc = read_number(self.hass, ev.ev_soc_entity)
+        if soc is None:
+            return None
+        capacity = ev.ev_pack_kwh
+        if ev.ev_capacity_entity is not None:
+            capacity = read_number(self.hass, ev.ev_capacity_entity) or capacity
+        power_kw = read_number(self.hass, ev.ev_power_entity) or 0.0
+        if capacity <= 0 or power_kw <= 0:
+            return None
+
+        departure = self._ev_departure(now, ev)
+        if departure is None:
+            return None
+
+        needed = energy_needed_kwh(capacity, ev.ev_target_soc, soc)
+        if needed <= 0:
+            return None
+
+        window = ev_charge_window(
+            series.priced_slots(now, departure), departure, needed, power_kw
+        )
+        if window is None:
+            return None
+        return (window.start, window.end, soc)
+
+    def _ev_departure(self, now, config) -> datetime | None:
+        """Return the next departure time of the car."""
+        if config.ev_departure_entity is not None:
+            state = self.hass.states.get(config.ev_departure_entity)
+            if state is not None and state.state not in ("unknown", "unavailable"):
+                parsed = dt_util.parse_datetime(state.state)
+                if parsed is not None:
+                    return dt_util.as_utc(parsed)
+
+        local = dt_util.as_local(now)
+        is_weekend = local.weekday() >= 5
+        raw = config.ev_departure_weekend if is_weekend else config.ev_departure_weekday
+        if not raw:
+            return None
+        parsed_time = dt_util.parse_time(raw)
+        if parsed_time is None:
+            return None
+        departure = local.replace(
+            hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0
+        )
+        if departure <= local:
+            departure += timedelta(days=1)
+        return dt_util.as_utc(departure)
+
     async def _async_update_power_cap(self, now, snapshots, grid_snapshot) -> None:
         """Hold the battery back while the car charges, and under the cap.
 
@@ -281,7 +347,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         grid_kw = (grid_snapshot.import_power or 0.0) / 1000.0 if grid_snapshot else 0.0
         limit = charge_power_limit(
             config.settings.max_charge_kw,
-            config.import_cap_kw,
+            config.effective_import_cap,
             grid_kw,
             ev_kw,
             config.priority,
@@ -367,8 +433,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 read_number(self.hass, self.battery_config.soc_entity),
             )
             self.battery_plan = battery_plan
+            hold = self._ev_hold(now, series_for_plan)
             self.tou_plan = build_tou_programs(
-                battery_plan, self.battery_config.settings, now
+                battery_plan, self.battery_config.settings, now, hold=hold
             )
             await self._async_sync_inverter(now)
             await self._async_update_power_cap(now, snapshots, grid_snapshot)
