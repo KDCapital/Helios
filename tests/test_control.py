@@ -266,4 +266,3 @@ async def test_control_state_survives_a_reload(hass: HomeAssistant) -> None:
     assert engine.applied_plan is not None
     # The restored plan matches the proposal, so nothing was written.
     assert recorder.blocks == []
-
