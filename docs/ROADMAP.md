@@ -215,6 +215,14 @@ how fast the code lands.
 Sessions are not the unit that slips; **the season is**. If M4 lands in spring,
 budget one winter of observation before trusting it unattended.
 
+## 5b. UI and installation redesign (inserted before M2)
+
+The owner decided the panel is the product and the integration page a signpost.
+[docs/UI.md](docs/UI.md) is the design: eight-step resumable wizard, sectioned
+panel, admin-only, EVCC required for the car, five build phases (A–E). It lands
+before M2 because the wizard is where forecasting and control settings will be
+configured, and building screens twice is waste.
+
 ## 6. Working method
 
 - One milestone at a time, in order. No starting M4 while M3 is unproven.

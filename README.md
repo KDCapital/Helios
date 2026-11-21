@@ -477,7 +477,8 @@ action — writing the programs — asks for confirmation first.
 KD Helios is being grown into a full home energy management system, with Home
 Assistant staying the device bridge and this integration owning the thinking.
 The milestones, estimates, working method and the decisions behind them live in
-[docs/ROADMAP.md](docs/ROADMAP.md) — including the verification backlog of things
+[docs/ROADMAP.md](docs/ROADMAP.md), and the panel-first installation and UI
+design in [docs/UI.md](docs/UI.md) — including the verification backlog of things
 built but not yet proven on live hardware.
 
 ---
