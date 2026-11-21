@@ -274,6 +274,7 @@ def detect_entities(hass: HomeAssistant) -> dict[str, dict[str, str]]:
     """
     registry = er.async_get(hass)
     by_platform: dict[str, list[tuple[str, str]]] = {}
+    solarman_device: str | None = None
     for item in registry.entities.values():
         if item.disabled_by is not None:
             continue
@@ -281,6 +282,8 @@ def detect_entities(hass: HomeAssistant) -> dict[str, dict[str, str]]:
             part for part in (item.original_name, item.entity_id) if part
         ).lower()
         by_platform.setdefault(item.platform, []).append((item.entity_id, label))
+        if item.platform == "solarman" and item.device_id is not None:
+            solarman_device = item.device_id
 
     suggestions: dict[str, dict[str, str]] = {}
     for kind, fields in _HINTS.items():
@@ -296,7 +299,11 @@ def detect_entities(hass: HomeAssistant) -> dict[str, dict[str, str]]:
         if kind == "homewizard":
             suggestions["grid"] = found
         elif kind == "solarman":
-            suggestions["battery"] = found
+            found_battery = dict(found)
+            if solarman_device is not None:
+                # The inverter field is a device, not an entity.
+                found_battery["inverter_device"] = solarman_device
+            suggestions["battery"] = found_battery
         elif kind == "evcc":
             suggestions["ev_charger"] = found
     return suggestions

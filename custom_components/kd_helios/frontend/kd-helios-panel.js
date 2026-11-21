@@ -218,7 +218,7 @@ const FIELDS = {
     { key: "target_soc", label: "Target SOC", type: "number", unit: "%", step: "1" },
     { key: "efficiency", label: "Efficiency", type: "number", unit: "%", step: "1" },
     { key: "house_load_entity", label: "House load sensor", type: "entity" },
-    { key: "inverter_device", label: "Inverter (Solarman)", type: "entity" },
+    { key: "inverter_device", label: "Inverter (Solarman)", type: "device" },
     { key: "phases", label: "Connection", type: "select",
       options: [["1", "1-phase"], ["3", "3-phase"]] },
     { key: "fuse_amps", label: "Main fuse", type: "number", unit: "A", step: "1" },
@@ -343,6 +343,9 @@ class KdHeliosPanel extends HTMLElement {
     if (field.type === "bool") {
       return `<input type="checkbox" data-field="${field.key}" ${value === "True" || value === "true" ? "checked" : ""}>`;
     }
+    if (field.type === "device") {
+      return this._deviceSelect(field, value);
+    }
     if (field.type === "select") {
       const options = field.options
         .map(
@@ -359,6 +362,37 @@ class KdHeliosPanel extends HTMLElement {
       value="${value}" placeholder="${field.unit ? field.unit : ""}">`;
   }
 
+  _deviceLabel(deviceId) {
+    const device = (this._hass.devices || {})[deviceId];
+    if (!device) return deviceId;
+    const name = device.name_by_user || device.name || deviceId;
+    const model = device.model || device.manufacturer || "";
+    return model ? `${name} · ${model}` : name;
+  }
+
+  _solarmanDevices() {
+    const found = new Set();
+    for (const entry of Object.values(this._hass.entities || {})) {
+      if (entry.platform === "solarman" && entry.device_id) found.add(entry.device_id);
+    }
+    // Fall back to everything, so a differently named integration still works.
+    return found.size ? [...found] : Object.keys(this._hass.devices || {});
+  }
+
+  _deviceSelect(field, value) {
+    const ids = this._solarmanDevices();
+    if (value && !ids.includes(value)) ids.push(value);
+    const options = ids
+      .map(
+        (id) =>
+          `<option value="${id}" ${value === id ? "selected" : ""}>${this._esc(
+            this._deviceLabel(id)
+          )}</option>`
+      )
+      .join("");
+    return `<select data-field="${field.key}"><option value="">—</option>${options}</select>`;
+  }
+
   _entityList() {
     return `<datalist id="helios-entities">${Object.keys(this._hass.states)
       .filter((id) => id.startsWith("sensor.") || id.startsWith("binary_sensor."))
@@ -367,7 +401,7 @@ class KdHeliosPanel extends HTMLElement {
       .join("")}</datalist>`;
   }
 
-  _form(kind, item) {
+  _form(kind, item, compact = false) {
     const rows = FIELDS[kind]
       .map(
         (field) => `
@@ -378,10 +412,15 @@ class KdHeliosPanel extends HTMLElement {
       .join("");
     return `<form class="rows" data-kind="${kind}" style="margin-top:10px">
       ${rows}${this._entityList()}
-      <div class="actions">
-        <button class="primary" type="submit">${item ? "Save" : "Add"}</button>
-        <button type="button" data-cancel="1">Cancel</button>
-      </div></form>`;
+      ${
+        compact
+          ? ""
+          : `<div class="actions">
+               <button class="primary" type="submit">${item ? "Save" : "Add"}</button>
+               <button type="button" data-cancel="1">Cancel</button>
+             </div>`
+      }
+      </form>`;
   }
 
   async _submitForm(event) {
@@ -1003,7 +1042,7 @@ class KdHeliosPanel extends HTMLElement {
     const index = Math.min(this._wizardStep, WIZARD.length - 1);
     const spec = WIZARD[index];
     const item = spec.kind ? this._configured(spec.kind)[0] : null;
-    const form = spec.kind ? this._form(spec.kind, item) : "";
+    const form = spec.kind ? this._form(spec.kind, item, true) : "";
     const last = index === WIZARD.length - 1;
 
     return `<div class="card">

@@ -237,3 +237,33 @@ def test_detection_offers_what_it_recognises(hass) -> None:
 def test_detection_offers_nothing_when_it_recognises_nothing(hass) -> None:
     """No guesses: an empty result is a valid answer."""
     assert detect_entities(hass) == {}
+
+
+def test_detection_offers_the_solarman_device_for_the_inverter(hass) -> None:
+    """The inverter field is a device, so an entity id would be wrong."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    owner = MockConfigEntry(domain="solarman", data={}, entry_id="solarman-entry")
+    owner.add_to_hass(hass)
+
+    devices = dr.async_get(hass)
+    device = devices.async_get_or_create(
+        config_entry_id=owner.entry_id,
+        identifiers={("solarman", "12345")},
+        name="Deye SUN-12K",
+    )
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        "sensor",
+        "solarman",
+        "solarman-soc",
+        suggested_object_id="deye_battery_soc",
+        original_name="Battery SOC",
+        device_id=device.id,
+    )
+
+    suggestions = detect_entities(hass)["battery"]
+    assert suggestions["inverter_device"] == device.id
+    assert suggestions["soc_entity"].startswith("sensor.")
