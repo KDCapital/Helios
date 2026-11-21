@@ -736,6 +736,42 @@ class KdHeliosPanel extends HTMLElement {
       ${rows}</div>`;
   }
 
+  _reasonsCard(battery) {
+    const blockers = (battery && battery.blockers) || [];
+    const verified = battery ? battery.write_verified : null;
+    const rows = blockers
+      .map(
+        (blocker) => `
+        <div class="row">
+          <span class="grow"><span class="name">${this._esc(blocker.reason)}</span>
+            <div class="tag">${this._esc(blocker.source)}${
+              blocker.since ? ` · since ${this._time(blocker.since)}` : ""
+            }${this._details(blocker.details)}</div></span>
+        </div>`
+      )
+      .join("");
+
+    return `<div class="card">
+      <div class="head"><div><h2>Why the battery is doing this</h2>
+        <p class="sub">Every bound that is holding right now, and the numbers behind it</p></div>
+        <span class="spacer"></span>
+        <span class="chip ${verified === false ? "warn" : ""}"><span class="dot"></span>${
+          verified === false ? "write unverified" : verified ? "write verified" : "no write yet"
+        }</span>
+      </div>
+      ${rows ? `<div class="rows" style="margin-top:8px">${rows}</div>` : `<p class="muted">Nothing is holding the battery back.</p>`}
+    </div>`;
+  }
+
+  _details(details) {
+    if (!details || typeof details !== "object") return "";
+    const parts = Object.entries(details)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .slice(0, 3)
+      .map(([key, value]) => `${key} ${typeof value === "number" ? Math.round(value * 100) / 100 : value}`);
+    return parts.length ? ` · ${parts.join(" · ")}` : "";
+  }
+
   _batteryCard(battery, summary) {
     if (!battery) {
       return `<div class="card"><div class="head"><div><h2>Home battery</h2>
@@ -1053,6 +1089,10 @@ class KdHeliosPanel extends HTMLElement {
             <span class="num">${this._data.battery && this._data.battery.allow_writes ? "yes" : "no"}</span></div>
           <div class="row"><span class="grow">Load profile learned</span>
             <span class="num">${profile.coverage_pct ?? 0}% of the week</span></div>
+          <div class="row"><span class="grow">Last write verified</span>
+            <span class="num">${this._data.battery && this._data.battery.write_verified === false ? "no" : this._data.battery && this._data.battery.write_verified ? "yes" : "—"}</span></div>
+          <div class="row"><span class="grow">Weekly full charge</span>
+            <span class="num">${this._data.battery && this._data.battery.weekly_full_charge ? "in progress" : "scheduled"}</span></div>
           <div class="row"><span class="grow">Wizard</span>
             <span class="num">${setup ? (setup.completed ? "finished" : setup.step || "not started") : "—"}</span></div>
         </div></div>`;
@@ -1240,6 +1280,10 @@ class KdHeliosPanel extends HTMLElement {
         <div class="cols two">
           ${this._batteryCard(battery, summary)}
           ${this._tariffCard(prices, grid)}
+        </div>
+
+        <div class="cols two">
+          ${this._reasonsCard(battery)}
         </div>
 
         <div class="cols two">

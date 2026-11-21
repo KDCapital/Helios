@@ -59,6 +59,7 @@ async def test_panel_renders_a_real_payload(hass, tmp_path) -> None:
         "Battery &amp; plan",
         "Tariff",
         "Grid connection",
+        "Why the battery is doing this",
     ):
         assert needle in html, needle
 
