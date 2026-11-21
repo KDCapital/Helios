@@ -33,20 +33,26 @@ global.window = {
   clearInterval: () => 0,
 };
 
-const [, , source, payloadPath, section] = process.argv;
+const [, , source, payloadPath, section, wizardStep] = process.argv;
 new Function(fs.readFileSync(source, "utf8"))();
 
 const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
 const element = new Panel();
 element._hass = {
   config: { currency: payload.entry.currency },
-  user: { name: "Jules" },
+  user: { name: "Jules", is_admin: true },
+  states: {},
+  devices: {},
+  entities: {},
+  callWS: async () => ({}),
+  callService: async () => undefined,
 };
 element._data = payload;
 if (section === "onboarding") {
   // The panel fetches this over the socket; the harness sets it directly.
   element._setup = { completed: false, step: "welcome", steps: [], skipped: [], device_count: 0 };
   element._sections = [];
+  element._wizardStep = Number(wizardStep || 0);
 } else if (section) {
   element._section = section;
 }

@@ -214,13 +214,13 @@ const FIELDS = {
     { key: "ere_price", label: "Price per ERE", type: "number", step: "0.01" },
   ],
   battery: [
-    { key: "soc_entity", label: "SOC sensor", type: "entity", derived: "Taken from the inverter" },
+    { key: "soc_entity", label: "SOC sensor", type: "entity", advanced: true },
     { key: "battery_capacity_kwh", label: "Capacity", type: "number", unit: "kWh", step: "0.1" },
     { key: "max_charge_kw", label: "Max charge", type: "number", unit: "kW", step: "0.1" },
     { key: "reserve_soc", label: "Reserve SOC", type: "number", unit: "%", step: "1" },
     { key: "target_soc", label: "Target SOC", type: "number", unit: "%", step: "1" },
     { key: "efficiency", label: "Efficiency", type: "number", unit: "%", step: "1" },
-    { key: "house_load_entity", label: "House load sensor", type: "entity", derived: "Taken from the inverter" },
+    { key: "house_load_entity", label: "House load sensor", type: "entity", advanced: true },
     { key: "inverter_device", label: "Inverter (Solarman)", type: "device", platform: "solarman" },
     { key: "phases", label: "Connection", type: "select",
       options: [["1", "1-phase"], ["3", "3-phase"]] },
@@ -232,10 +232,10 @@ const FIELDS = {
   ],
   grid: [
     { key: "meter_device", label: "Meter (HomeWizard P1)", type: "device", platform: "homewizard" },
-    { key: "import_energy_entity", label: "Import energy", type: "entity", derived: "Taken from the meter" },
-    { key: "export_energy_entity", label: "Export energy", type: "entity", derived: "Taken from the meter" },
-    { key: "import_power_entity", label: "Import power (CT)", type: "entity", derived: "Taken from the meter" },
-    { key: "export_power_entity", label: "Export power", type: "entity", derived: "Taken from the meter" },
+    { key: "import_energy_entity", label: "Import energy", type: "entity", advanced: true },
+    { key: "export_energy_entity", label: "Export energy", type: "entity", advanced: true },
+    { key: "import_power_entity", label: "Import power (CT)", type: "entity", advanced: true },
+    { key: "export_power_entity", label: "Export power", type: "entity", advanced: true },
     { key: "saldering", label: "Saldering applies", type: "bool" },
     { key: "supply_cost_monthly", label: "Supply cost", type: "number", unit: "/month", step: "0.01" },
     { key: "grid_fee_monthly", label: "Grid fee", type: "number", unit: "/month", step: "0.01" },
@@ -413,6 +413,7 @@ class KdHeliosPanel extends HTMLElement {
 
   _form(kind, item, compact = false) {
     const rows = FIELDS[kind]
+      .filter((field) => !(compact && field.advanced))
       .map(
         (field) => `
         <div class="row"><span class="grow">${field.label}${
@@ -422,6 +423,11 @@ class KdHeliosPanel extends HTMLElement {
       .join("");
     return `<form class="rows" data-kind="${kind}" style="margin-top:10px">
       ${rows}${this._entityList()}
+      ${
+        compact && FIELDS[kind].some((field) => field.advanced)
+          ? `<p class="muted" style="margin:2px 0 0">The individual sensors are optional: they are read from the device you pick, and can be overridden later in the section.</p>`
+          : ""
+      }
       ${
         compact
           ? ""

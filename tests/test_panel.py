@@ -218,9 +218,10 @@ async def test_panel_is_wired_into_the_sidebar(hass, monkeypatch) -> None:
     registered = calls["panel"]
     assert registered["frontend_url_path"] == "helios"
     assert registered["webcomponent_name"] == "kd-helios-panel"
-    assert registered["sidebar_title"] == "Helios"
+    assert registered["sidebar_title"] == "KD Helios"
     assert registered["sidebar_icon"].startswith("mdi:")
-    assert registered["module_url"] == f"/{DOMAIN}/{panel.PANEL_JS}"
+    # The version query is what stops a browser running a stale bundle.
+    assert registered["module_url"].startswith(f"/{DOMAIN}/{panel.PANEL_JS}?v=")
 
 
 async def test_panel_registration_is_idempotent(hass, monkeypatch) -> None:
