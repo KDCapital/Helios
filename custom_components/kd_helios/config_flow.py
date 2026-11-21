@@ -32,11 +32,21 @@ from .const import (
     CONF_ERE_PER_KWH,
     CONF_ERE_PRICE,
     CONF_ERE_PRICE_ENTITY,
+    CONF_EV_CAPACITY_ENTITY,
+    CONF_EV_DEPARTURE_ENTITY,
+    CONF_EV_DEPARTURE_WEEKDAY,
+    CONF_EV_DEPARTURE_WEEKEND,
+    CONF_EV_PACK_KWH,
+    CONF_EV_POWER_ENTITY,
+    CONF_EV_SOC_ENTITY,
+    CONF_EV_TARGET_SOC,
     CONF_EXPORT_DEDUCTION,
     CONF_EXPORT_DEDUCTION_CONFIRMED,
     CONF_EXPORT_ENTITY,
     CONF_EXPORT_POWER_ENTITY,
     CONF_EXPORT_PRICE_SOURCE,
+    CONF_FUSE_AMPS,
+    CONF_FUSE_MARGIN_PCT,
     CONF_GRID_FEE_MONTHLY,
     CONF_GRID_POWER_ENTITY,
     CONF_IMPORT_CAP_KW,
@@ -47,6 +57,7 @@ from .const import (
     CONF_MAX_CHARGE_KW,
     CONF_METER_DEVICE,
     CONF_NAME,
+    CONF_PHASES,
     CONF_POWER_ENTITY,
     CONF_PRICE_INTERVAL,
     CONF_PRIORITY,
@@ -180,6 +191,50 @@ def _optional_entity(
 ) -> vol.Any:
     """Return an entity selector that also accepts an empty value."""
     return vol.Any(None, _entity_selector(device_class))
+
+
+def _ev_schedule_schema() -> vol.Schema:
+    """Schema for the car's charging schedule."""
+    return vol.Schema(
+        {
+            vol.Optional(CONF_EV_PACK_KWH): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=200,
+                    step=0.1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="kWh",
+                )
+            ),
+            vol.Required(CONF_EV_TARGET_SOC, default=100): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=50,
+                    max=100,
+                    step=5,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="%",
+                )
+            ),
+            vol.Optional(
+                CONF_EV_DEPARTURE_WEEKDAY, default="07:30"
+            ): selector.TimeSelector(),
+            vol.Optional(
+                CONF_EV_DEPARTURE_WEEKEND, default="09:00"
+            ): selector.TimeSelector(),
+            vol.Optional(CONF_EV_SOC_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Optional(CONF_EV_CAPACITY_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Optional(CONF_EV_POWER_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Optional(CONF_EV_DEPARTURE_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["sensor", "input_datetime"])
+            ),
+        }
+    )
 
 
 def _device_schema() -> vol.Schema:
@@ -444,6 +499,31 @@ def _battery_schema() -> vol.Schema:
                     step=0.5,
                     mode=selector.NumberSelectorMode.BOX,
                     unit_of_measurement="kW",
+                )
+            ),
+            vol.Required(CONF_PHASES, default="3"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=["1", "3"],
+                    mode=selector.SelectSelectorMode.LIST,
+                    translation_key="phases",
+                )
+            ),
+            vol.Optional(CONF_FUSE_AMPS): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=6,
+                    max=100,
+                    step=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="A",
+                )
+            ),
+            vol.Required(CONF_FUSE_MARGIN_PCT, default=90): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=50,
+                    max=100,
+                    step=5,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                    unit_of_measurement="%",
                 )
             ),
             vol.Required(
@@ -749,7 +829,14 @@ class EvChargerSubentryFlow(ConfigSubentryFlow):
                 return await self.async_step_reimbursement()
 
         return self.async_show_form(
-            step_id="user", data_schema=_device_schema(), errors=errors
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    **_device_schema().schema,
+                    **_ev_schedule_schema().schema,
+                }
+            ),
+            errors=errors,
         )
 
     async def async_step_reimbursement(

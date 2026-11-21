@@ -211,7 +211,10 @@
             "allow_inverter_writes": "Allow writing to the inverter",
             "restore_work_mode": "On release: work mode",
             "priority": "Priority",
-            "import_cap_kw": "Maximum grid import"
+            "import_cap_kw": "Maximum grid import",
+            "phases": "Connection type",
+            "fuse_amps": "Main fuse",
+            "fuse_margin_pct": "Fuse margin"
           },
           "data_description": {
             "soc_entity": "The battery state of charge, for example the Solarman battery SOC sensor.",
@@ -225,7 +228,10 @@
             "allow_inverter_writes": "Off by default. Writes change how your battery behaves and must be triggered explicitly.",
             "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid.",
             "priority": "**EV** gives a charging car the cheap hours and holds the battery back, so it is never filled just to cover a car that is already charging. **Battery** fills the battery first.",
-            "import_cap_kw": "Keeps the car and the battery together under what your connection can carry. Leave empty for no cap."
+            "import_cap_kw": "Keeps the car and the battery together under what your connection can carry. Leave empty for no cap.",
+            "phases": "Single-phase or three-phase.",
+            "fuse_amps": "The rating of your main fuse.",
+            "fuse_margin_pct": "The share of the fuse rating you allow KD Helios to plan with. Some connections are limited lower by the grid operator than the fuse suggests."
           }
         },
         "reconfigure": {
@@ -243,7 +249,10 @@
             "allow_inverter_writes": "Allow writing to the inverter",
             "restore_work_mode": "On release: work mode",
             "priority": "Priority",
-            "import_cap_kw": "Maximum grid import"
+            "import_cap_kw": "Maximum grid import",
+            "phases": "Connection type",
+            "fuse_amps": "Main fuse",
+            "fuse_margin_pct": "Fuse margin"
           },
           "data_description": {
             "reserve_soc": "Never plan to discharge below this.",
@@ -251,7 +260,10 @@
             "allow_inverter_writes": "Off by default. Writes must be triggered explicitly.",
             "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid.",
             "priority": "**EV** gives a charging car the cheap hours and holds the battery back, so it is never filled just to cover a car that is already charging. **Battery** fills the battery first.",
-            "import_cap_kw": "Keeps the car and the battery together under what your connection can carry. Leave empty for no cap."
+            "import_cap_kw": "Keeps the car and the battery together under what your connection can carry. Leave empty for no cap.",
+            "phases": "Single-phase or three-phase.",
+            "fuse_amps": "The rating of your main fuse.",
+            "fuse_margin_pct": "The share of the fuse rating you allow KD Helios to plan with. Some connections are limited lower by the grid operator than the fuse suggests."
           }
         }
       },
@@ -279,12 +291,28 @@
           "data": {
             "name": "Name",
             "power_entity": "Power entity",
-            "energy_entity": "Energy entity"
+            "energy_entity": "Energy entity",
+            "ev_pack_kwh": "Car battery size",
+            "ev_target_soc": "Car target SOC",
+            "ev_departure_weekday": "Departure on weekdays",
+            "ev_departure_weekend": "Departure in the weekend",
+            "ev_soc_entity": "Car SOC sensor",
+            "ev_capacity_entity": "Car capacity sensor",
+            "ev_power_entity": "Charger power sensor",
+            "ev_departure_entity": "Departure sensor"
           },
           "data_description": {
             "name": "The name shown in Home Assistant, for example \"EV charger\".",
             "power_entity": "A sensor in W or kW that reports current power.",
-            "energy_entity": "A cumulative sensor in kWh. Takes precedence over the power entity."
+            "energy_entity": "A cumulative sensor in kWh. Takes precedence over the power entity.",
+            "ev_pack_kwh": "Used to work out how much energy the car still needs.",
+            "ev_target_soc": "The charge level the car charges to.",
+            "ev_departure_weekday": "When the car leaves on a weekday; the cheap window is planned before it.",
+            "ev_departure_weekend": "When the car leaves on a weekend day.",
+            "ev_soc_entity": "An EVCC or Tibber sensor with the car's state of charge.",
+            "ev_capacity_entity": "Optional: a sensor with the usable pack size, instead of the value above.",
+            "ev_power_entity": "The charger's power, used to size the charging window.",
+            "ev_departure_entity": "Optional: an EVCC departure time sensor. Overrides the times above."
           }
         },
         "reimbursement": {
@@ -514,6 +542,12 @@
       "options": {
         "ev": "EV first",
         "battery": "Battery first"
+      }
+    },
+    "phases": {
+      "options": {
+        "1": "1-phase",
+        "3": "3-phase"
       }
     }
   },

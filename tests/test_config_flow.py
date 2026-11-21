@@ -17,16 +17,24 @@ from custom_components.kd_helios.const import (
     CONF_ERE_PER_KWH,
     CONF_ERE_PRICE,
     CONF_ERE_PRICE_ENTITY,
+    CONF_EV_DEPARTURE_WEEKDAY,
+    CONF_EV_DEPARTURE_WEEKEND,
+    CONF_EV_PACK_KWH,
+    CONF_EV_SOC_ENTITY,
+    CONF_EV_TARGET_SOC,
     CONF_EXPORT_DEDUCTION,
     CONF_EXPORT_DEDUCTION_CONFIRMED,
     CONF_EXPORT_ENTITY,
     CONF_EXPORT_PRICE_SOURCE,
+    CONF_FUSE_AMPS,
+    CONF_FUSE_MARGIN_PCT,
     CONF_GRID_FEE_MONTHLY,
     CONF_GRID_POWER_ENTITY,
     CONF_IMPORT_ENTITY,
     CONF_KIND,
     CONF_METER_DEVICE,
     CONF_NAME,
+    CONF_PHASES,
     CONF_POWER_ENTITY,
     CONF_PRICE_INTERVAL,
     CONF_PROVIDER,
@@ -37,6 +45,7 @@ from custom_components.kd_helios.const import (
     CONF_SALDERING,
     CONF_SUPPLY_COST_MONTHLY,
     DOMAIN,
+    SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_DEVICE,
     SUBENTRY_TYPE_EV_CHARGER,
     SUBENTRY_TYPE_GRID,
@@ -693,3 +702,29 @@ async def test_grid_reconfigure_walks_three_steps(hass, loaded_entry) -> None:
     updated = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)[0]
     assert updated.data[CONF_SALDERING] is False
     assert updated.data[CONF_SUPPLY_COST_MONTHLY] == pytest.approx(7.5)
+
+
+async def test_the_battery_flow_asks_for_the_connection(hass, loaded_entry) -> None:
+    """The fuse rating is asked for, so the import cap can be derived."""
+    result = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_BATTERY)
+    keys = {str(key) for key in result["data_schema"].schema}
+    assert CONF_PHASES in keys
+    assert CONF_FUSE_AMPS in keys
+    assert CONF_FUSE_MARGIN_PCT in keys
+
+
+async def test_the_ev_flow_asks_for_the_cars_schedule(hass, loaded_entry) -> None:
+    """The car's schedule is on the EV charger, not on a plain device."""
+    result = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_EV_CHARGER)
+    keys = {str(key) for key in result["data_schema"].schema}
+    for key in (
+        CONF_EV_PACK_KWH,
+        CONF_EV_TARGET_SOC,
+        CONF_EV_DEPARTURE_WEEKDAY,
+        CONF_EV_DEPARTURE_WEEKEND,
+        CONF_EV_SOC_ENTITY,
+    ):
+        assert key in keys
+
+    device = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_DEVICE)
+    assert CONF_EV_PACK_KWH not in {str(key) for key in device["data_schema"].schema}

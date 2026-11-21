@@ -211,7 +211,10 @@
             "allow_inverter_writes": "Schrijven naar de omvormer toestaan",
             "restore_work_mode": "Bij loslaten: werkmodus",
             "priority": "Prioriteit",
-            "import_cap_kw": "Maximale netafname"
+            "import_cap_kw": "Maximale netafname",
+            "phases": "Soort aansluiting",
+            "fuse_amps": "Hoofdzekering",
+            "fuse_margin_pct": "Zekeringsmarge"
           },
           "data_description": {
             "soc_entity": "De laadtoestand van de batterij, bijvoorbeeld de Solarman batterij-SOC-sensor.",
@@ -225,7 +228,10 @@
             "allow_inverter_writes": "Standaard uit. Schrijven verandert het gedrag van je batterij en moet bewust worden gestart.",
             "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net.",
             "priority": "**EV** geeft een ladende auto de goedkope uren en houdt de batterij tegen, zodat die niet wordt volgeladen om een auto te dekken die al laadt. **Batterij** vult eerst de batterij.",
-            "import_cap_kw": "Houdt auto en batterij samen onder wat je aansluiting aankan. Laat leeg voor geen limiet."
+            "import_cap_kw": "Houdt auto en batterij samen onder wat je aansluiting aankan. Laat leeg voor geen limiet.",
+            "phases": "Eenfasig of driefasig.",
+            "fuse_amps": "De waarde van je hoofdzekering.",
+            "fuse_margin_pct": "Het deel van de zekering dat KD Helios mag gebruiken. Sommige aansluitingen zijn door de netbeheerder lager begrensd dan de zekering suggereert."
           }
         },
         "reconfigure": {
@@ -243,7 +249,10 @@
             "allow_inverter_writes": "Schrijven naar de omvormer toestaan",
             "restore_work_mode": "Bij loslaten: werkmodus",
             "priority": "Prioriteit",
-            "import_cap_kw": "Maximale netafname"
+            "import_cap_kw": "Maximale netafname",
+            "phases": "Soort aansluiting",
+            "fuse_amps": "Hoofdzekering",
+            "fuse_margin_pct": "Zekeringsmarge"
           },
           "data_description": {
             "reserve_soc": "Hieronder wordt nooit ontladen gepland.",
@@ -251,7 +260,10 @@
             "allow_inverter_writes": "Standaard uit. Schrijven moet bewust worden gestart.",
             "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net.",
             "priority": "**EV** geeft een ladende auto de goedkope uren en houdt de batterij tegen, zodat die niet wordt volgeladen om een auto te dekken die al laadt. **Batterij** vult eerst de batterij.",
-            "import_cap_kw": "Houdt auto en batterij samen onder wat je aansluiting aankan. Laat leeg voor geen limiet."
+            "import_cap_kw": "Houdt auto en batterij samen onder wat je aansluiting aankan. Laat leeg voor geen limiet.",
+            "phases": "Eenfasig of driefasig.",
+            "fuse_amps": "De waarde van je hoofdzekering.",
+            "fuse_margin_pct": "Het deel van de zekering dat KD Helios mag gebruiken. Sommige aansluitingen zijn door de netbeheerder lager begrensd dan de zekering suggereert."
           }
         }
       },
@@ -279,12 +291,28 @@
           "data": {
             "name": "Naam",
             "power_entity": "Vermogenssensor",
-            "energy_entity": "Energiesensor"
+            "energy_entity": "Energiesensor",
+            "ev_pack_kwh": "Accu van de auto",
+            "ev_target_soc": "Doel-SOC auto",
+            "ev_departure_weekday": "Vertrek op werkdagen",
+            "ev_departure_weekend": "Vertrek in het weekend",
+            "ev_soc_entity": "SOC-sensor auto",
+            "ev_capacity_entity": "Capaciteitssensor auto",
+            "ev_power_entity": "Vermogenssensor lader",
+            "ev_departure_entity": "Vertreksensor"
           },
           "data_description": {
             "name": "De naam in Home Assistant, bijvoorbeeld \"Laadpaal\".",
             "power_entity": "Een sensor in W of kW met het actuele vermogen.",
-            "energy_entity": "Een cumulatieve sensor in kWh. Gaat voor op de vermogenssensor."
+            "energy_entity": "Een cumulatieve sensor in kWh. Gaat voor op de vermogenssensor.",
+            "ev_pack_kwh": "Hiermee bepalen we hoeveel energie de auto nog nodig heeft.",
+            "ev_target_soc": "Het laadniveau waar de auto naartoe laadt.",
+            "ev_departure_weekday": "Wanneer de auto op een werkdag vertrekt; het goedkope venster wordt daarvoor gepland.",
+            "ev_departure_weekend": "Wanneer de auto in het weekend vertrekt.",
+            "ev_soc_entity": "Een EVCC- of Tibber-sensor met de laadstand van de auto.",
+            "ev_capacity_entity": "Optioneel: een sensor met de bruikbare accucapaciteit in plaats van de waarde hierboven.",
+            "ev_power_entity": "Het vermogen van de lader, gebruikt om het laadvenster te bepalen.",
+            "ev_departure_entity": "Optioneel: een EVCC-vertrektijdsensor. Overschrijft de tijden hierboven."
           }
         },
         "reimbursement": {
@@ -514,6 +542,12 @@
       "options": {
         "ev": "EV eerst",
         "battery": "Batterij eerst"
+      }
+    },
+    "phases": {
+      "options": {
+        "1": "1-fase",
+        "3": "3-fase"
       }
     }
   },

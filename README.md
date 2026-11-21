@@ -323,6 +323,24 @@ export stays below your own annual consumption. The grid ledger still tracks
 that headroom (`imported − exported`), so the numbers are there if the trade
 ever becomes attractive again.
 
+#### The car's window
+
+The EV charger subentry carries the car's schedule: pack size, target SOC,
+weekday and weekend departure, and optionally EVCC sensors for SOC, capacity,
+power and departure (an EVCC departure entity overrides the times). The battery
+derives the car's cheap window from it — the cheapest slots before departure
+that deliver the energy the car still needs.
+
+Inside that window the battery **holds**: slots that do not charge are rewritten
+to the current SOC, so a car resuming after a grid-reward pause is served by the
+grid. Outside the window the battery discharges to the reserve as before, so
+charging in the expensive hours runs off stored cheap energy.
+
+The connection belongs to the battery settings — phase count, main fuse and the
+margin you allow — and the charge cap is derived from it (3 x 25 A at 90% is
+15.53 kW). Point the grid subentry's power sensor at the Deye external CT so the
+cap uses the same measurement the inverter controls against.
+
 #### EV priority and the import cap
 
 When a car is charging, filling the battery at the same time doubles the import
@@ -642,7 +660,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 224 tests
+.venv/bin/python -m pytest        # 235 tests
 .venv/bin/ruff check custom_components tests
 ```
 
