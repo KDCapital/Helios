@@ -31,6 +31,7 @@ class HeliosStorage:
         self._grid: dict[str, Any] = {}
         self._battery: dict[str, Any] = {}
         self._control: dict[str, Any] = {}
+        self._profile: dict[str, Any] = {}
 
     async def async_load(self) -> None:
         """Load persisted state, tolerating a missing or corrupt file."""
@@ -40,6 +41,7 @@ class HeliosStorage:
             self._grid = {}
             self._battery = {}
             self._control = {}
+            self._profile = {}
             return
 
         devices = data.get("devices")
@@ -58,6 +60,9 @@ class HeliosStorage:
 
         battery = data.get("battery")
         self._battery = dict(battery) if isinstance(battery, dict) else {}
+
+        profile = data.get("load_profile")
+        self._profile = dict(profile) if isinstance(profile, dict) else {}
 
         control = data.get("battery_control")
         self._control = dict(control) if isinstance(control, dict) else {}
@@ -79,6 +84,17 @@ class HeliosStorage:
         if battery == self._battery:
             return
         self._battery = battery
+        self._store.async_delay_save(self._as_payload, STORAGE_SAVE_DELAY)
+
+    def profile_state(self) -> dict[str, Any]:
+        """Return the stored load profile."""
+        return self._profile
+
+    def async_set_profile(self, profile: dict[str, Any]) -> None:
+        """Replace the stored load profile and schedule a debounced write."""
+        if profile == self._profile:
+            return
+        self._profile = profile
         self._store.async_delay_save(self._as_payload, STORAGE_SAVE_DELAY)
 
     def control_state(self) -> dict[str, Any]:
@@ -113,6 +129,7 @@ class HeliosStorage:
             "grid": self._grid,
             "battery": self._battery,
             "battery_control": self._control,
+            "load_profile": self._profile,
         }
 
     async def async_save(self) -> None:

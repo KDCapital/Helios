@@ -670,7 +670,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 235 tests
+.venv/bin/python -m pytest        # 244 tests
 .venv/bin/ruff check custom_components tests
 ```
 

@@ -38,6 +38,7 @@ from .const import (
     CONF_FUSE_MARGIN_PCT,
     CONF_GRID_FEE_MONTHLY,
     CONF_GRID_POWER_ENTITY,
+    CONF_HOUSE_LOAD_ENTITY,
     CONF_IMPORT_CAP_KW,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
@@ -402,6 +403,8 @@ class BatteryConfig:
     priority: Priority = Priority.EV
     #: Maximum total grid import; 0 disables the cap.
     import_cap_kw: float = 0.0
+    #: Sensor with the whole-house load in W, used to learn the profile.
+    house_load_entity: str | None = None
     #: Connection, used to derive the import cap when it is not set directly.
     phases: int = 3
     fuse_amps: float = 0.0
@@ -455,6 +458,7 @@ class BatteryConfig:
             allow_writes=as_bool(data.get(CONF_ALLOW_INVERTER_WRITES)),
             priority=_as_enum(Priority, data.get(CONF_PRIORITY), Priority.EV),
             import_cap_kw=as_float(data.get(CONF_IMPORT_CAP_KW)),
+            house_load_entity=as_entity_id(data.get(CONF_HOUSE_LOAD_ENTITY)),
             phases=int(as_float(data.get(CONF_PHASES), 3.0)),
             fuse_amps=as_float(data.get(CONF_FUSE_AMPS)),
             fuse_margin_pct=as_float(data.get(CONF_FUSE_MARGIN_PCT), 90.0),

@@ -54,7 +54,7 @@ honour them.
 7. **Both languages.** Every user-facing string exists in English and Dutch,
    with `strings.json` identical to `translations/en.json`.
 
-## 3. Where we are (v0.1, milestone M0)
+## 3. Where we are (M1 started)
 
 Shipped and tested (235 tests):
 
@@ -66,6 +66,10 @@ Shipped and tested (235 tests):
 - Connection capacity (phases/amps/margin) and the fuse-aware charge cap.
 - The car's cheap window and the hold policy inside it.
 - Dashboard with ranges, history from long-term statistics, chart hover.
+
+- M1 started: a learned house-load profile (per weekday and hour, with fallbacks
+  for the first days), persisted across restarts and exposed in the dashboard
+  payload. A planner benchmark runs a simulated year at 0.3 ms per plan.
 
 Known gaps, tracked in §8.
 
@@ -245,6 +249,8 @@ Things built but not yet proven on live hardware. Each must be ticked or fixed.
 - [ ] Inverter oscillation (±10 kW ringing) behaviour under a load step.
 - [ ] Saldering edge cases: export beyond consumption, year boundary.
 - [ ] Panel on mobile.
+- [ ] The house-load profile actually fills from a real sensor.
+- [ ] Profile-based forecast still needs solar and price forecasts (M2).
 
 ## 9. Decision log
 

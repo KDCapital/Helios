@@ -282,6 +282,10 @@ def build_dashboard(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
         "battery": _battery_payload(runtime, now),
         "devices": _devices_payload(runtime),
         "summary": _summary(runtime),
+        "load_profile": {
+            "coverage_pct": runtime.engine.load_profile.coverage_pct(),
+            "predicted_kw": runtime.engine.load_profile.forecast_kw(now),
+        },
     }
 
 

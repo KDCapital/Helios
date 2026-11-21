@@ -214,7 +214,8 @@
             "import_cap_kw": "Maximum grid import",
             "phases": "Connection type",
             "fuse_amps": "Main fuse",
-            "fuse_margin_pct": "Fuse margin"
+            "fuse_margin_pct": "Fuse margin",
+            "house_load_entity": "House load sensor"
           },
           "data_description": {
             "soc_entity": "The battery state of charge, for example the Solarman battery SOC sensor.",
@@ -231,7 +232,8 @@
             "import_cap_kw": "Keeps the car and the battery together under what your connection can carry. Leave empty for no cap.",
             "phases": "Single-phase or three-phase.",
             "fuse_amps": "The rating of your main fuse.",
-            "fuse_margin_pct": "The share of the fuse rating you allow KD Helios to plan with. Some connections are limited lower by the grid operator than the fuse suggests."
+            "fuse_margin_pct": "The share of the fuse rating you allow KD Helios to plan with. Some connections are limited lower by the grid operator than the fuse suggests.",
+            "house_load_entity": "A sensor with the whole-house consumption in W. KD Helios learns an hourly profile from it, which later forecasts are based on."
           }
         },
         "reconfigure": {
@@ -252,7 +254,8 @@
             "import_cap_kw": "Maximum grid import",
             "phases": "Connection type",
             "fuse_amps": "Main fuse",
-            "fuse_margin_pct": "Fuse margin"
+            "fuse_margin_pct": "Fuse margin",
+            "house_load_entity": "House load sensor"
           },
           "data_description": {
             "reserve_soc": "Never plan to discharge below this.",
@@ -263,7 +266,8 @@
             "import_cap_kw": "Keeps the car and the battery together under what your connection can carry. Leave empty for no cap.",
             "phases": "Single-phase or three-phase.",
             "fuse_amps": "The rating of your main fuse.",
-            "fuse_margin_pct": "The share of the fuse rating you allow KD Helios to plan with. Some connections are limited lower by the grid operator than the fuse suggests."
+            "fuse_margin_pct": "The share of the fuse rating you allow KD Helios to plan with. Some connections are limited lower by the grid operator than the fuse suggests.",
+            "house_load_entity": "A sensor with the whole-house consumption in W. KD Helios learns an hourly profile from it, which later forecasts are based on."
           }
         }
       },

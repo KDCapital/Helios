@@ -214,7 +214,8 @@
             "import_cap_kw": "Maximale netafname",
             "phases": "Soort aansluiting",
             "fuse_amps": "Hoofdzekering",
-            "fuse_margin_pct": "Zekeringsmarge"
+            "fuse_margin_pct": "Zekeringsmarge",
+            "house_load_entity": "Sensor huisverbruik"
           },
           "data_description": {
             "soc_entity": "De laadtoestand van de batterij, bijvoorbeeld de Solarman batterij-SOC-sensor.",
@@ -231,7 +232,8 @@
             "import_cap_kw": "Houdt auto en batterij samen onder wat je aansluiting aankan. Laat leeg voor geen limiet.",
             "phases": "Eenfasig of driefasig.",
             "fuse_amps": "De waarde van je hoofdzekering.",
-            "fuse_margin_pct": "Het deel van de zekering dat KD Helios mag gebruiken. Sommige aansluitingen zijn door de netbeheerder lager begrensd dan de zekering suggereert."
+            "fuse_margin_pct": "Het deel van de zekering dat KD Helios mag gebruiken. Sommige aansluitingen zijn door de netbeheerder lager begrensd dan de zekering suggereert.",
+            "house_load_entity": "Een sensor met het totale verbruik van het huis in W. KD Helios leert daar een uurprofiel van, waar latere voorspellingen op rusten."
           }
         },
         "reconfigure": {
@@ -252,7 +254,8 @@
             "import_cap_kw": "Maximale netafname",
             "phases": "Soort aansluiting",
             "fuse_amps": "Hoofdzekering",
-            "fuse_margin_pct": "Zekeringsmarge"
+            "fuse_margin_pct": "Zekeringsmarge",
+            "house_load_entity": "Sensor huisverbruik"
           },
           "data_description": {
             "reserve_soc": "Hieronder wordt nooit ontladen gepland.",
@@ -263,7 +266,8 @@
             "import_cap_kw": "Houdt auto en batterij samen onder wat je aansluiting aankan. Laat leeg voor geen limiet.",
             "phases": "Eenfasig of driefasig.",
             "fuse_amps": "De waarde van je hoofdzekering.",
-            "fuse_margin_pct": "Het deel van de zekering dat KD Helios mag gebruiken. Sommige aansluitingen zijn door de netbeheerder lager begrensd dan de zekering suggereert."
+            "fuse_margin_pct": "Het deel van de zekering dat KD Helios mag gebruiken. Sommige aansluitingen zijn door de netbeheerder lager begrensd dan de zekering suggereert.",
+            "house_load_entity": "Een sensor met het totale verbruik van het huis in W. KD Helios leert daar een uurprofiel van, waar latere voorspellingen op rusten."
           }
         }
       },

@@ -49,6 +49,7 @@ from .const import (
     CONF_FUSE_MARGIN_PCT,
     CONF_GRID_FEE_MONTHLY,
     CONF_GRID_POWER_ENTITY,
+    CONF_HOUSE_LOAD_ENTITY,
     CONF_IMPORT_CAP_KW,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
@@ -500,6 +501,9 @@ def _battery_schema() -> vol.Schema:
                     mode=selector.NumberSelectorMode.BOX,
                     unit_of_measurement="kW",
                 )
+            ),
+            vol.Optional(CONF_HOUSE_LOAD_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
             ),
             vol.Required(CONF_PHASES, default="3"): selector.SelectSelector(
                 selector.SelectSelectorConfig(

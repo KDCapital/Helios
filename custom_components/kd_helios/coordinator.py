@@ -45,6 +45,7 @@ from .prices import (
     async_fetch_spot_prices,
     build_price_series,
 )
+from .profile import LoadProfile
 from .sources import read_number
 from .storage import HeliosStorage
 
@@ -161,6 +162,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.last_control_error: str | None = None
         self._last_apply: datetime | None = None
         self._applied_cap: float | None = None
+        self.load_profile = LoadProfile.from_dict(
+            storage.profile_state().get("buckets")
+        )
 
         grid_subentries = entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)
         self.grid_tracker: GridTracker | None = (
@@ -252,6 +256,23 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self._last_apply = now
         self.applied_plan = AppliedPlan.from_plan(plan, tou, now)
         self.storage.async_set_battery(self.applied_plan.as_dict())
+
+    def _learn_load(self, now) -> None:
+        """Fold the house load into the profile, if a sensor is configured."""
+        config = self.battery_config
+        if config is None or config.house_load_entity is None:
+            return
+        state = self.hass.states.get(config.house_load_entity)
+        if state is None or state.state in ("unknown", "unavailable"):
+            return
+        try:
+            watts = float(state.state)
+        except (TypeError, ValueError):
+            return
+        unit = state.attributes.get("unit_of_measurement")
+        kw = watts / 1000.0 if unit in (None, "W") else watts
+        self.load_profile.add(now, kw)
+        self.storage.async_set_profile({"buckets": self.load_profile.as_dict()})
 
     def _ev_hold(self, now, series) -> tuple[datetime, datetime, float] | None:
         """Return the car's window and its SOC, if the battery must hold there."""
@@ -420,6 +441,8 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             self.grid_tracker.update(now, available_series)
             grid_snapshot = self.grid_tracker.snapshot(now, available_series)
             self.storage.async_set_grid(self.grid_tracker.acc.as_dict())
+
+        self._learn_load(now)
 
         battery_plan: ChargePlan | None = None
         if self.battery_config is not None:
