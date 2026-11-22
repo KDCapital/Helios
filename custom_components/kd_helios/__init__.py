@@ -24,6 +24,7 @@ from .const import (
     DOMAIN,
     ISSUE_NO_DEVICES,
     SUBENTRY_TYPE_GRID,
+    VERSION,
 )
 from .coordinator import HeliosEngine, PriceCoordinator
 from .models import device_subentries
@@ -114,6 +115,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: HeliosConfigEntry) -> bool:
     """Set up KD Helios from a config entry."""
+    _LOGGER.info("KD Helios %s starting", VERSION)
     provider: str = entry.data[CONF_PROVIDER]
     interval: str = entry.data.get(CONF_PRICE_INTERVAL, DEFAULT_PRICE_INTERVAL)
 
