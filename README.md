@@ -102,9 +102,9 @@ the old and the new reading.
 #### Add EV charger
 
 The charger workflow starts with the same metering the cost calculation needs.
-Only after that comes the optional car page — pack size, target SOC, departure
-times and the EVCC sensors (or the EVCC device, whose sensors are then found
-automatically). Leaving the car battery size empty keeps the charger cost-only;
+Only after that comes the optional car page — pack size, target SOC (a fixed
+value or a sensor), departure times and the EVCC sensors (or the EVCC device,
+whose sensors are then found automatically). Leaving the car battery size empty keeps the charger cost-only;
 the page can be completed later with **Reconfigure**. Reimbursement and ERE come
 last, and are part of the charger workflow only.
 
@@ -361,9 +361,9 @@ ever becomes attractive again.
 
 #### The car's window
 
-An EV charger can optionally carry the car's schedule: pack size, target SOC,
-weekday and weekend departure, and EVCC sensors for SOC, capacity, power and
-departure (an EVCC departure entity overrides the times; picking the EVCC device
+An EV charger can optionally carry the car's schedule: pack size, target SOC
+(a fixed value or a sensor, for example EVCC's Plan SOC), weekday and weekend
+departure, and EVCC sensors for SOC, capacity, power and departure (an EVCC departure entity overrides the times; picking the EVCC device
 fills them in). It is set on its own page after the metering, so a charger that
 is only tracked for costs never needs it. The battery derives the car's cheap
 window from it — the cheapest slots before departure that deliver the energy the

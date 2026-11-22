@@ -25,6 +25,7 @@ from custom_components.kd_helios.const import (
     CONF_EV_PACK_KWH,
     CONF_EV_SOC_ENTITY,
     CONF_EV_TARGET_SOC,
+    CONF_EV_TARGET_SOC_ENTITY,
     CONF_INVERTER_DEVICE,
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
@@ -149,6 +150,7 @@ async def test_the_car_window_falls_back_to_the_chargers_power(
                 "sensor.ev2_energy",
                 **{
                     CONF_EV_SOC_ENTITY: "sensor.car_soc",
+                    CONF_EV_TARGET_SOC_ENTITY: "sensor.car_target_soc",
                     # No car power sensor: the charger's W sensor is the fallback.
                     CONF_POWER_ENTITY: "sensor.ev2_power",
                 },
@@ -158,6 +160,9 @@ async def test_the_car_window_falls_back_to_the_chargers_power(
     entry.add_to_hass(hass)
     hass.states.async_set(SOC_ENTITY, "25", {"unit_of_measurement": "%"})
     hass.states.async_set("sensor.car_soc", "50", {"unit_of_measurement": "%"})
+    hass.states.async_set(
+        "sensor.car_target_soc", "80", {"unit_of_measurement": "%"}
+    )
     hass.states.async_set("sensor.ev2_power", "11000", {"unit_of_measurement": "W"})
 
     with freeze_time(FROZEN):
@@ -166,6 +171,13 @@ async def test_the_car_window_falls_back_to_the_chargers_power(
 
         engine = entry.runtime_data.engine
         hold = engine._ev_hold(dt_util.utcnow(), engine.prices.series)
+
+        # The target SOC sensor overrides the fixed 80% from the form: at the
+        # same 50% the car is already there, so there is nothing to plan.
+        hass.states.async_set(
+            "sensor.car_target_soc", "50", {"unit_of_measurement": "%"}
+        )
+        assert engine._ev_hold(dt_util.utcnow(), engine.prices.series) is None
 
     assert hold is not None
     start, end, soc = hold

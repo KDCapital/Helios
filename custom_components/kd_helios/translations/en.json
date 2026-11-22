@@ -356,6 +356,7 @@
             "ev_device": "Car device (EVCC)",
             "ev_pack_kwh": "Car battery size",
             "ev_target_soc": "Car target SOC",
+            "ev_target_soc_entity": "Target SOC sensor",
             "ev_departure_weekday": "Departure on weekdays",
             "ev_departure_weekend": "Departure in the weekend",
             "ev_soc_entity": "Car SOC sensor",
@@ -372,7 +373,8 @@
             "ev_soc_entity": "State of charge of the car in %, for example EVCC's Vehicle SOC. Needed to know how much energy is still missing.",
             "ev_capacity_entity": "Optional sensor with the usable battery size in kWh, if the car publishes it. Overrides the fixed size above.",
             "ev_power_entity": "Charging power of the car in W or kW, for example EVCC's Charge power. Used to size the charging window; leave empty to use the charger's power sensor.",
-            "ev_departure_entity": "Optional date/time or time sensor with the next departure, for example EVCC's plan. Overrides the fixed times above."
+            "ev_departure_entity": "Optional date/time or time sensor with the next departure, for example EVCC's plan. Overrides the fixed times above.",
+            "ev_target_soc_entity": "Optional sensor with the target state of charge in %, for example EVCC's Plan SOC. Overrides the slider above; use it when the target changes per trip."
           }
         },
         "reimbursement": {
@@ -437,6 +439,7 @@
             "ev_device": "Car device (EVCC)",
             "ev_pack_kwh": "Car battery size",
             "ev_target_soc": "Car target SOC",
+            "ev_target_soc_entity": "Target SOC sensor",
             "ev_departure_weekday": "Departure on weekdays",
             "ev_departure_weekend": "Departure in the weekend",
             "ev_soc_entity": "Car SOC sensor",
@@ -468,7 +471,8 @@
             "ere_price": "Value of one ERE certificate in euros.",
             "ere_price_entity": "Optional sensor with the live price per ERE, for example the Joulo market price sensor.",
             "ere_credits_entity": "Cumulative ERE credits, for example sensor.joulo_total_ere_credits.",
-            "ere_kwh_entity": "Cumulative charged energy, for example sensor.joulo_total_all_kwh."
+            "ere_kwh_entity": "Cumulative charged energy, for example sensor.joulo_total_all_kwh.",
+            "ev_target_soc_entity": "Optional sensor with the target state of charge in %, for example EVCC's Plan SOC. Overrides the slider above; use it when the target changes per trip."
           }
         }
       },

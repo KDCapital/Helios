@@ -33,6 +33,7 @@ from .const import (
     CONF_EV_POWER_ENTITY,
     CONF_EV_SOC_ENTITY,
     CONF_EV_TARGET_SOC,
+    CONF_EV_TARGET_SOC_ENTITY,
     CONF_EXPORT_DEDUCTION,
     CONF_EXPORT_ENTITY,
     CONF_EXPORT_POWER_ENTITY,
@@ -250,6 +251,8 @@ class DeviceConfig:
     #: Car schedule, only meaningful for an EV charger.
     ev_pack_kwh: float = 0.0
     ev_target_soc: float = 100.0
+    #: A sensor with the target SOC, which overrides the fixed value.
+    ev_target_soc_entity: str | None = None
     ev_departure_weekday: str = ""
     ev_departure_weekend: str = ""
     #: EVCC device; its entities are derived from it.
@@ -309,6 +312,7 @@ class DeviceConfig:
             kind=kind,
             ev_pack_kwh=as_float(data.get(CONF_EV_PACK_KWH)),
             ev_target_soc=as_float(data.get(CONF_EV_TARGET_SOC), 100.0),
+            ev_target_soc_entity=as_entity_id(data.get(CONF_EV_TARGET_SOC_ENTITY)),
             ev_departure_weekday=str(data.get(CONF_EV_DEPARTURE_WEEKDAY) or ""),
             ev_departure_weekend=str(data.get(CONF_EV_DEPARTURE_WEEKEND) or ""),
             ev_device_id=str(data.get(CONF_EV_DEVICE) or "") or None,

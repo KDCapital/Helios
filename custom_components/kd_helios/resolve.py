@@ -20,12 +20,41 @@ BATTERY_HINTS: dict[str, tuple[str, ...]] = {
     "house_load_entity": ("total load", "load power", "house consumption"),
 }
 
-#: Name hints per car field for an EVCC loadpoint.
+#: Name hints per car field for an EVCC loadpoint. More specific names first,
+#: so ``Plan SOC`` is not mistaken for the car's state of charge.
 EV_HINTS: dict[str, tuple[str, ...]] = {
-    "ev_soc_entity": ("vehicle soc", "car soc", "soc"),
-    "ev_power_entity": ("charge power", "power"),
-    "ev_departure_entity": ("plan", "departure", "target time"),
-    "ev_capacity_entity": ("capacity", "battery size"),
+    # A bare "soc" is deliberately absent: it would match "Plan SOC" and file
+    # the target behind the car's current state of charge.
+    "ev_soc_entity": (
+        "vehicle soc",
+        "vehicle_soc",
+        "car soc",
+        "car_soc",
+        "battery soc",
+        "state of charge",
+    ),
+    "ev_target_soc_entity": (
+        "plan soc",
+        "plan_soc",
+        "target soc",
+        "target_soc",
+        "soc target",
+        "doel soc",
+        "doel_soc",
+    ),
+    "ev_power_entity": ("charge power", "charge_power", "charging power", "power"),
+    "ev_departure_entity": (
+        "plan projected end",
+        "plan_projected_end",
+        "projected end",
+        "plan end",
+        "plan_end",
+        "plan time",
+        "plan_time",
+        "departure",
+        "target time",
+    ),
+    "ev_capacity_entity": ("capacity", "battery size", "battery_size"),
 }
 
 #: Name hints for the Joulo ERE sensors.
@@ -66,9 +95,15 @@ def match_for_device(
 
     found: dict[str, str] = {}
     for field, needles in hints.items():
-        for entity_id, label in available:
-            if any(needle in label for needle in needles):
-                found[field] = entity_id
+        # Try the most specific name first: on an EVCC device, ``Plan SOC``
+        # must go to the target SOC and ``Vehicle SOC`` to the current one.
+        for needle in needles:
+            match = next(
+                (entity_id for entity_id, label in available if needle in label),
+                None,
+            )
+            if match is not None:
+                found[field] = match
                 break
     return found
 

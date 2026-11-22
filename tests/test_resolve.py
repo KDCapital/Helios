@@ -74,7 +74,10 @@ def test_the_car_is_filled_in_from_evcc(hass) -> None:
         name="Laadpaal",
     )
     registry = er.async_get(hass)
+    # Plan SOC comes first on purpose: a bare name match would file it as the
+    # current SOC and leave the target field empty.
     for unique, object_id, name in (
+        ("target", "evcc_plan_soc", "Plan SOC"),
         ("soc", "evcc_car_soc", "Vehicle SOC"),
         ("power", "evcc_charge_power", "Charge power"),
         ("dep", "evcc_plan_end", "Plan projected end"),
@@ -92,6 +95,7 @@ def test_the_car_is_filled_in_from_evcc(hass) -> None:
         hass, DeviceConfig(subentry_id="ev", name="Car", ev_device_id=device.id)
     )
     assert resolved.ev_soc_entity == "sensor.evcc_car_soc"
+    assert resolved.ev_target_soc_entity == "sensor.evcc_plan_soc"
     assert resolved.ev_power_entity == "sensor.evcc_charge_power"
     assert resolved.ev_departure_entity == "sensor.evcc_plan_end"
 

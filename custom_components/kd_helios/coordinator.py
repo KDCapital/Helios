@@ -443,7 +443,14 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             if departure is None:
                 continue
 
-            needed = energy_needed_kwh(capacity, ev.ev_target_soc, soc)
+            target_soc = ev.ev_target_soc
+            if ev.ev_target_soc_entity is not None:
+                # A sensor tracks a target that changes per trip; otherwise the
+                # fixed value from the form is used.
+                target_soc = (
+                    read_number(self.hass, ev.ev_target_soc_entity) or target_soc
+                )
+            needed = energy_needed_kwh(capacity, target_soc, soc)
             if needed <= 0:
                 continue
 

@@ -43,6 +43,7 @@ from .const import (
     CONF_EV_POWER_ENTITY,
     CONF_EV_SOC_ENTITY,
     CONF_EV_TARGET_SOC,
+    CONF_EV_TARGET_SOC_ENTITY,
     CONF_EXPORT_DEDUCTION,
     CONF_EXPORT_DEDUCTION_CONFIRMED,
     CONF_EXPORT_ENTITY,
@@ -237,6 +238,9 @@ def _ev_schedule_schema() -> vol.Schema:
                     mode=selector.NumberSelectorMode.SLIDER,
                     unit_of_measurement="%",
                 )
+            ),
+            vol.Optional(CONF_EV_TARGET_SOC_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
             ),
             vol.Optional(
                 CONF_EV_DEPARTURE_WEEKDAY, default="07:30"

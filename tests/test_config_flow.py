@@ -23,6 +23,7 @@ from custom_components.kd_helios.const import (
     CONF_EV_PACK_KWH,
     CONF_EV_SOC_ENTITY,
     CONF_EV_TARGET_SOC,
+    CONF_EV_TARGET_SOC_ENTITY,
     CONF_EXPORT_DEDUCTION,
     CONF_EXPORT_DEDUCTION_CONFIRMED,
     CONF_EXPORT_ENTITY,
@@ -263,6 +264,7 @@ async def test_ev_charger_walks_all_four_steps(hass, loaded_entry) -> None:
         vehicle={
             CONF_EV_PACK_KWH: 77,
             CONF_EV_TARGET_SOC: 80,
+            CONF_EV_TARGET_SOC_ENTITY: "sensor.car_target_soc",
             CONF_EV_DEPARTURE_WEEKDAY: "07:00",
             CONF_EV_DEPARTURE_WEEKEND: "09:30",
             CONF_EV_SOC_ENTITY: "sensor.car_soc",
@@ -279,6 +281,7 @@ async def test_ev_charger_walks_all_four_steps(hass, loaded_entry) -> None:
     assert subentry.data[CONF_ERE_PER_KWH] == pytest.approx(0.25)
     assert subentry.data[CONF_EV_PACK_KWH] == pytest.approx(77)
     assert subentry.data[CONF_EV_TARGET_SOC] == 80
+    assert subentry.data[CONF_EV_TARGET_SOC_ENTITY] == "sensor.car_target_soc"
     # And nothing of it leaks into the plain device list.
     assert loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE) == []
 
@@ -865,6 +868,7 @@ async def test_the_ev_flow_asks_for_the_cars_schedule(hass, loaded_entry) -> Non
         CONF_EV_DEVICE,
         CONF_EV_PACK_KWH,
         CONF_EV_TARGET_SOC,
+        CONF_EV_TARGET_SOC_ENTITY,
         CONF_EV_DEPARTURE_WEEKDAY,
         CONF_EV_DEPARTURE_WEEKEND,
         CONF_EV_SOC_ENTITY,

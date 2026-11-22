@@ -356,6 +356,7 @@
             "ev_device": "Auto-apparaat (EVCC)",
             "ev_pack_kwh": "Accu van de auto",
             "ev_target_soc": "Doel-SOC auto",
+            "ev_target_soc_entity": "Doel-SOC-sensor",
             "ev_departure_weekday": "Vertrek op weekdagen",
             "ev_departure_weekend": "Vertrek in het weekend",
             "ev_soc_entity": "SOC-sensor auto",
@@ -372,7 +373,8 @@
             "ev_soc_entity": "Laadniveau van de auto in %, bijvoorbeeld de Vehicle SOC van EVCC. Nodig om te weten hoeveel energie er nog ontbreekt.",
             "ev_capacity_entity": "Optionele sensor met de nuttige accucapaciteit in kWh, als de auto die publiceert. Gaat voor op de vaste waarde hierboven.",
             "ev_power_entity": "Laadvermogen van de auto in W of kW, bijvoorbeeld de Charge power van EVCC. Bepaalt de grootte van het laadvenster; laat leeg om de vermogenssensor van de lader te gebruiken.",
-            "ev_departure_entity": "Optionele datum/tijd- of tijdsensor met het volgende vertrek, bijvoorbeeld het plan van EVCC. Gaat voor op de vaste tijden hierboven."
+            "ev_departure_entity": "Optionele datum/tijd- of tijdsensor met het volgende vertrek, bijvoorbeeld het plan van EVCC. Gaat voor op de vaste tijden hierboven.",
+            "ev_target_soc_entity": "Optionele sensor met het gewenste laadniveau in %, bijvoorbeeld de Plan SOC van EVCC. Gaat voor op de slider hierboven; gebruik dit als het doel per rit verschilt."
           }
         },
         "reimbursement": {
@@ -437,6 +439,7 @@
             "ev_device": "Auto-apparaat (EVCC)",
             "ev_pack_kwh": "Accu van de auto",
             "ev_target_soc": "Doel-SOC auto",
+            "ev_target_soc_entity": "Doel-SOC-sensor",
             "ev_departure_weekday": "Vertrek op weekdagen",
             "ev_departure_weekend": "Vertrek in het weekend",
             "ev_soc_entity": "SOC-sensor auto",
@@ -468,7 +471,8 @@
             "ere_price": "Waarde van één ERE-certificaat in euro.",
             "ere_price_entity": "Optionele sensor met de actuele prijs per ERE, bijvoorbeeld de Joulo-marktprijssensor.",
             "ere_credits_entity": "Cumulatief ERE-tegoed, bijvoorbeeld sensor.joulo_total_ere_credits.",
-            "ere_kwh_entity": "Cumulatief geladen energie, bijvoorbeeld sensor.joulo_total_all_kwh."
+            "ere_kwh_entity": "Cumulatief geladen energie, bijvoorbeeld sensor.joulo_total_all_kwh.",
+            "ev_target_soc_entity": "Optionele sensor met het gewenste laadniveau in %, bijvoorbeeld de Plan SOC van EVCC. Gaat voor op de slider hierboven; gebruik dit als het doel per rit verschilt."
           }
         }
       },
