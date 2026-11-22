@@ -61,7 +61,7 @@ GRID_CHARGE_REGISTER = 130
 GRID_CHARGE_CURRENT_REGISTER = 128
 
 #: The inverter accepts 0..185 A on that register.
-GRID_CHARGE_CURRENT_MAX = 185
+GRID_CHARGE_CURRENT_MAX = 240
 
 #: Nominal pack voltage used when no battery voltage sensor is configured.
 DEFAULT_BATTERY_VOLTAGE = 51.2
@@ -834,11 +834,16 @@ def schedule_window_plan(plan: ChargePlan, now: datetime) -> ChargePlan:
     )
 
 
-def charge_current_a(power_kw: float, voltage: float) -> int:
+def charge_current_a(
+    power_kw: float,
+    voltage: float,
+    max_current_a: int = GRID_CHARGE_CURRENT_MAX,
+) -> int:
     """Return the battery grid-charge current for a charge power."""
     if power_kw <= 0 or voltage <= 0:
         return 0
-    return max(1, min(GRID_CHARGE_CURRENT_MAX, round(power_kw * 1000.0 / voltage)))
+    limit = max(1, int(max_current_a))
+    return max(1, min(limit, round(power_kw * 1000.0 / voltage)))
 
 
 def build_control_plan(

@@ -395,13 +395,16 @@ Every plan, control and power-cap decision is kept in a small history:
 - the log gets an INFO line when the control state, the grid-charge current or
   the charge-power clamp changes, with the inputs behind it.
 
-For example, a configured 11 kW can show up as roughly 10 kW because the Deye
-grid-charge current register stops at **185 A**. At a 54 V pack that is
-`185 × 54 / 1000 = 9.99 kW`; the decision entry records the requested current,
-the written current, the battery voltage and the effective power. The register
-cannot be pushed past 185 A, so 11 kW is not reachable at that voltage. Lower
-the configured maximum charge power to the hardware limit, or accept the
-current-limited value.
+For example, a configured 11 kW can show up as roughly 10 kW when the charge
+current is capped. The SG04LP3 register stops at **185 A**, while the
+SG05LP3‑SM2 accepts **240 A**. At a 54 V pack, 185 A is
+`185 × 54 / 1000 = 9.99 kW`, whereas 240 A at 46 V is about 11 kW. KD Helios
+reads the actual `max` of the Solarman Battery Grid Charging Current entity,
+falling back to the inverter model, and records the requested current, the
+written current, the battery voltage, the voltage source and the effective
+power in the decision. If the voltage shown is the 51.2 V fallback, configure
+or expose a battery-voltage sensor so the current is calculated for the real
+pack voltage.
 
 #### Deliberately not included: saldering arbitrage
 

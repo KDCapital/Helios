@@ -10,6 +10,8 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -209,6 +211,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.control_plan: ControlPlan | None = None
         self._control_key: tuple | None = None
         self._applied_current: int | None = None
+        self._max_charge_current_a: int | None = None
         #: Recent control decisions, newest last. Exposed through diagnostics
         #: and the status sensor so a power or mode surprise can be explained.
         self.decision_log: deque[dict[str, Any]] = deque(maxlen=40)
@@ -428,6 +431,57 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         """Return the discharge ceiling written to the TOU power block."""
         kw = config.max_discharge_kw or config.max_charge_kw
         return max(0, round(kw * 1000))
+
+    def _max_grid_charge_current(self) -> int:
+        """Return the inverter's actual grid-charge current ceiling.
+
+        The SG04LP3 register stops at 185 A, while the SG05LP3-SM2 accepts
+        240 A. Prefer the number entity's own ``max`` attribute; fall back to
+        the model when Solarman has not exposed it.
+        """
+        if self._max_charge_current_a is not None:
+            return self._max_charge_current_a
+
+        config = self.battery_config
+        device_id = config.inverter_device_id if config is not None else None
+        if device_id is not None:
+            registry = er.async_get(self.hass)
+            for item in registry.entities.values():
+                if item.device_id != device_id or item.domain != "number":
+                    continue
+                label = " ".join(
+                    part
+                    for part in (
+                        item.original_name,
+                        item.entity_id,
+                        item.translation_key,
+                    )
+                    if part
+                ).lower()
+                if "grid" not in label or "current" not in label:
+                    continue
+                state = self.hass.states.get(item.entity_id)
+                if state is not None:
+                    maximum = state.attributes.get("max")
+                    try:
+                        if maximum is not None:
+                            self._max_charge_current_a = max(
+                                1, min(400, int(float(maximum)))
+                            )
+                            return self._max_charge_current_a
+                    except (TypeError, ValueError):
+                        pass
+                break
+
+        model = ""
+        if device_id is not None:
+            device = dr.async_get(self.hass).async_get(device_id)
+            if device is not None:
+                model = f"{device.model or ''} {device.name or ''}".upper()
+        self._max_charge_current_a = (
+            240 if ("SG05LP3" in model and "12K" in model) else 185
+        )
+        return self._max_charge_current_a
 
     def _battery_voltage(self) -> float:
         """Return the pack voltage used to turn charge power into current."""
@@ -724,7 +778,8 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         )
 
         voltage = self._battery_voltage()
-        current = charge_current_a(limit, voltage)
+        max_current = self._max_grid_charge_current()
+        current = charge_current_a(limit, voltage, max_current)
         charging = any(
             program.source is ChargeSource.GRID for program in control.programs
         )
@@ -737,6 +792,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             grid_kw=round(grid_kw, 2),
             voltage_v=round(voltage, 2),
             current_a=current,
+            max_current_a=max_current,
             effective_kw=round(current * voltage / 1000.0, 2) if charging else 0.0,
             reasons=[blocker.reason for blocker in blockers],
         )
@@ -1012,8 +1068,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 if charge and voltage > 0
                 else 0
             )
+            max_current = self._max_grid_charge_current()
             current_a = charge_current_a(
-                settings.max_charge_kw if charge else 0.0, voltage
+                settings.max_charge_kw if charge else 0.0, voltage, max_current
             )
             effective_kw = round(current_a * voltage / 1000.0, 2) if charge else 0.0
             control = build_control_plan(
@@ -1049,16 +1106,19 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 target_soc=settings.target_soc_pct,
                 hold_soc=hold_soc,
                 voltage_v=round(voltage, 2),
+                voltage_source=(
+                    self.battery_config.battery_voltage_entity or "default"
+                ),
                 requested_current_a=requested_a,
                 current_a=current_a,
+                max_current_a=max_current,
                 effective_kw=effective_kw,
                 power_w=self._discharge_power_w(self.battery_config),
             )
             if charge and requested_a > current_a and changed:
                 _LOGGER.info(
                     "KD Helios charge current limited to %s A by the inverter "
-                    "register (requested %s A at %.1f V); %.2f kW instead of "
-                    "%.2f kW",
+                    "(requested %s A at %.1f V); %.2f kW instead of %.2f kW",
                     current_a,
                     requested_a,
                     voltage,
