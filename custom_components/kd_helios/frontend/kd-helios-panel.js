@@ -13,8 +13,6 @@
 // Where configuration lives now that the panel no longer edits it.
 const CONFIG_HINT = "Settings → Devices & services → KD Helios";
 
-const SOURCE_LABELS = { 0: "Off", 1: "Grid", 2: "Generator", 3: "Grid + gen" };
-
 // Every condition the backend can report, in the words the panel uses. One
 // dictionary so a new reason cannot appear as a bare code on the dashboard.
 const BLOCKER_LABELS = {
@@ -162,11 +160,6 @@ const STYLE = `
   .metric .label { font-size: 11.5px; color: var(--secondary-text-color); }
   .metric .value { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .metric .value.good { color: var(--helios-good); }
-
-  table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
-  th { text-align: left; font-weight: 500; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--secondary-text-color); padding: 6px 6px; }
-  td { padding: 6px 6px; border-top: 1px solid var(--helios-line); font-variant-numeric: tabular-nums; }
-  th.num, td.num { text-align: right; }
 
   .muted { color: var(--secondary-text-color); font-size: 12.5px; margin: 8px 0 0; }
   .error { color: var(--error-color); }
@@ -596,17 +589,6 @@ class KdHeliosPanel extends HTMLElement {
     const saving = summary.battery_saving_planned;
     const next = plan && plan.next_window_start ? plan.next_window_start : null;
 
-    const programs = (battery.programs || [])
-      .map(
-        (program) => `<tr>
-          <td>${program.start}</td>
-          <td class="num">${program.power_w} W</td>
-          <td class="num">${program.soc_pct}%</td>
-          <td>${SOURCE_LABELS[program.source] || program.source}</td>
-        </tr>`
-      )
-      .join("");
-
     const canWrite = battery.allow_writes && battery.has_inverter;
     return `
       <div class="card">
@@ -631,16 +613,6 @@ class KdHeliosPanel extends HTMLElement {
           </div>
         </div>
         ${this._blockers(battery.blockers)}
-        ${
-          programs
-            ? `<table><thead><tr><th>Start</th><th class="num">Power</th>
-               <th class="num">SOC</th><th>Source</th></tr></thead>
-               <tbody>${programs}</tbody></table>
-               <p class="muted" style="margin:8px 0 0">Only the current or next
-               charge window is programmed; the other slots stay idle at the
-               reserve.</p>`
-            : ""
-        }
         <div class="actions">
           <button class="primary" id="apply" ${canWrite && !this._busy ? "" : "disabled"}>Write now</button>
           <span class="muted" style="margin:0">${

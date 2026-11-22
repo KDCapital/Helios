@@ -99,8 +99,8 @@ manually, because the schedule is the whole point.
 ### Battery
 
 Capacity, max charge, reserve and target SOC, efficiency, invoice device,
-connection (phases/amps/margin), control switch, applied plan, and the six TOU
-programs as a read-only table.
+connection (phases/amps/margin), control switch and the applied plan. The raw TOU
+programs stay in the sensor attributes and diagnostics rather than in the card.
 
 Below the plan, a **Why** list renders the blocker registry: one row per
 condition that shaped the plan (`The car is charging`, `The connection is at its
