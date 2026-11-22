@@ -214,10 +214,6 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.last_control_error: str | None = None
         self._last_apply: datetime | None = None
         self._applied_cap: float | None = None
-        #: The work mode last written by KD Helios. Grid charging needs
-        #: Selling First, but Selling First can export the battery, so it is
-        #: only used while a charge window is active.
-        self._work_mode: WorkMode | None = None
         self.load_profile = LoadProfile.from_dict(
             storage.profile_state().get("buckets")
         )
@@ -257,11 +253,6 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         )
 
     # -- inverter control ---------------------------------------------------
-    @property
-    def work_mode(self) -> WorkMode | None:
-        """Return the work mode KD Helios last wrote, if known."""
-        return self._work_mode
-
     def _persist_control(self) -> None:
         """Store the control state."""
         self.storage.async_set_control({"enabled": self.control_enabled})
@@ -295,8 +286,6 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             self._applied_cap = None
             self.storage.async_set_battery(self.applied_plan.as_dict())
             self._clear_issue(ISSUE_INVERTER_WRITE_FAILED)
-            self.control_enabled = True
-            await self._async_update_work_mode(dt_util.utcnow())
         else:
             restore = build_restore_programs(config.settings)
             self.last_verification = await async_write_tou_verified(
@@ -304,72 +293,16 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 device_id,
                 restore,
                 work_mode=WorkMode(config.restore_work_mode),
-                enable_charge=False,
+                enable_charge=None,
             )
             self.applied_plan = None
-            self._work_mode = WorkMode(config.restore_work_mode)
             self.storage.async_set_battery({})
-            self.control_enabled = False
 
+        self.control_enabled = enabled
         self._persist_control()
         await self.storage.async_save()
         self.async_set_updated_data(self.data)
         _LOGGER.info("Inverter control %s", "enabled" if enabled else "released")
-
-    async def _async_update_work_mode(self, now: datetime) -> None:
-        """Use Selling First only while a charge window is active.
-
-        Deye's zero-export work modes suppress TOU grid charging, so the
-        inverter has to be in Selling First for the active window. Selling
-        First can also export battery energy, so the configured restore mode
-        goes back as soon as the window ends.
-        """
-        config = self.battery_config
-        if (
-            config is None
-            or not self.control_enabled
-            or not config.allow_writes
-            or config.inverter_device_id is None
-        ):
-            return
-
-        schedule = self.schedule_plan
-        active = schedule is not None and schedule.active_window(now) is not None
-        desired = (
-            WorkMode.SELLING_FIRST if active else WorkMode(config.restore_work_mode)
-        )
-        if self._work_mode == desired:
-            return
-
-        if active:
-            applied = self.applied_plan
-            if applied is None or schedule is None:
-                return
-            applied_key = tuple(
-                (window.start, window.end) for window in applied.windows
-            )
-            schedule_key = tuple(
-                (window.start, window.end) for window in schedule.windows
-            )
-            if applied_key != schedule_key:
-                # Never switch to an exporting mode for a schedule the
-                # inverter did not actually take.
-                return
-
-        try:
-            await async_write_registers(
-                self.hass,
-                config.inverter_device_id,
-                {},
-                work_mode=desired,
-            )
-        except InverterNotReadyError:
-            return
-        except Exception as err:  # noqa: BLE001 - never break accounting
-            self.last_control_error = str(err)
-            _LOGGER.error("Could not set the inverter work mode: %s", err)
-            return
-        self._work_mode = desired
 
     async def _async_sync_inverter(
         self,
@@ -923,7 +856,6 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             force = settings_changed or schedule_key != applied_key
 
             blockers.extend(await self._async_sync_inverter(now, settings, force=force))
-            await self._async_update_work_mode(now)
             blockers.extend(
                 await self._async_update_power_cap(now, snapshots, grid_snapshot)
             )

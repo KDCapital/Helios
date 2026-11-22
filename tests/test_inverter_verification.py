@@ -215,14 +215,14 @@ async def test_a_charge_write_enables_grid_charge_and_tou(
     assert inverter.registers[146] == 0x00FF
 
 
-async def test_a_release_disables_grid_charge_and_tou(
+async def test_a_release_leaves_the_master_switches_alone(
     hass: HomeAssistant,
 ) -> None:
-    """Releasing control must not leave a master switch behind."""
+    """Releasing control must not undo the user's weekday selection."""
     inverter = FakeInverter()
     _register(hass, inverter)
 
-    await async_write_tou_verified(hass, DEVICE, make_plan(), enable_charge=False)
+    await async_write_tou_verified(hass, DEVICE, make_plan(), enable_charge=None)
 
-    assert inverter.registers[130] == 0
-    assert inverter.registers[146] == 0
+    assert 130 not in inverter.registers
+    assert 146 not in inverter.registers

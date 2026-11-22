@@ -297,15 +297,6 @@ async def test_the_rolling_schedule_writes_the_next_window(
     assert engine.schedule_plan.windows == (first,)
     recorder.clear()
 
-    # 14:15 CET: the first window is active, so the inverter must be selling
-    # first or Deye's zero-export mode suppresses the grid charge.
-    with freeze_time("2026-11-20 13:15:00+00:00"):
-        await engine.async_refresh()
-
-    assert recorder.blocks == []
-    assert recorder.work_modes == [0]
-    recorder.clear()
-
     # 15:00 CET: the first window has ended and the second is next.
     with freeze_time("2026-11-20 14:00:00+00:00"):
         await engine.async_refresh()
@@ -314,7 +305,7 @@ async def test_the_rolling_schedule_writes_the_next_window(
     assert engine.schedule_plan.windows == (second,)
     assert engine.applied_plan is not None
     assert engine.applied_plan.windows == (second,)
-    assert recorder.work_modes == [1]
+    assert recorder.work_modes == []
     local_start = dt_util.as_local(second.start)
     expected_hhmm = local_start.hour * 100 + local_start.minute
     times = next(block for block in recorder.blocks if block["register"] == 148)

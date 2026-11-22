@@ -368,11 +368,11 @@ interrupt the rolling window.
 
 Writing the slots is not enough on its own. KD Helios also enables **Grid
 Charge** (register 130) and the weekly **TOU schedule** (register 146 = 0x00FF),
-and switches the work mode to **Selling First** while the window is active,
-because Deye's zero-export modes suppress TOU grid charging. Selling First can
-also export battery energy, so the configured restore work mode goes back as
-soon as the window ends. Releasing control turns Grid Charge and TOU off again
-and writes the generator-only restore slots.
+because the inverter ignores every TOU slot while either master is off. The
+weekday checkboxes on the inverter's TOU page are that same weekly mask. The
+work mode is left alone while charging; it is only written back to the
+configured restore mode when control is released, together with the
+generator-only restore slots.
 
 #### Deliberately not included: saldering arbitrage
 

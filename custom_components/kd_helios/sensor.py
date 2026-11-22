@@ -804,11 +804,6 @@ class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
             "prices_stale": plan.prices_stale if plan else None,
             "weekly_full_charge": bool(weekly.active) if weekly else False,
             "last_control_error": coordinator.last_control_error,
-            "work_mode": (
-                int(coordinator.work_mode)
-                if coordinator.work_mode is not None
-                else None
-            ),
             "write_verified": (coordinator.last_verification or {}).get("verified"),
         }
 
