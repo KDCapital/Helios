@@ -269,6 +269,15 @@ battery discharge into the expensive ones.
 | **Battery SOC sensor** | State of charge, for example the Solarman battery SOC sensor. |
 | **Battery capacity / max charge power** | Real kWh and kW, used to spread a window over several slots. |
 | **Maximum grid charge current** | Optional ceiling in A. Leave 0 to use the inverter's own maximum; the controller never writes above it. |
+
+Power and current are not the same limit. The planner works in kW because that is
+what the battery and inverter are rated in; the Deye charge register works in
+amps because that is what the BMS and inverter enforce. They meet through the
+pack voltage: `11 kW at 51.2 V = 215 A`, `11 kW at 46 V = 239 A`. Therefore the
+maximum charge power alone is enough when the battery-voltage sensor is present
+and the inverter's current maximum is known. The optional current setting is a
+second, lower limit for a BMS that cannot take the current that the kW figure
+would imply. Leave it at 0 unless the battery datasheet gives a lower current.
 | **Reserve / target SOC** | Never discharge below the reserve; never buy above the target. |
 | **Round-trip efficiency** | A stored kWh returns this fraction, so a spread has to beat the losses. |
 | **Planning horizon** | How far ahead to look for a cheaper hour to charge from and a dearer one to discharge into. |
