@@ -341,9 +341,7 @@ async def test_control_follows_the_active_window(
     events = {entry["event"] for entry in engine.decision_log}
     assert {"plan", "control", "write", "cap"} <= events
     last_control = next(
-        entry
-        for entry in reversed(engine.decision_log)
-        if entry["event"] == "control"
+        entry for entry in reversed(engine.decision_log) if entry["event"] == "control"
     )
     assert last_control["charge"] is True
     assert last_control["current_a"] > 0

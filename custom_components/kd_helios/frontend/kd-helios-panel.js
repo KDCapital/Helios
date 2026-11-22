@@ -169,6 +169,20 @@ const STYLE = `
     background: var(--secondary-background-color); border: 1px solid var(--helios-line); }
   .ranges button { border: none; background: transparent; padding: 5px 11px; border-radius: 999px; }
   .ranges button.on { background: var(--helios-accent); color: #fff; }
+  .tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px;
+    background: var(--secondary-background-color); border: 1px solid var(--helios-line);
+    align-self: flex-start; }
+  .tabs button { border: none; background: transparent; padding: 7px 16px; border-radius: 999px; }
+  .tabs button.on { background: var(--helios-accent); color: #fff; }
+  table.log { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+  table.log th { text-align: left; font-weight: 500; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--secondary-text-color); padding: 6px; }
+  table.log td { padding: 9px 6px; border-top: 1px solid var(--helios-line); vertical-align: top; }
+  table.log .when { white-space: nowrap; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+  table.log .event { white-space: nowrap; font-weight: 600; }
+  table.log .summary { margin-bottom: 3px; }
+  table.log .detail { color: var(--secondary-text-color); font-size: 11.5px; line-height: 1.5; }
+  table.log .detail b { color: var(--primary-text-color); font-weight: 500; }
   .chartwrap .bands { position: absolute; inset: 0; display: flex; }
   .chartwrap .bands span { flex: 1; }
   .tip { position: absolute; pointer-events: none; padding: 7px 10px; border-radius: 9px;
@@ -192,6 +206,7 @@ class KdHeliosPanel extends HTMLElement {
     this._synced = null;
     this._range = "today";
     this._history = null;
+    this._tab = "dashboard";
   }
 
   set hass(hass) {
@@ -322,6 +337,116 @@ class KdHeliosPanel extends HTMLElement {
   }
 
   // -- pieces -------------------------------------------------------------
+  _tabs() {
+    return `<div class="tabs">
+      <button data-tab="dashboard" class="${this._tab === "dashboard" ? "on" : ""}">Dashboard</button>
+      <button data-tab="log" class="${this._tab === "log" ? "on" : ""}">Decision log</button>
+    </div>`;
+  }
+
+  _wireTabs() {
+    this.shadowRoot.querySelectorAll("[data-tab]").forEach((button) => {
+      button.addEventListener("click", () => {
+        this._tab = button.dataset.tab;
+        this._render();
+      });
+    });
+  }
+
+  _logTime(iso) {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+
+  _decisionSummary(entry) {
+    const value = (item) => (item === null || item === undefined ? "—" : item);
+    switch (entry.event) {
+      case "plan":
+        return `${value(entry.reason)} · SOC ${value(entry.soc_pct)}% · ${value(
+          entry.windows
+        )} windows`;
+      case "control":
+        return `${entry.charge ? "charging" : "idle"} · target ${value(
+          entry.target_soc
+        )}% · ${value(entry.current_a)} A (${value(entry.effective_kw)} kW at ${value(
+          entry.voltage_v
+        )} V)`;
+      case "cap": {
+        const reasons = (entry.reasons || []).join(", ");
+        return `limit ${value(entry.limit_kw)} kW · load ${value(
+          entry.load_kw
+        )} kW · ${value(entry.current_a)} A${reasons ? ` · ${reasons}` : ""}`;
+      }
+      case "write":
+        return `${entry.charge ? "charging" : "idle"} · ${value(
+          entry.current_a
+        )} A · verified ${value(entry.verified)}`;
+      case "write_failed":
+        return entry.error || "write failed";
+      default:
+        return "";
+    }
+  }
+
+  _decisionDetails(entry) {
+    return Object.entries(entry)
+      .filter(([key]) => key !== "time" && key !== "event")
+      .map(([key, value]) => {
+        let text;
+        if (value === null || value === undefined) text = "—";
+        else if (Array.isArray(value)) text = value.length ? value.join(", ") : "—";
+        else if (typeof value === "boolean") text = value ? "yes" : "no";
+        else if (typeof value === "object") text = JSON.stringify(value);
+        else text = String(value);
+        return `<span><b>${this._esc(key.replace(/_/g, " "))}</b> ${this._esc(text)}</span>`;
+      })
+      .join(" · ");
+  }
+
+  _logPage(battery) {
+    const decisions = ((battery && battery.decisions) || []).slice().reverse();
+    const rows = decisions
+      .map(
+        (entry) => `<tr>
+          <td class="when">${this._esc(this._logTime(entry.time))}</td>
+          <td class="event">${this._esc(String(entry.event || "").replace(/_/g, " "))}</td>
+          <td>
+            <div class="summary">${this._esc(this._decisionSummary(entry))}</div>
+            <div class="detail">${this._decisionDetails(entry)}</div>
+          </td>
+        </tr>`
+      )
+      .join("");
+
+    return `<style>${STYLE}</style>
+      <div class="wrap">
+        <div class="topbar">
+          <div class="brand"><span class="mark">⚡</span>
+            <div><div class="name">Helios</div><div class="eyebrow">KD Helios</div></div>
+          </div>
+          <span class="spacer"></span>
+          <span class="chip"><span class="dot"></span>${decisions.length} recent decisions</span>
+          <button id="refresh">Refresh</button>
+        </div>
+        ${this._tabs()}
+        <div class="card">
+          <div class="head"><div><h2>Decision log</h2>
+            <p class="sub">Plan, control and power-cap decisions, newest first. The same history is in diagnostics.</p></div></div>
+          ${
+            rows
+              ? `<table class="log"><thead><tr><th>Time</th><th>Event</th><th>Why / inputs</th></tr></thead><tbody>${rows}</tbody></table>`
+              : `<p class="muted">No decisions recorded yet. They appear after the next accounting tick.</p>`
+          }
+        </div>
+      </div>`;
+  }
+
   _rangeTabs() {
     const labels = { today: "Today", "7d": "7D", month: "Month", year: "Year" };
     return Object.entries(labels)
@@ -744,6 +869,13 @@ class KdHeliosPanel extends HTMLElement {
     }
 
     const { entry, prices, grid, battery, devices, summary } = this._data;
+    if (this._tab === "log") {
+      this.shadowRoot.innerHTML = this._logPage(battery);
+      this._wireTabs();
+      const refresh = this.shadowRoot.getElementById("refresh");
+      if (refresh) refresh.addEventListener("click", () => this._load());
+      return;
+    }
     const history = this._history && this._history.available ? this._history : null;
 
     // With a range selected, every number comes from the statistics of that
@@ -859,6 +991,8 @@ class KdHeliosPanel extends HTMLElement {
           <button id="refresh">Refresh</button>
         </div>
 
+        ${this._tabs()}
+
         <div class="hero">
           <div>
             <div class="eyebrow">Energy overview</div>
@@ -907,6 +1041,7 @@ class KdHeliosPanel extends HTMLElement {
         </div>
       </div>`;
 
+    this._wireTabs();
     this.shadowRoot.querySelectorAll("[data-range]").forEach((button) => {
       button.addEventListener("click", () => this._setRange(button.dataset.range));
     });

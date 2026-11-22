@@ -319,7 +319,12 @@ blockers:
 Reasons are kept per source, so the car, the fuse and a hot battery can all be
 on record at once instead of the last one evaluated winning. The panel renders
 the same registry, which is what makes "why is the battery doing this?" a
-question you can answer from the dashboard rather than from the log.
+question you can answer from the dashboard.
+
+The same sensor carries `last_decision` and the last ten `decisions`; the
+**Decision log** tab renders the recent history, and diagnostics contains all of
+it. Each entry includes the active window, voltage, requested and written charge
+current, the effective power, the cap limit and the reasons that lowered it.
 
 #### Reading the market, not just the price list
 
@@ -554,15 +559,17 @@ custom element — no build step, no external imports — served from
 `/kd_helios/kd-helios-panel.js`, so it works offline and survives Home Assistant
 upgrades.
 
-The panel is **read-only**, apart from writing the planned charge windows and
-the 15-minute test charge to the inverter. Setup and every setting live in Home Assistant's own config flows:
-open **Settings → Devices & services → KD Helios** to add or edit the provider,
-devices, car, battery and grid connection. The empty states in the panel point
-there instead of offering a second, different form.
+The panel is **read-only**, apart from writing the current battery control state
+to the inverter. Setup and every setting live in Home Assistant's own config
+flows: open **Settings → Devices & services → KD Helios** to add or edit the
+provider, devices, car, battery and grid connection. The empty states in the
+panel point there instead of offering a second, different form.
 
-The layout follows the Helios dashboard: a greeting and live tariff in the
-header, four KPI tiles, a price chart with the planned charging windows, then
-cards for the EV charger, the device breakdown, the battery and the tariff.
+The **Dashboard** tab follows the Helios dashboard: a greeting and live tariff
+in the header, four KPI tiles, a price chart with the planned charging windows,
+then cards for the EV charger, the device breakdown, the battery and the tariff.
+The **Decision log** tab shows the recent plan, control and power-cap decisions
+newest first, with the inputs behind each one.
 
 ### What is real, and what is deliberately absent
 

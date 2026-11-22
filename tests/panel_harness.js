@@ -59,5 +59,10 @@ element._hass = {
 };
 element._data = payload;
 element._render();
+const dashboard = element.shadowRoot.innerHTML;
 
-process.stdout.write(element.shadowRoot.innerHTML);
+element._tab = "log";
+element._render();
+const log = element.shadowRoot.innerHTML;
+
+process.stdout.write(`${dashboard}\n<!-- LOG TAB -->\n${log}`);

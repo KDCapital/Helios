@@ -30,6 +30,17 @@ async def test_panel_renders_a_real_payload(hass, tmp_path) -> None:
     entry = full_entry()
     with freeze_time(FROZEN):
         await _setup_entry(hass, entry)
+        entry.runtime_data.engine.decision_log.append(
+            {
+                "time": "2026-11-20T12:00:00+00:00",
+                "event": "control",
+                "charge": True,
+                "target_soc": 100,
+                "current_a": 185,
+                "effective_kw": 9.99,
+                "voltage_v": 54.0,
+            }
+        )
         payload = build_dashboard(hass, entry)
 
     payload_path = tmp_path / "payload.json"
@@ -60,6 +71,8 @@ async def test_panel_renders_a_real_payload(hass, tmp_path) -> None:
         "Tariff",
         "Grid connection",
         "Why the battery is doing this",
+        "Decision log",
+        "charging · target 100% · 185 A (9.99 kW at 54 V)",
     ):
         assert needle in html, needle
 

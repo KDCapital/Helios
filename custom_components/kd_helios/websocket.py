@@ -138,6 +138,7 @@ def _battery_payload(runtime: Any, now: Any) -> dict[str, Any] | None:
                 for program in applied.programs
             ],
         }
+    payload["decisions"] = list(runtime.engine.decision_log)
     return payload
 
 
@@ -349,4 +350,3 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register the panel's WebSocket commands."""
     websocket_api.async_register_command(hass, websocket_dashboard)
     websocket_api.async_register_command(hass, websocket_history)
-
