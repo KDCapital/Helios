@@ -1,5 +1,14 @@
 # KD Helios — UI and installation design
 
+> **Status (22 November 2026): configuration has moved out of the panel.**
+> The panel-first decision was reversed: setup and every setting now go through
+> Home Assistant's own config flows (**Settings → Devices & services → KD
+> Helios**), because shipping a working product came before rebuilding the
+> panel's forms. The panel keeps the read-only dashboard, the history ranges and
+> the *Write now* action. Sections below that describe the wizard, inline forms,
+> panel-side subentry management and the panel contract editor are design
+> history, not current behaviour.
+
 The panel is the product. The integration page is a signpost. Everything a user
 configures, sees and controls lives in **KD Helios** in the sidebar; the config
 flows, subentries and entity platforms are implementation detail.
@@ -150,9 +159,9 @@ Wizard behaviour:
 
 ## 5. WebSocket command surface
 
-All panel traffic goes through our own commands. Mutating commands check
-`connection.user.is_admin` and return `unauthorized` otherwise; `require_admin`
-on the panel is the first gate, this is the second.
+All panel traffic goes through our own commands. Only the first two rows are
+implemented; the rest were removed together with the panel's configuration
+surface (see the status note at the top) and are kept here as the old plan.
 
 | Command | Purpose |
 |---|---|
@@ -254,7 +263,10 @@ later screen is composition rather than plumbing.
 - Nothing in the panel can enable hardware writes without the explicit control
   step and, once enabled, every write appears in the audit log.
 
-## 9b. Phase A: what is built
+## 9b. Phase A: what is built (historical)
+
+The configuration surface below was removed on 22 November 2026; see the status
+note at the top.
 
 - `management.py` holds the whole configuration surface: validation, create,
   update, delete, the wizard's position and integration detection.

@@ -10,6 +10,9 @@
  * would make a cost dashboard lie.
  */
 
+// Where configuration lives now that the panel no longer edits it.
+const CONFIG_HINT = "Settings → Devices & services → KD Helios";
+
 const SOURCE_LABELS = { 0: "Off", 1: "Grid", 2: "Generator", 3: "Grid + gen" };
 
 // Every condition the backend can report, in the words the panel uses. One
@@ -167,9 +170,6 @@ const STYLE = `
   .muted { color: var(--secondary-text-color); font-size: 12.5px; margin: 8px 0 0; }
   .error { color: var(--error-color); }
   .actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-  .locked { opacity: .3; pointer-events: none; filter: grayscale(.4); }
-  .locked * { user-select: none; }
-  .onboarding-note { color: var(--secondary-text-color); font-size: 12.5px; margin: 0 0 4px; }
   .ranges { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px;
     background: var(--secondary-background-color); border: 1px solid var(--helios-line); }
   .ranges button { border: none; background: transparent; padding: 5px 11px; border-radius: 999px; }
@@ -186,72 +186,6 @@ const STYLE = `
 `;
 
 
-// What each section can edit. One table drives the section forms and the
-// wizard, so a field can never exist in one and be missing from the other.
-const FIELDS = {
-  device: [
-    { key: "name", label: "Name", type: "text", required: true },
-    { key: "power_entity", label: "Power sensor", type: "entity" },
-    { key: "energy_entity", label: "Energy sensor", type: "entity" },
-  ],
-  ev_charger: [
-    { key: "name", label: "Name", type: "text", required: true },
-    { key: "ev_device", label: "Car (EVCC)", type: "device", platform: "evcc" },
-    { key: "power_entity", label: "Power sensor", type: "entity" },
-    { key: "energy_entity", label: "Energy sensor", type: "entity" },
-    { key: "ev_pack_kwh", label: "Car battery", type: "number", unit: "kWh", step: "0.1" },
-    { key: "ev_target_soc", label: "Car target SOC", type: "number", unit: "%", step: "1" },
-    { key: "ev_departure_weekday", label: "Departure weekdays", type: "time", advanced: true },
-    { key: "ev_departure_weekend", label: "Departure weekend", type: "time", advanced: true },
-    { key: "ev_soc_entity", label: "Car SOC sensor (EVCC)", type: "entity", advanced: true },
-    { key: "ev_departure_entity", label: "Departure sensor (EVCC)", type: "entity", advanced: true },
-    { key: "ev_power_entity", label: "Charger power sensor", type: "entity", advanced: true },
-    { key: "reimbursement_mode", label: "Reimbursement", type: "select",
-      options: [["none", "None"], ["fixed", "Fixed"], ["dynamic", "Dynamic"]] },
-    { key: "reimbursement_rate", label: "Reimbursement rate", type: "number", unit: "/kWh", step: "0.001" },
-    { key: "ere_mode", label: "ERE", type: "select",
-      options: [["none", "None"], ["fixed", "Fixed"], ["joulo", "Joulo"]] },
-    { key: "ere_per_kwh", label: "ERE per kWh", type: "number", step: "0.001" },
-    { key: "ere_price", label: "Price per ERE", type: "number", step: "0.01" },
-  ],
-  battery: [
-    { key: "soc_entity", label: "SOC sensor", type: "entity", advanced: true },
-    { key: "battery_capacity_kwh", label: "Capacity", type: "number", unit: "kWh", step: "0.1" },
-    { key: "max_charge_kw", label: "Max charge", type: "number", unit: "kW", step: "0.1" },
-    { key: "reserve_soc", label: "Reserve SOC", type: "number", unit: "%", step: "1" },
-    { key: "target_soc", label: "Target SOC", type: "number", unit: "%", step: "1" },
-    { key: "efficiency", label: "Efficiency", type: "number", unit: "%", step: "1" },
-    { key: "house_load_entity", label: "House load sensor", type: "entity", advanced: true },
-    { key: "inverter_device", label: "Inverter (Solarman)", type: "device", platform: "solarman" },
-    { key: "phases", label: "Connection", type: "select",
-      options: [["1", "1-phase"], ["3", "3-phase"]] },
-    { key: "fuse_amps", label: "Main fuse", type: "number", unit: "A", step: "1" },
-    { key: "fuse_margin_pct", label: "Fuse margin", type: "number", unit: "%", step: "5" },
-    { key: "priority", label: "Priority", type: "select",
-      options: [["ev", "EV first"], ["battery", "Battery first"]] },
-    { key: "allow_inverter_writes", label: "Allow writes to the inverter", type: "bool" },
-  ],
-  grid: [
-    { key: "meter_device", label: "Meter (HomeWizard P1)", type: "device", platform: "homewizard" },
-    { key: "import_entity", label: "Import energy", type: "entity", advanced: true },
-    { key: "export_entity", label: "Export energy", type: "entity", advanced: true },
-    { key: "import_power_entity", label: "Import power (CT)", type: "entity", advanced: true },
-    { key: "export_power_entity", label: "Export power", type: "entity", advanced: true },
-    { key: "saldering", label: "Saldering applies", type: "bool" },
-    { key: "supply_cost_monthly", label: "Supply cost", type: "number", unit: "/month", step: "0.01" },
-    { key: "grid_fee_monthly", label: "Grid fee", type: "number", unit: "/month", step: "0.01" },
-  ],
-};
-
-// The wizard, in order, and which section form each step shows.
-const WIZARD = [
-  { step: "welcome", title: "Welcome to KD Helios", body: "Helios plans your battery, car and loads around the real tariff, and shows what it costs." },
-  { step: "connection", kind: "battery", title: "Your connection and battery", body: "The fuse rating is what keeps the car and the battery from overloading your connection." },
-  { step: "grid", kind: "grid", title: "Your grid connection", body: "Point these at your meter or the inverter's CT clamps." },
-  { step: "car", kind: "ev_charger", title: "Your car", body: "Departs times and pack size; the schedule comes from EVCC." },
-  { step: "control", title: "Automatic control", body: "Leave it off until the numbers look right. When you enable it, every write is logged." },
-];
-
 class KdHeliosPanel extends HTMLElement {
   constructor() {
     super();
@@ -263,14 +197,6 @@ class KdHeliosPanel extends HTMLElement {
     this._synced = null;
     this._range = "today";
     this._history = null;
-    this._section = "overview";
-    this._sections = [];
-    this._setup = null;
-    this._notice = null;
-    this._editing = null;
-    this._wizardStep = 0;
-    this._suggestions = {};
-    this._contract = null;
   }
 
   set hass(hass) {
@@ -291,190 +217,11 @@ class KdHeliosPanel extends HTMLElement {
     try {
       this._data = await this._hass.callWS({ type: "kd_helios/dashboard" });
       this._history = await this._loadHistory();
-      await this._loadSections();
       this._error = null;
       this._synced = new Date();
     } catch (err) {
       this._error = err && err.message ? err.message : String(err);
     }
-    this._render();
-  }
-
-  async _loadSections() {
-    try {
-      const state = await this._hass.callWS({ type: "kd_helios/setup" });
-      this._setup = state.setup;
-      if (state.setup && state.setup.step) {
-        const index = WIZARD.findIndex((spec) => spec.step === state.setup.step);
-        if (index >= 0) this._wizardStep = index;
-      }
-      this._suggestions = state.suggestions || {};
-      this._contract = state.contract || null;
-      const sections = await this._hass.callWS({ type: "kd_helios/sections" });
-      this._sections = sections.sections;
-    } catch (err) {
-      // Configuration is admin-only; viewing still works without it.
-      this._sections = [];
-      this._setup = null;
-    }
-  }
-
-  async _call(command, payload) {
-    try {
-      const result = await this._hass.callWS({ type: command, ...payload });
-      if (result && result.sections) this._sections = result.sections;
-      this._notice = null;
-      return result;
-    } catch (err) {
-      this._notice = err && err.message ? err.message : String(err);
-      return null;
-    }
-  }
-
-  async _deleteSubentry(subentryId) {
-    if (!window.confirm("Remove this from KD Helios? Its entities and history go with it.")) return;
-    await this._call("kd_helios/subentry/delete", { subentry_id: subentryId });
-    await this._load();
-  }
-
-  _fieldValue(item, field) {
-    if (!item) {
-      const kind = this._editingKind;
-      const suggested = kind && this._suggestions[kind];
-      return (suggested && suggested[field.key]) || "";
-    }
-    const value = item.data[field.key];
-    return value === undefined || value === null ? "" : String(value);
-  }
-
-  _fieldInput(item, field) {
-    const value = this._esc(this._fieldValue(item, field));
-    if (field.type === "bool") {
-      return `<input type="checkbox" data-field="${field.key}" ${value === "True" || value === "true" ? "checked" : ""}>`;
-    }
-    if (field.type === "device") {
-      return this._deviceSelect(field, value);
-    }
-    if (field.type === "select") {
-      const options = field.options
-        .map(
-          ([key, label]) =>
-            `<option value="${key}" ${value === key ? "selected" : ""}>${label}</option>`
-        )
-        .join("");
-      return `<select data-field="${field.key}"><option value="">—</option>${options}</select>`;
-    }
-    const type = field.type === "number" ? "number" : field.type === "time" ? "time" : "text";
-    const step = field.step ? `step="${field.step}"` : "";
-    const list = field.type === "entity" ? 'list="helios-entities"' : "";
-    return `<input data-field="${field.key}" type="${type}" ${step} ${list}
-      value="${value}" placeholder="${field.unit ? field.unit : ""}">`;
-  }
-
-  _deviceLabel(deviceId) {
-    const device = (this._hass.devices || {})[deviceId];
-    if (!device) return deviceId;
-    const name = device.name_by_user || device.name || deviceId;
-    const model = device.model || device.manufacturer || "";
-    return model ? `${name} · ${model}` : name;
-  }
-
-  _devicesFor(platform) {
-    const found = new Set();
-    for (const entry of Object.values(this._hass.entities || {})) {
-      if (entry.device_id && (!platform || entry.platform === platform)) {
-        found.add(entry.device_id);
-      }
-    }
-    // Fall back to everything, so a differently named integration still works.
-    return found.size ? [...found] : Object.keys(this._hass.devices || {});
-  }
-
-  _deviceSelect(field, value) {
-    const ids = this._devicesFor(field.platform);
-    if (value && !ids.includes(value)) ids.push(value);
-    const options = ids
-      .map(
-        (id) =>
-          `<option value="${id}" ${value === id ? "selected" : ""}>${this._esc(
-            this._deviceLabel(id)
-          )}</option>`
-      )
-      .join("");
-    return `<select data-field="${field.key}"><option value="">—</option>${options}</select>`;
-  }
-
-  _entityList() {
-    return `<datalist id="helios-entities">${Object.keys(this._hass.states)
-      .filter((id) => id.startsWith("sensor.") || id.startsWith("binary_sensor."))
-      .slice(0, 600)
-      .map((id) => `<option value="${id}"></option>`)
-      .join("")}</datalist>`;
-  }
-
-  _form(kind, item, compact = false) {
-    const rows = FIELDS[kind]
-      .filter((field) => !(compact && field.advanced))
-      .map(
-        (field) => `
-        <div class="row"><span class="grow">${field.label}${
-          field.unit ? ` <span class="tag">${field.unit}</span>` : ""
-        }${field.derived ? `<div class="tag">${field.derived} if left empty</div>` : ""}</span>${this._fieldInput(item, field)}</div>`
-      )
-      .join("");
-    return `<form class="rows" data-kind="${kind}" style="margin-top:10px">
-      ${rows}${this._entityList()}
-      ${
-        compact && FIELDS[kind].some((field) => field.advanced)
-          ? `<p class="muted" style="margin:2px 0 0">The individual sensors are optional: they are read from the device you pick, and can be overridden later in the section.</p>`
-          : ""
-      }
-      ${
-        compact
-          ? ""
-          : `<div class="actions">
-               <button class="primary" type="submit">${item ? "Save" : "Add"}</button>
-               <button type="button" data-cancel="1">Cancel</button>
-             </div>`
-      }
-      </form>`;
-  }
-
-  async _submitForm(event) {
-    event.preventDefault();
-    const form = event.target;
-    const kind = form.dataset.kind;
-    const fields = FIELDS[kind] || [];
-    const data = {};
-    for (const field of fields) {
-      const input = form.querySelector(`[data-field="${field.key}"]`);
-      if (!input) continue;
-      if (field.type === "bool") {
-        data[field.key] = input.checked;
-        continue;
-      }
-      const raw = input.value.trim();
-      if (raw === "") continue;
-      data[field.key] = field.type === "number" ? Number(raw) : raw;
-    }
-
-    const editing = this._editing;
-    const result =
-      editing && editing !== "new"
-        ? await this._call("kd_helios/subentry/update", { subentry_id: editing, data })
-        : await this._call("kd_helios/subentry/create", { kind, data });
-
-    if (result) {
-      this._editing = null;
-      await this._load();
-    } else {
-      this._render();
-    }
-  }
-
-  async _setSection(name) {
-    this._section = name;
-    if (name !== "overview") await this._loadHistory();
     this._render();
   }
 
@@ -703,7 +450,7 @@ class KdHeliosPanel extends HTMLElement {
     if (!ev.length) {
       return `<div class="card"><div class="head"><div><h2>EV charging</h2>
         <p class="sub">No EV charger configured</p></div></div>
-        <p class="muted">Add an EV charger in the Car section to track charging, reimbursement and ERE value.</p></div>`;
+        <p class="muted">Add an EV charger under ${CONFIG_HINT} to track charging, reimbursement and ERE value.</p></div>`;
     }
     const rows = ev
       .map(
@@ -748,7 +495,7 @@ class KdHeliosPanel extends HTMLElement {
     if (!devices.length) {
       return `<div class="card"><div class="head"><div><h2>Device cost breakdown</h2>
         <p class="sub">Nothing tracked yet</p></div></div>
-        <p class="muted">Add devices in the Devices section to see where the money goes.</p></div>`;
+        <p class="muted">Add a device under ${CONFIG_HINT} to see where the money goes.</p></div>`;
     }
     const today = devices
       .map((device) => ({ ...device, spend: Math.max(0, device.cost_today || 0) }))
@@ -840,7 +587,7 @@ class KdHeliosPanel extends HTMLElement {
     if (!battery) {
       return `<div class="card"><div class="head"><div><h2>Home battery</h2>
         <p class="sub">No battery configured</p></div></div>
-        <p class="muted">Add a home battery in the Battery section to plan charging against the tariff.</p></div>`;
+        <p class="muted">Add a home battery under ${CONFIG_HINT} to plan charging against the tariff.</p></div>`;
     }
     const plan = battery.plan;
     const applied = battery.applied;
@@ -944,7 +691,7 @@ class KdHeliosPanel extends HTMLElement {
     if (!grid) {
       return `<div class="card"><div class="head"><div><h2>Grid connection</h2>
         <p class="sub">Not configured</p></div></div>
-        <p class="muted">Add a grid connection in the Grid section to see what you pay the energy company.</p></div>`;
+        <p class="muted">Add a grid connection under ${CONFIG_HINT} to see what you pay the energy company.</p></div>`;
     }
     const rows = [
       ["Imported today", `${this._number(grid.imported_kwh_today, 2)} kWh`],
@@ -1004,203 +751,6 @@ class KdHeliosPanel extends HTMLElement {
     });
   }
 
-  _nav() {
-    const items = [
-      ["overview", "Overview"],
-      ["devices", "Devices"],
-      ["car", "Car"],
-      ["battery", "Battery"],
-      ["grid", "Grid"],
-      ["history", "History"],
-      ["settings", "Settings"],
-    ];
-    return items
-      .map(
-        ([key, label]) =>
-          `<button data-section="${key}" class="${this._section === key ? "on" : ""}">${label}</button>`
-      )
-      .join("");
-  }
-
-  _sectionItems(kind) {
-    const section = this._sections.find((item) => item.kind === kind);
-    return section ? section.items : [];
-  }
-
-  _rows(kind, emptyText) {
-    const items = this._sectionItems(kind);
-    if (!items.length) {
-      return `<p class="muted">${emptyText}</p>`;
-    }
-    return `<div class="rows">${items
-      .map(
-        (item) => `
-        <div class="row">
-          <span class="grow"><span class="name">${this._esc(item.title)}</span>
-            <div class="tag">${this._esc(
-              Object.entries(item.data)
-                .filter(([key, value]) => key !== "name" && typeof value === "string")
-                .map(([key, value]) => `${key}: ${value}`)
-                .slice(0, 3)
-                .join(" · ")
-            )}</div></span>
-          <button data-delete="${item.subentry_id}">Remove</button>
-        </div>`
-      )
-      .join("")}</div>`;
-  }
-
-  _configured(kind) {
-    const section = this._sections.find((item) => item.kind === kind);
-    return section ? section.items : [];
-  }
-
-  _wizard() {
-    const index = Math.min(this._wizardStep, WIZARD.length - 1);
-    const spec = WIZARD[index];
-    const item = spec.kind ? this._configured(spec.kind)[0] : null;
-    const form = spec.kind ? this._form(spec.kind, item, true) : "";
-    const last = index === WIZARD.length - 1;
-
-    return `<div class="card">
-      <div class="head"><div>
-        <div class="eyebrow">Setup ${index + 1} of ${WIZARD.length}</div>
-        <h2>${spec.title}</h2><p class="sub">${spec.body}</p></div></div>
-      ${form}
-      <div class="actions">
-        ${index > 0 ? '<button type="button" data-wizard="back">Back</button>' : ""}
-        <button type="button" data-wizard="skip">Skip</button>
-        <button class="primary" type="button" data-wizard="next">${last ? "Finish" : "Continue"}</button>
-      </div>
-    </div>`;
-  }
-
-  async _wizardMove(direction) {
-    const spec = WIZARD[this._wizardStep];
-    if (direction === "next") {
-      if (this._wizardStep >= WIZARD.length - 1) {
-        await this._call("kd_helios/setup/advance", { completed: true });
-        this._section = "overview";
-        await this._load();
-        return;
-      }
-      this._wizardStep += 1;
-      await this._call("kd_helios/setup/advance", { step: WIZARD[this._wizardStep].step });
-    } else if (direction === "back") {
-      this._wizardStep = Math.max(0, this._wizardStep - 1);
-    } else {
-      this._wizardStep += 1;
-      await this._call("kd_helios/setup/advance", {
-        skipped: spec.step,
-        step: WIZARD[this._wizardStep] ? WIZARD[this._wizardStep].step : undefined,
-      });
-    }
-    this._render();
-  }
-
-  _contractCard() {
-    const contract = this._contract;
-    if (!contract) return "";
-    const providers = (contract.providers || [])
-      .map(
-        ([key, label]) =>
-          `<option value="${key}" ${contract.provider === key ? "selected" : ""}>${label}</option>`
-      )
-      .join("");
-    const intervals = (contract.intervals || [])
-      .map(
-        (key) => `<option value="${key}" ${contract.interval === key ? "selected" : ""}>${key}</option>`
-      )
-      .join("");
-    return `<div class="rows" style="margin-top:10px">
-      <div class="row"><span class="grow">Provider</span>
-        <select data-contract="provider">${providers}</select></div>
-      <div class="row"><span class="grow">Price interval</span>
-        <select data-contract="interval">${intervals}</select></div>
-      <div class="actions"><button class="primary" data-contract-save="1">Save contract</button></div>
-    </div>`;
-  }
-
-  async _saveContract() {
-    const root = this.shadowRoot;
-    const provider = root.querySelector('[data-contract="provider"]');
-    const interval = root.querySelector('[data-contract="interval"]');
-    if (!provider || !interval) return;
-    await this._call("kd_helios/contract", {
-      provider: provider.value,
-      interval: interval.value,
-    });
-    await this._load();
-  }
-
-  _sectionBody() {
-    const setup = this._setup;
-
-    const describe = {
-      devices: ["device", "Devices", "Tracked loads and what they cost", "Nothing tracked yet."],
-      car: ["ev_charger", "Car", "EV charging, reimbursement and ERE", "No car configured yet."],
-      battery: ["battery", "Home battery", "Capacity, connection and the plan", "No battery configured yet."],
-      grid: ["grid", "Grid connection", "Metering, saldering and fixed costs", "No grid connection configured yet."],
-    };
-    const spec = describe[this._section];
-    if (spec) {
-      const [kind, title, sub, empty] = spec;
-      const items = this._configured(kind);
-      const editing = this._editing;
-      const form =
-        editing === "new" ? this._form(kind, null) : "";
-      const rows = items
-        .map((item) => {
-          if (editing === item.subentry_id) return this._form(kind, item);
-          return `<div class="row">
-            <span class="grow"><span class="name">${this._esc(item.title)}</span></span>
-            <button data-edit="${item.subentry_id}" data-kind="${kind}">Edit</button>
-            <button data-delete="${item.subentry_id}">Remove</button>
-          </div>`;
-        })
-        .join("");
-      const single = kind === "battery" || kind === "grid";
-      const add =
-        single && items.length ? "" : `<button class="primary" data-add="${kind}">Add</button>`;
-      return `<div class="card"><div class="head"><div><h2>${title}</h2>
-        <p class="sub">${sub}</p></div><span class="spacer"></span>${add}</div>
-        ${rows ? `<div class="rows" style="margin-top:10px">${rows}</div>` : `<p class="muted">${empty}</p>`}
-        ${form}
-        ${
-          this._editing === "new" && this._suggestions[kind]
-            ? `<p class="muted">Some fields were filled in from what is installed. Check them before saving.</p>`
-            : ""
-        }
-        ${
-          this._section === "car" && !(setup && setup.detected && setup.detected.evcc)
-            ? `<p class="muted">The car's schedule comes from EVCC:
-               <a href="https://github.com/marq24/ha-evcc" target="_blank" rel="noreferrer">install ha-evcc</a>.</p>`
-            : ""
-        }</div>`;
-    }
-    if (this._section === "settings") {
-      const profile = this._data.load_profile || {};
-      return `<div class="card"><div class="head"><div><h2>Settings</h2>
-        <p class="sub">Safety, learning and diagnostics</p></div></div>
-        ${this._contractCard()}
-        <div class="rows">
-          <div class="row"><span class="grow">Automatic control</span>
-            <span class="num">${this._data.battery && this._data.battery.control_enabled ? "on" : "off"}</span></div>
-          <div class="row"><span class="grow">Writes allowed</span>
-            <span class="num">${this._data.battery && this._data.battery.allow_writes ? "yes" : "no"}</span></div>
-          <div class="row"><span class="grow">Load profile learned</span>
-            <span class="num">${profile.coverage_pct ?? 0}% of the week</span></div>
-          <div class="row"><span class="grow">Last write verified</span>
-            <span class="num">${this._data.battery && this._data.battery.write_verified === false ? "no" : this._data.battery && this._data.battery.write_verified ? "yes" : "—"}</span></div>
-          <div class="row"><span class="grow">Weekly full charge</span>
-            <span class="num">${this._data.battery && this._data.battery.weekly_full_charge ? "in progress" : "scheduled"}</span></div>
-          <div class="row"><span class="grow">Wizard</span>
-            <span class="num">${setup ? (setup.completed ? "finished" : setup.step || "not started") : "—"}</span></div>
-        </div></div>`;
-    }
-    return "";
-  }
-
   _render() {
     if (!this.shadowRoot) return;
     if (!this._data) {
@@ -1216,9 +766,6 @@ class KdHeliosPanel extends HTMLElement {
       return;
     }
 
-    const onboarding = Boolean(
-      this._setup && !this._setup.completed && this._section === "overview"
-    );
     const { entry, prices, grid, battery, devices, summary } = this._data;
     const history = this._history && this._history.available ? this._history : null;
 
@@ -1331,7 +878,6 @@ class KdHeliosPanel extends HTMLElement {
           <span class="chip"><span class="dot"></span>Live tariff ${this._money(prices.current, 3)}/kWh</span>
           ${control}
           ${this._error ? `<span class="chip warn"><span class="dot"></span>${this._esc(this._error)}</span>` : ""}
-          <div class="ranges">${this._nav()}</div>
           <div class="ranges">${this._rangeTabs()}</div>
           <button id="refresh">Refresh</button>
         </div>
@@ -1348,14 +894,9 @@ class KdHeliosPanel extends HTMLElement {
           </div>
         </div>
 
-        ${onboarding ? this._wizard() : ""}
-        ${onboarding ? `<p class="onboarding-note">Finish the setup to unlock the dashboard. Everything below fills in as soon as there is data.</p>` : ""}
-        <div class="${onboarding ? "locked" : ""}" ${onboarding ? "inert" : ""}>
-        ${this._section === "overview" ? `<div class="kpis">${kpis}</div>` : ""}
+        <div class="kpis">${kpis}</div>
 
-        ${
-          this._section === "overview"
-            ? `<div class="card">
+        <div class="card">
           <div class="head">
             <div><h2>Price &amp; planned charging</h2>
               <p class="sub">All-in tariff for the next 24 hours, with the windows KD Helios wants</p></div>
@@ -1367,9 +908,7 @@ class KdHeliosPanel extends HTMLElement {
             </div>
           </div>
           ${this._chart(prices, windows, this._data.now)}
-        </div>`
-            : this._sectionBody()
-        }
+        </div>
 
         <div class="cols two">
           ${this._evCard(ev, summary)}
@@ -1391,41 +930,6 @@ class KdHeliosPanel extends HTMLElement {
         </div>
       </div>`;
 
-    this.shadowRoot.querySelectorAll("[data-section]").forEach((button) => {
-      button.addEventListener("click", () => this._setSection(button.dataset.section));
-    });
-    this.shadowRoot.querySelectorAll("[data-delete]").forEach((button) => {
-      button.addEventListener("click", () => this._deleteSubentry(button.dataset.delete));
-    });
-    this.shadowRoot.querySelectorAll("form[data-kind]").forEach((form) => {
-      form.addEventListener("submit", (event) => this._submitForm(event));
-    });
-    this.shadowRoot.querySelectorAll("[data-cancel]").forEach((button) => {
-      button.addEventListener("click", () => {
-        this._editing = null;
-        this._render();
-      });
-    });
-    this.shadowRoot.querySelectorAll("[data-edit]").forEach((button) => {
-      button.addEventListener("click", () => {
-        this._editing = button.dataset.edit;
-        this._render();
-      });
-    });
-    this.shadowRoot.querySelectorAll("[data-add]").forEach((button) => {
-      button.addEventListener("click", () => {
-        this._editing = "new";
-        this._editingKind = button.dataset.add;
-        this._render();
-      });
-    });
-    const contractSave = this.shadowRoot.querySelector("[data-contract-save]");
-    if (contractSave) {
-      contractSave.addEventListener("click", () => this._saveContract());
-    }
-    this.shadowRoot.querySelectorAll("[data-wizard]").forEach((button) => {
-      button.addEventListener("click", () => this._wizardMove(button.dataset.wizard));
-    });
     this.shadowRoot.querySelectorAll("[data-range]").forEach((button) => {
       button.addEventListener("click", () => this._setRange(button.dataset.range));
     });

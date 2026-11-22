@@ -184,6 +184,33 @@ async def test_dashboard_command_is_registered(hass) -> None:
     assert f"{DOMAIN}/dashboard" in commands
 
 
+async def test_only_the_read_commands_are_registered(hass) -> None:
+    """Configuration goes through Home Assistant's config flows, not the panel."""
+    from homeassistant.components import websocket_api
+
+    async_register_websocket_api(hass)
+
+    registered = {
+        name
+        for name in hass.data[websocket_api.DOMAIN]
+        if name.startswith(f"{DOMAIN}/")
+    }
+    assert registered == {f"{DOMAIN}/dashboard", f"{DOMAIN}/history"}
+
+
+def test_the_panel_does_not_write_configuration() -> None:
+    """No leftover form or wizard may call a removed setup command."""
+    source = Path(panel.ASSET_DIR / panel.PANEL_JS).read_text(encoding="utf-8")
+    for command in (
+        "kd_helios/setup",
+        "kd_helios/sections",
+        "kd_helios/subentry/",
+        "kd_helios/contract",
+    ):
+        assert command not in source, command
+    assert "Finish the setup" not in source
+
+
 async def test_dashboard_reports_an_unknown_entry(hass) -> None:
     """Asking for an entry that is not loaded resolves to nothing."""
     from custom_components.kd_helios.websocket import _loaded_entry

@@ -235,6 +235,12 @@ panel, admin-only, EVCC required for the car, five build phases (A–E). It land
 before M2 because the wizard is where forecasting and control settings will be
 configured, and building screens twice is waste.
 
+**Reversed on 22 November 2026.** Configuration moved back to Home Assistant's
+native config flows: the wizard, the panel's section forms and the panel
+contract editor were removed. The panel is now a read-only dashboard plus the
+*Write now* action. The UI design in [docs/UI.md](docs/UI.md) is kept for the
+dashboard parts and as design history.
+
 ## 6. Working method
 
 - One milestone at a time, in order. No starting M4 while M3 is unproven.

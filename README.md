@@ -489,6 +489,12 @@ custom element — no build step, no external imports — served from
 `/kd_helios/kd-helios-panel.js`, so it works offline and survives Home Assistant
 upgrades.
 
+The panel is **read-only**, apart from writing the planned charge windows to the
+inverter. Setup and every setting live in Home Assistant's own config flows:
+open **Settings → Devices & services → KD Helios** to add or edit the provider,
+devices, car, battery and grid connection. The empty states in the panel point
+there instead of offering a second, different form.
+
 The layout follows the Helios dashboard: a greeting and live tariff in the
 header, four KPI tiles, a price chart with the planned charging windows, then
 cards for the EV charger, the device breakdown, the battery and the tariff.
@@ -539,7 +545,7 @@ labels descend from the top, because the top of the chart is the highest price.
 Everything comes from one WebSocket command, `kd_helios/dashboard`, built by
 `build_dashboard()` — the same function the command calls, so the payload is
 tested without a browser. A Node harness renders the element against the real
-payload and asserts the sections appear, which catches a broken render path that
+payload and asserts the cards appear, which catches a broken render path that
 Python tests cannot reach.
 
 The panel refreshes every minute, needs the frontend (it registers on setup
@@ -553,9 +559,8 @@ action — writing the programs — asks for confirmation first.
 KD Helios is being grown into a full home energy management system, with Home
 Assistant staying the device bridge and this integration owning the thinking.
 The milestones, estimates, working method and the decisions behind them live in
-[docs/ROADMAP.md](docs/ROADMAP.md), and the panel-first installation and UI
-design in [docs/UI.md](docs/UI.md) — including the verification backlog of things
-built but not yet proven on live hardware.
+[docs/ROADMAP.md](docs/ROADMAP.md), and the panel dashboard design in [docs/UI.md](docs/UI.md) — including the
+verification backlog of things built but not yet proven on live hardware.
 
 ---
 
@@ -748,7 +753,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 327 tests
+.venv/bin/python -m pytest        # 319 tests
 .venv/bin/ruff check custom_components tests
 ```
 

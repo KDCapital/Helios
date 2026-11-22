@@ -33,11 +33,7 @@
     },
     "abort": {
       "already_configured": "This provider and price interval are already configured.",
-      "reconfigure_successful": "The energy provider was updated.",
-      "panel": {
-        "title": "Managed in the KD Helios panel",
-        "description": "Open KD Helios in the sidebar to change providers, devices, the car, the battery and the grid."
-      }
+      "reconfigure_successful": "The energy provider was updated."
     }
   },
   "config_subentries": {

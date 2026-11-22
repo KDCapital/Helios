@@ -2,7 +2,7 @@
  *
  * The element needs a shadow root and a `hass` object only; everything else is
  * plain DOM strings. This lets the test suite prove the render path does not
- * throw and produces the expected sections, without a browser.
+ * throw and produces the expected cards, without a browser.
  */
 const fs = require("fs");
 
@@ -33,7 +33,7 @@ global.window = {
   clearInterval: () => 0,
 };
 
-const [, , source, payloadPath, section, wizardStep] = process.argv;
+const [, , source, payloadPath] = process.argv;
 new Function(fs.readFileSync(source, "utf8"))();
 
 const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
@@ -48,14 +48,6 @@ element._hass = {
   callService: async () => undefined,
 };
 element._data = payload;
-if (section === "onboarding") {
-  // The panel fetches this over the socket; the harness sets it directly.
-  element._setup = { completed: false, step: "welcome", steps: [], skipped: [], device_count: 0 };
-  element._sections = [];
-  element._wizardStep = Number(wizardStep || 0);
-} else if (section) {
-  element._section = section;
-}
 element._render();
 
 process.stdout.write(element.shadowRoot.innerHTML);

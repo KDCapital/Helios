@@ -2,7 +2,7 @@
 
 The panel is the one part of the integration the Python tests cannot execute, so
 this runs it in Node with a minimal DOM stub. It proves the render path does not
-throw and that the sections built from real data are present.
+throw and that the cards built from real data are present.
 """
 
 from __future__ import annotations
@@ -106,77 +106,5 @@ async def test_panel_renders_without_grid_or_battery(hass, tmp_path) -> None:
     assert "No grid connection" in html
     assert "No battery configured" in html
     assert "No EV charger configured" in html
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-async def test_the_wizard_renders_its_first_step(hass, tmp_path) -> None:
-    """The installation wizard is reachable from the panel, not a config flow."""
-    entry = full_entry()
-    with freeze_time(FROZEN):
-        await _setup_entry(hass, entry)
-        payload = build_dashboard(hass, entry)
-
-    payload_path = tmp_path / "payload.json"
-    payload_path.write_text(json.dumps(payload), encoding="utf-8")
-
-    result = await asyncio.to_thread(
-        subprocess.run,
-        ["node", str(HARNESS), str(BUNDLE), str(payload_path), "onboarding"],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    html = result.stdout
-    assert "Setup 1 of 5" in html
-    assert "Welcome to KD Helios" in html
-    assert "Skip" in html
-    # The dashboard is present but locked until the setup finishes.
-    assert 'class="locked"' in html
-    assert "inert" in html
-    assert "Finish the setup to unlock the dashboard" in html
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-async def test_the_wizard_hides_what_it_can_derive(hass, tmp_path) -> None:
-    """The wizard asks for devices, not for sensors it can work out itself."""
-    entry = full_entry()
-    with freeze_time(FROZEN):
-        await _setup_entry(hass, entry)
-        payload = build_dashboard(hass, entry)
-
-    payload_path = tmp_path / "payload.json"
-    payload_path.write_text(json.dumps(payload), encoding="utf-8")
-
-    async def render(step: int) -> str:
-        result = await asyncio.to_thread(
-            subprocess.run,
-            [
-                "node",
-                str(HARNESS),
-                str(BUNDLE),
-                str(payload_path),
-                "onboarding",
-                str(step),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        assert result.returncode == 0, result.stderr
-        return result.stdout
-
-    battery_step = await render(1)
-    assert "Your connection and battery" in battery_step
-    assert "Inverter (Solarman)" in battery_step
-    assert "SOC sensor" not in battery_step
-    assert "House load sensor" not in battery_step
-
-    grid_step = await render(2)
-    assert "Your grid connection" in grid_step
-    assert "Meter (HomeWizard P1)" in grid_step
-    assert "Import energy" not in grid_step
-    assert "Grid fee" in grid_step
+    # Configuration is pointed at Home Assistant, not offered inline.
+    assert "Settings → Devices & services → KD Helios" in html
