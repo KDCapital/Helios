@@ -43,11 +43,13 @@ from .const import (
     CONF_FUSE_MARGIN_PCT,
     CONF_GRID_FEE_MONTHLY,
     CONF_GRID_POWER_ENTITY,
+    CONF_HOUSE_BEHIND_INVERTER,
     CONF_HOUSE_LOAD_ENTITY,
     CONF_IMPORT_CAP_KW,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
     CONF_INVERTER_DEVICE,
+    CONF_INVERTER_FUSE_AMPS,
     CONF_INVERTER_MODEL,
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
@@ -436,6 +438,12 @@ class BatteryConfig:
     phases: int = 3
     fuse_amps: float = 0.0
     fuse_margin_pct: float = 90.0
+    #: The breaker feeding the inverter's AC input, often smaller than the main
+    #: fuse. 0 disables this extra ceiling.
+    inverter_fuse_amps: float = 0.0
+    #: Whether the house load is on the inverter's backup output. When true the
+    #: house load also passes through the inverter breaker.
+    house_behind_inverter: bool = True
     #: Work mode written when control is released, back to self-consumption.
     restore_work_mode: int = 1
     #: How fast the battery can discharge; 0 means unknown, so no peak is capped.
@@ -474,6 +482,17 @@ class BatteryConfig:
         return fuse_capacity_kw(self.phases, self.fuse_amps, self.fuse_margin_pct)
 
     @property
+    def effective_inverter_cap(self) -> float:
+        """Return the AC ceiling of the inverter's own supply breaker."""
+        if self.inverter_fuse_amps <= 0:
+            return 0.0
+        from .ev import fuse_capacity_kw
+
+        return fuse_capacity_kw(
+            self.phases, self.inverter_fuse_amps, self.fuse_margin_pct
+        )
+
+    @property
     def settings(self) -> BatterySettings:
         """Return the parameters the planner needs."""
         return BatterySettings(
@@ -507,6 +526,8 @@ class BatteryConfig:
             house_load_entity=as_entity_id(data.get(CONF_HOUSE_LOAD_ENTITY)),
             phases=int(as_float(data.get(CONF_PHASES), 3.0)),
             fuse_amps=as_float(data.get(CONF_FUSE_AMPS)),
+            inverter_fuse_amps=as_float(data.get(CONF_INVERTER_FUSE_AMPS)),
+            house_behind_inverter=as_bool(data.get(CONF_HOUSE_BEHIND_INVERTER), True),
             fuse_margin_pct=as_float(data.get(CONF_FUSE_MARGIN_PCT), 90.0),
             restore_work_mode=int(as_float(data.get(CONF_RESTORE_WORK_MODE), 1.0)),
             max_discharge_kw=as_float(data.get(CONF_MAX_DISCHARGE_KW)),

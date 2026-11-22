@@ -104,6 +104,35 @@ class ImportHeadroomCap:
 
 
 @dataclass(frozen=True, slots=True)
+class InverterHeadroomCap:
+    """Keep the inverter's own AC supply under its branch breaker.
+
+    The house load only belongs in this sum when it is on the inverter's backup
+    output; otherwise the inverter branch carries battery charging alone.
+    """
+
+    inverter_cap_kw: float
+    inverter_load_kw: float
+
+    def apply(self, limit_kw: float) -> tuple[float, Blocker | None]:
+        """Shrink to the inverter branch's remaining headroom."""
+        if self.inverter_cap_kw <= 0:
+            return limit_kw, None
+        headroom = max(0.0, self.inverter_cap_kw - max(0.0, self.inverter_load_kw))
+        if headroom >= limit_kw:
+            return limit_kw, None
+        return headroom, Blocker(
+            SOURCE_CAP,
+            "inverter_cap",
+            {
+                "cap_kw": round(self.inverter_cap_kw, 2),
+                "load_kw": round(max(0.0, self.inverter_load_kw), 2),
+                "headroom_kw": round(headroom, 2),
+            },
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class TemperatureCap:
     """Derate the charge power as the battery warms up.
 
@@ -167,6 +196,8 @@ def charge_caps(
     grid_import_kw: float,
     ev_power_kw: float,
     priority: Priority,
+    inverter_cap_kw: float = 0.0,
+    inverter_load_kw: float = 0.0,
     *,
     temperature_c: float | None = None,
     temp_limit_c: float = DEFAULT_TEMP_LIMIT_C,
@@ -178,6 +209,7 @@ def charge_caps(
         EnvelopeCap(max_charge_kw),
         EvPriorityCap(ev_power_kw, priority),
         ImportHeadroomCap(import_cap_kw, grid_import_kw),
+        InverterHeadroomCap(inverter_cap_kw, inverter_load_kw),
         TemperatureCap(
             temperature_c=temperature_c,
             limit_c=temp_limit_c,

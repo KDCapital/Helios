@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from custom_components.kd_helios.battery import charge_power_caps
 from custom_components.kd_helios.caps import (
     EnvelopeCap,
     EvPriorityCap,
     ImportHeadroomCap,
+    InverterHeadroomCap,
     TemperatureCap,
     apply_caps,
     charge_caps,
@@ -111,5 +113,21 @@ def test_the_default_chain_is_ordered_widest_first() -> None:
         "EnvelopeCap",
         "EvPriorityCap",
         "ImportHeadroomCap",
+        "InverterHeadroomCap",
         "TemperatureCap",
     ]
+
+
+def test_the_inverter_branch_cap_only_counts_house_load_when_it_is_behind() -> None:
+    """The separate inverter breaker sees the house only on its backup output."""
+    behind, _ = charge_power_caps(
+        11.0, 17.0, 0.0, 0.0, Priority.BATTERY, 11.0, 1.0
+    )
+    not_behind, _ = charge_power_caps(
+        11.0, 17.0, 0.0, 0.0, Priority.BATTERY, 11.0, 0.0
+    )
+    assert behind == 10.0
+    assert not_behind == 11.0
+    limit, blockers = apply_caps(11.0, [InverterHeadroomCap(11.0, 1.0)])
+    assert limit == 10.0
+    assert blockers[0].reason == "inverter_cap"

@@ -866,6 +866,8 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             load_kw,
             ev_kw,
             config.priority,
+            config.effective_inverter_cap,
+            load_kw if config.house_behind_inverter else 0.0,
             temperature_c=temperature,
             temp_limit_c=config.temp_charge_limit_c,
             temp_band_c=config.temp_charge_limit_band_c,
@@ -883,7 +885,13 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             charging=charging,
             limit_kw=round(limit, 3),
             import_cap_kw=round(config.effective_import_cap, 3),
+            inverter_cap_kw=round(config.effective_inverter_cap, 3),
+            inverter_load_kw=(
+                round(load_kw, 2) if config.house_behind_inverter else 0.0
+            ),
+            house_behind_inverter=config.house_behind_inverter,
             fuse_amps=config.fuse_amps,
+            inverter_fuse_amps=config.inverter_fuse_amps,
             phases=config.phases,
             load_kw=round(load_kw, 2),
             ev_kw=round(ev_kw, 2),

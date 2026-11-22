@@ -53,11 +53,13 @@ from .const import (
     CONF_FUSE_MARGIN_PCT,
     CONF_GRID_FEE_MONTHLY,
     CONF_GRID_POWER_ENTITY,
+    CONF_HOUSE_BEHIND_INVERTER,
     CONF_HOUSE_LOAD_ENTITY,
     CONF_IMPORT_CAP_KW,
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
     CONF_INVERTER_DEVICE,
+    CONF_INVERTER_FUSE_AMPS,
     CONF_INVERTER_MODEL,
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
@@ -556,6 +558,18 @@ def _battery_schema() -> vol.Schema:
                     unit_of_measurement="A",
                 )
             ),
+            vol.Optional(CONF_INVERTER_FUSE_AMPS): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=6,
+                    max=100,
+                    step=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="A",
+                )
+            ),
+            vol.Required(
+                CONF_HOUSE_BEHIND_INVERTER, default=True
+            ): selector.BooleanSelector(),
             vol.Required(CONF_FUSE_MARGIN_PCT, default=90): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=50,

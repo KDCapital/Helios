@@ -288,6 +288,15 @@ charge power to the battery's real power limit. The **Inverter model** field
 exists because some Solarman device registries have no model string; select
 the model there when auto-detection returns the wrong 185 A / 240 A ceiling.
 
+The **grid connection** and the **inverter branch** are separate limits. A 3×25 A
+connection (17.25 kW) may feed an inverter through a 3×16 A breaker (11.04 kW).
+The controller applies both: the battery plus house load stays under the grid
+cap, and the inverter plus whatever is behind it stays under the inverter cap.
+When the house is not on the inverter output, the inverter branch carries the
+battery alone; turn **House load on inverter output** off so the kitchen does
+not needlessly reduce charging. When the house moves to the backup output,
+turn it on.
+
 `Planned charge`, `Planned saving`, `Applied plan saving`, `Next charge start`
 and `Status` appear on the battery device.
 
@@ -857,7 +866,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 349 tests
+.venv/bin/python -m pytest        # 350 tests
 .venv/bin/ruff check custom_components tests
 ```
 
