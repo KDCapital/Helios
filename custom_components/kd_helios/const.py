@@ -8,7 +8,7 @@ from typing import Final
 
 DOMAIN: Final = "kd_helios"
 NAME: Final = "KD Helios"
-VERSION: Final = "0.3.3"
+VERSION: Final = "0.3.4"
 
 # ---------------------------------------------------------------------------
 # Config entry
@@ -62,6 +62,7 @@ CONF_EV_DEVICE: Final = "ev_device"
 CONF_SOC_ENTITY: Final = "soc_entity"
 CONF_BATTERY_CAPACITY_KWH: Final = "battery_capacity_kwh"
 CONF_MAX_CHARGE_KW: Final = "max_charge_kw"
+CONF_MAX_GRID_CHARGE_CURRENT: Final = "max_grid_charge_current"
 CONF_RESERVE_SOC: Final = "reserve_soc"
 CONF_TARGET_SOC: Final = "target_soc"
 CONF_EFFICIENCY: Final = "efficiency"

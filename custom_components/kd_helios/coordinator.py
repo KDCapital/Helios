@@ -433,55 +433,60 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         return max(0, round(kw * 1000))
 
     def _max_grid_charge_current(self) -> int:
-        """Return the inverter's actual grid-charge current ceiling.
+        """Return the grid-charge current ceiling the controller may use.
 
         The SG04LP3 register stops at 185 A, while the SG05LP3-SM2 accepts
         240 A. Prefer the number entity's own ``max`` attribute; fall back to
-        the model when Solarman has not exposed it.
+        the model when Solarman has not exposed it. A configured user maximum
+        is applied on top, so the controller never exceeds it.
         """
-        if self._max_charge_current_a is not None:
-            return self._max_charge_current_a
+        if self._max_charge_current_a is None:
+            config = self.battery_config
+            device_id = config.inverter_device_id if config is not None else None
+            if device_id is not None:
+                registry = er.async_get(self.hass)
+                for item in registry.entities.values():
+                    if item.device_id != device_id or item.domain != "number":
+                        continue
+                    label = " ".join(
+                        part
+                        for part in (
+                            item.original_name,
+                            item.entity_id,
+                            item.translation_key,
+                        )
+                        if part
+                    ).lower()
+                    if "grid" not in label or "current" not in label:
+                        continue
+                    state = self.hass.states.get(item.entity_id)
+                    if state is not None:
+                        maximum = state.attributes.get("max")
+                        try:
+                            if maximum is not None:
+                                self._max_charge_current_a = max(
+                                    1, min(400, int(float(maximum)))
+                                )
+                        except (TypeError, ValueError):
+                            pass
+                    break
 
+            if self._max_charge_current_a is None:
+                model = ""
+                if device_id is not None:
+                    device = dr.async_get(self.hass).async_get(device_id)
+                    if device is not None:
+                        model = f"{device.model or ''} {device.name or ''}".upper()
+                self._max_charge_current_a = (
+                    240 if ("SG05LP3" in model and "12K" in model) else 185
+                )
+
+        inverter_max = self._max_charge_current_a
         config = self.battery_config
-        device_id = config.inverter_device_id if config is not None else None
-        if device_id is not None:
-            registry = er.async_get(self.hass)
-            for item in registry.entities.values():
-                if item.device_id != device_id or item.domain != "number":
-                    continue
-                label = " ".join(
-                    part
-                    for part in (
-                        item.original_name,
-                        item.entity_id,
-                        item.translation_key,
-                    )
-                    if part
-                ).lower()
-                if "grid" not in label or "current" not in label:
-                    continue
-                state = self.hass.states.get(item.entity_id)
-                if state is not None:
-                    maximum = state.attributes.get("max")
-                    try:
-                        if maximum is not None:
-                            self._max_charge_current_a = max(
-                                1, min(400, int(float(maximum)))
-                            )
-                            return self._max_charge_current_a
-                    except (TypeError, ValueError):
-                        pass
-                break
-
-        model = ""
-        if device_id is not None:
-            device = dr.async_get(self.hass).async_get(device_id)
-            if device is not None:
-                model = f"{device.model or ''} {device.name or ''}".upper()
-        self._max_charge_current_a = (
-            240 if ("SG05LP3" in model and "12K" in model) else 185
-        )
-        return self._max_charge_current_a
+        user_max = config.max_grid_charge_current_a if config is not None else 0
+        if user_max > 0:
+            return max(1, min(inverter_max, user_max))
+        return inverter_max
 
     def _battery_voltage(self) -> float:
         """Return the pack voltage used to turn charge power into current."""

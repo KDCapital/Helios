@@ -61,6 +61,7 @@ from .const import (
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
     CONF_MAX_DISCHARGE_KW,
+    CONF_MAX_GRID_CHARGE_CURRENT,
     CONF_METER_DEVICE,
     CONF_NAME,
     CONF_PHASES,
@@ -486,6 +487,17 @@ def _battery_schema() -> vol.Schema:
                     step=0.1,
                     mode=selector.NumberSelectorMode.BOX,
                     unit_of_measurement="kW",
+                )
+            ),
+            vol.Optional(
+                CONF_MAX_GRID_CHARGE_CURRENT, default=0
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=400,
+                    step=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="A",
                 )
             ),
             vol.Required(CONF_RESERVE_SOC, default=10.0): _percent_field(0, 100),

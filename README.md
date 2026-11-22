@@ -268,6 +268,7 @@ battery discharge into the expensive ones.
 |---|---|
 | **Battery SOC sensor** | State of charge, for example the Solarman battery SOC sensor. |
 | **Battery capacity / max charge power** | Real kWh and kW, used to spread a window over several slots. |
+| **Maximum grid charge current** | Optional ceiling in A. Leave 0 to use the inverter's own maximum; the controller never writes above it. |
 | **Reserve / target SOC** | Never discharge below the reserve; never buy above the target. |
 | **Round-trip efficiency** | A stored kWh returns this fraction, so a spread has to beat the losses. |
 | **Planning horizon** | How far ahead to look for a cheaper hour to charge from and a dearer one to discharge into. |
@@ -400,11 +401,12 @@ current is capped. The SG04LP3 register stops at **185 A**, while the
 SG05LP3‑SM2 accepts **240 A**. At a 54 V pack, 185 A is
 `185 × 54 / 1000 = 9.99 kW`, whereas 240 A at 46 V is about 11 kW. KD Helios
 reads the actual `max` of the Solarman Battery Grid Charging Current entity,
-falling back to the inverter model, and records the requested current, the
-written current, the battery voltage, the voltage source and the effective
-power in the decision. If the voltage shown is the 51.2 V fallback, configure
-or expose a battery-voltage sensor so the current is calculated for the real
-pack voltage.
+falling back to the inverter model, and applies the optional **Maximum grid
+charge current** setting on top. It records the requested current, the written
+current, the battery voltage, the voltage source, the allowed maximum and the
+effective power in the decision. If the voltage shown is the 51.2 V fallback,
+configure or expose a battery-voltage sensor so the current is calculated for
+the real pack voltage.
 
 #### Deliberately not included: saldering arbitrage
 
@@ -839,7 +841,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 346 tests
+.venv/bin/python -m pytest        # 347 tests
 .venv/bin/ruff check custom_components tests
 ```
 
