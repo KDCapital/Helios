@@ -75,12 +75,16 @@ def _battery_payload(runtime: Any, now: Any) -> dict[str, Any] | None:
     }
 
     if plan is not None:
+        next_window = plan.next_window(now)
         payload["plan"] = {
             "reason": plan.reason,
             "energy_kwh": _round(plan.energy_kwh, 2),
             "cost": _round(plan.cost, 2),
             "expected_saving": _round(plan.expected_saving, 2),
             "charging_now": plan.active_window(now) is not None,
+            "next_window_start": (
+                next_window.start.isoformat() if next_window is not None else None
+            ),
             "solar_credit_kwh": _round(plan.solar_credit_kwh, 2),
             "prices_stale": plan.prices_stale,
             "windows": [

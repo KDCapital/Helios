@@ -17,6 +17,7 @@ from custom_components.kd_helios.battery import (
     ChargeWindow,
     build_tou_programs,
     plan_charge,
+    schedule_window_plan,
 )
 from custom_components.kd_helios.prices import PriceSeries
 from tests.helpers import UTC, build_series
@@ -45,6 +46,13 @@ def make_prices(start: datetime, hourly: list[float]) -> PriceSeries:
 DAY = [0.05] * 6 + [0.20] * 11 + [0.40] * 4 + [0.20] * 3
 #: Local midnight in Amsterdam (CET), so slot minutes start at zero.
 NOON = datetime(2026, 11, 19, 23, 0, tzinfo=UTC)
+
+
+def _minute(when: datetime) -> int:
+    """Return the local minute of the day for a UTC instant."""
+    local = dt_util.as_local(dt_util.as_utc(when))
+    return local.hour * 60 + local.minute
+
 
 SETTINGS = BatterySettings(
     capacity_kwh=10.0,
@@ -148,6 +156,105 @@ def test_two_separate_cheap_blocks_become_two_windows() -> None:
     assert len(plan.windows) == 2
     assert plan.windows[0].start == NOON
     assert plan.windows[1].start == NOON + timedelta(hours=4)
+
+
+def test_the_rolling_schedule_holds_the_active_or_next_window() -> None:
+    """Only one window is programmed; the next one replaces it later."""
+    day = [0.05, 0.05, 0.40, 0.40, 0.05, 0.05] + [0.40] * 18
+    settings = BatterySettings(
+        capacity_kwh=6.0,
+        max_charge_kw=2.0,
+        reserve_soc_pct=10.0,
+        target_soc_pct=100.0,
+        efficiency_pct=90.0,
+        horizon_hours=24,
+    )
+    plan = plan_charge(make_prices(NOON, day), settings, NOON, soc_pct=10.0)
+    first, second = plan.windows
+
+    before = schedule_window_plan(plan, first.start - timedelta(hours=1))
+    assert before.windows == (first,)
+    assert before.energy_kwh == pytest.approx(first.energy_kwh)
+    assert before.expected_saving == pytest.approx(first.profit)
+
+    inside = schedule_window_plan(plan, first.start + timedelta(minutes=15))
+    assert inside.windows == (first,)
+
+    # The end is half-open, so the next window takes over at that instant.
+    between = schedule_window_plan(plan, first.end)
+    assert between.windows == (second,)
+
+    after = schedule_window_plan(plan, second.end)
+    assert not after.has_windows
+    assert after.energy_kwh == 0.0
+    assert after.expected_saving == 0.0
+
+
+def test_a_many_window_plan_does_not_need_to_be_truncated() -> None:
+    """The rolling schedule writes one window at a time, whatever their count."""
+    windows = tuple(
+        ChargeWindow(
+            start=NOON + timedelta(hours=2 * index),
+            end=NOON + timedelta(hours=2 * index, minutes=30),
+            energy_kwh=1.0,
+            cost=0.05,
+            value=0.36,
+            profit=0.31,
+            average_price=0.05,
+            discharge_price=0.4,
+        )
+        for index in range(5)
+    )
+    plan = ChargePlan(
+        generated_at=NOON,
+        soc_pct=20.0,
+        windows=windows,
+        energy_kwh=5.0,
+        cost=0.25,
+        expected_saving=1.55,
+    )
+
+    schedule = schedule_window_plan(plan, NOON)
+    tou = build_tou_programs(schedule, SETTINGS, NOON)
+
+    assert len(tou.programs) == TOU_SLOTS
+    assert not tou.truncated
+    charging = [p for p in tou.programs if p.source is ChargeSource.GRID]
+    assert len(charging) == 1
+    assert charging[0].start_minute == 0
+
+
+def test_idle_fillers_do_not_split_a_long_window() -> None:
+    """A filler inside the window would stop it halfway through."""
+    window = ChargeWindow(
+        start=NOON,
+        end=NOON + timedelta(hours=14),
+        energy_kwh=8.0,
+        cost=0.40,
+        value=3.20,
+        profit=2.80,
+        average_price=0.05,
+        discharge_price=0.40,
+    )
+    plan = ChargePlan(
+        generated_at=NOON,
+        soc_pct=20.0,
+        windows=(window,),
+        energy_kwh=8.0,
+        cost=0.40,
+        expected_saving=2.80,
+    )
+
+    tou = build_tou_programs(plan, SETTINGS, NOON)
+
+    assert len(tou.programs) == TOU_SLOTS
+    start = _minute(window.start)
+    end = _minute(window.end)
+    for program in tou.programs:
+        if program.start_minute == start:
+            assert program.source is ChargeSource.GRID
+            continue
+        assert not (start < program.start_minute < end), program
 
 
 def test_tou_programs_charge_at_the_window_and_idle_after() -> None:

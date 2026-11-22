@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import IntEnum
 
@@ -754,6 +754,37 @@ def _windows_from_candidates(
     return tuple(result)
 
 
+def schedule_window_plan(plan: ChargePlan, now: datetime) -> ChargePlan:
+    """Return a plan holding only the window the inverter should run now.
+
+    The inverter has six slots, enough for three windows with their idle
+    boundaries, but a day can contain more profitable windows than that. Rather
+    than dropping the extra windows, the scheduler writes only the active
+    window (or the next one when none is active) and rewrites when that window
+    ends. The other slots stay idle at the reserve, so the slot count no longer
+    limits the plan.
+
+    The end slot is always part of what is written, which is what keeps the
+    inverter from charging past the window if Home Assistant goes away.
+    """
+    window = plan.active_window(now) or plan.next_window(now)
+    if window is None:
+        return replace(
+            plan,
+            windows=(),
+            energy_kwh=0.0,
+            cost=0.0,
+            expected_saving=0.0,
+        )
+    return replace(
+        plan,
+        windows=(window,),
+        energy_kwh=window.energy_kwh,
+        cost=window.cost,
+        expected_saving=window.profit,
+    )
+
+
 def build_tou_programs(
     plan: ChargePlan,
     settings: BatterySettings,
@@ -767,8 +798,9 @@ def build_tou_programs(
     an idle slot at its end with the reserve SOC, which is what lets the battery
     discharge into the expensive hours instead of sitting at the target.
 
-    Six slots is a hard limit, so at most three windows (each with one idle slot)
-    survive; the rest are dropped and reported.
+    The coordinator passes a single-window plan from :func:`schedule_window_plan`
+    so the six slots are never a limit in normal operation. This function still
+    trims a multi-window plan if another caller hands it one.
     """
     power_w = max(0, round(settings.max_charge_kw * 1000))
     reserve = max(0, min(100, round(settings.reserve_soc_pct)))
@@ -804,13 +836,19 @@ def build_tou_programs(
     if hold is not None:
         slots = _apply_hold(slots, hold, power_w, reserve)
 
+    protected: list[tuple[int, int]] = [
+        (_minute_of_day(window.start), _minute_of_day(window.end)) for window in ordered
+    ]
+    if hold is not None:
+        protected.append((_minute_of_day(hold[0]), _minute_of_day(hold[1])))
+
     if not slots:
         # Nothing worth buying: charge nowhere, allow discharge to the reserve.
         for minute in (0, 240, 480, 720, 960, 1200):
             slots[minute] = TouProgram(minute, power_w, reserve, ChargeSource.OFF)
 
     while len(slots) < TOU_SLOTS:
-        minute = _largest_free_minute(slots)
+        minute = _largest_free_minute(slots, tuple(protected))
         slots[minute] = TouProgram(minute, power_w, reserve, ChargeSource.OFF)
 
     while len(slots) > TOU_SLOTS:
@@ -829,19 +867,56 @@ def build_tou_programs(
     return TouPlan(programs=programs, truncated=truncated)
 
 
-def _largest_free_minute(slots: dict[int, TouProgram]) -> int:
-    """Return the middle of the largest gap between existing slots."""
+def _protected_segments(
+    intervals: tuple[tuple[int, int], ...],
+) -> list[tuple[int, int]]:
+    """Split minute-of-day intervals into non-wrapping segments."""
+    segments: list[tuple[int, int]] = []
+    for start, end in intervals:
+        if start == end:
+            continue
+        if start < end:
+            segments.append((start, end))
+        else:
+            segments.append((start, 24 * 60))
+            segments.append((0, end))
+    return segments
+
+
+def _is_protected(minute: int, segments: list[tuple[int, int]]) -> bool:
+    """Return True when a slot at ``minute`` would split a window."""
+    return any(start <= minute < end for start, end in segments)
+
+
+def _largest_free_minute(
+    slots: dict[int, TouProgram],
+    protected: tuple[tuple[int, int], ...] = (),
+) -> int:
+    """Return the middle of the largest gap that does not split a window.
+
+    Idle fillers have to stay outside the charging and hold windows: a filler
+    inside one would cut that window in two and turn charging off halfway.
+    """
+    segments = _protected_segments(protected)
     minutes = sorted(slots)
     best_gap = -1
-    best_minute = 0
+    best_minute: int | None = None
     for index, minute in enumerate(minutes):
         following = minutes[(index + 1) % len(minutes)]
         gap = (following - minute) % (24 * 60) or 24 * 60
-        if gap > best_gap:
+        candidate = (minute + gap // 2) % (24 * 60)
+        if (
+            gap > best_gap
+            and candidate not in slots
+            and not _is_protected(candidate, segments)
+        ):
             best_gap = gap
-            best_minute = (minute + gap // 2) % (24 * 60)
-    if best_minute not in slots:
+            best_minute = candidate
+    if best_minute is not None:
         return best_minute
+    for candidate in range(24 * 60):
+        if candidate not in slots and not _is_protected(candidate, segments):
+            return candidate
     for candidate in range(24 * 60):
         if candidate not in slots:
             return candidate

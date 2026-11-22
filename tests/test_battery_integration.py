@@ -330,21 +330,22 @@ async def test_action_writes_the_four_register_blocks(hass: HomeAssistant) -> No
     hass.services.async_register(
         "solarman", "write_multiple_holding_registers", fake_write
     )
-    entry = await _setup_with_battery(
-        hass,
-        **{
-            CONF_ALLOW_INVERTER_WRITES: True,
-            CONF_INVERTER_DEVICE: "inverter-device-id",
-        },
-    )
+    with freeze_time(FROZEN):
+        entry = await _setup_with_battery(
+            hass,
+            **{
+                CONF_ALLOW_INVERTER_WRITES: True,
+                CONF_INVERTER_DEVICE: "inverter-device-id",
+            },
+        )
 
-    result = await hass.services.async_call(
-        DOMAIN,
-        SERVICE_APPLY_TOU,
-        {"entry_id": entry.entry_id, "confirm": True},
-        blocking=True,
-        return_response=True,
-    )
+        result = await hass.services.async_call(
+            DOMAIN,
+            SERVICE_APPLY_TOU,
+            {"entry_id": entry.entry_id, "confirm": True},
+            blocking=True,
+            return_response=True,
+        )
 
     assert len(calls) == 4
     assert [call["register"] for call in calls] == [
@@ -357,6 +358,12 @@ async def test_action_writes_the_four_register_blocks(hass: HomeAssistant) -> No
         assert call["device"] == "inverter-device-id"
         assert len(call["values"]) == 6
         assert all(0 <= value <= 65535 for value in call["values"])
+
+    # A rolling schedule has one charging window, not the whole day's plan.
+    sources = next(
+        call for call in calls if call["register"] == TOU_REGISTERS["sources"]
+    )
+    assert sources["values"].count(int(ChargeSource.GRID)) == 1
 
     assert result["entry_id"] == entry.entry_id
     assert len(result["programs"]) == 6
@@ -529,33 +536,35 @@ async def test_applied_plan_is_recorded_with_its_prediction(
     hass.services.async_register(
         "solarman", "write_multiple_holding_registers", fake_write
     )
-    entry = await _setup_with_battery(
-        hass,
-        **{
-            CONF_ALLOW_INVERTER_WRITES: True,
-            CONF_INVERTER_DEVICE: "inverter-device-id",
-        },
-    )
-    engine = entry.runtime_data.engine
-    proposal = engine.battery_plan
-    assert proposal is not None
+    with freeze_time(FROZEN):
+        entry = await _setup_with_battery(
+            hass,
+            **{
+                CONF_ALLOW_INVERTER_WRITES: True,
+                CONF_INVERTER_DEVICE: "inverter-device-id",
+            },
+        )
+        engine = entry.runtime_data.engine
+        schedule = engine.schedule_plan
+        assert schedule is not None
+        assert len(schedule.windows) <= 1
 
-    result = await hass.services.async_call(
-        DOMAIN,
-        SERVICE_APPLY_TOU,
-        {"entry_id": entry.entry_id, "confirm": True},
-        blocking=True,
-        return_response=True,
-    )
-    await hass.async_block_till_done()
+        result = await hass.services.async_call(
+            DOMAIN,
+            SERVICE_APPLY_TOU,
+            {"entry_id": entry.entry_id, "confirm": True},
+            blocking=True,
+            return_response=True,
+        )
+        await hass.async_block_till_done()
 
     applied = engine.applied_plan
     assert applied is not None
-    assert applied.expected_saving == pytest.approx(proposal.expected_saving)
-    assert applied.energy_kwh == pytest.approx(proposal.energy_kwh)
+    assert applied.expected_saving == pytest.approx(schedule.expected_saving)
+    assert applied.energy_kwh == pytest.approx(schedule.energy_kwh)
     # The action rounds its response to four decimals.
     assert result["expected_saving"] == pytest.approx(
-        proposal.expected_saving, abs=0.001
+        schedule.expected_saving, abs=0.001
     )
 
     registry = er.async_get(hass)
@@ -567,7 +576,7 @@ async def test_applied_plan_is_recorded_with_its_prediction(
     )
     state = hass.states.get(item.entity_id)
     assert state is not None
-    assert float(state.state) == pytest.approx(proposal.expected_saving, abs=0.01)
+    assert float(state.state) == pytest.approx(schedule.expected_saving, abs=0.01)
     assert state.attributes["applied_at"]
     assert len(state.attributes["tou_programs"]) == 6
 

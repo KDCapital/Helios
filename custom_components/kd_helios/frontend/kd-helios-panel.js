@@ -593,8 +593,8 @@ class KdHeliosPanel extends HTMLElement {
     const plan = battery.plan;
     const applied = battery.applied;
     const soc = battery.soc_pct === null ? 0 : Math.max(0, Math.min(100, battery.soc_pct));
-    const saving = applied ? applied.expected_saving : summary.battery_saving_planned;
-    const next = plan && plan.windows.length ? plan.windows[0] : null;
+    const saving = summary.battery_saving_planned;
+    const next = plan && plan.next_window_start ? plan.next_window_start : null;
 
     const programs = (battery.programs || [])
       .map(
@@ -623,7 +623,7 @@ class KdHeliosPanel extends HTMLElement {
             <div class="metric"><div class="label">Planned saving</div>
               <div class="value good">${this._money(saving)}</div></div>
             <div class="metric"><div class="label">Next window</div>
-              <div class="value">${next ? this._time(next.start, true) : "—"}</div></div>
+              <div class="value">${next ? this._time(next, true) : "—"}</div></div>
             <div class="metric"><div class="label">Planned charge</div>
               <div class="value">${plan ? this._number(plan.energy_kwh, 1) : "—"} kWh</div></div>
             <div class="metric"><div class="label">Applied</div>
@@ -635,7 +635,10 @@ class KdHeliosPanel extends HTMLElement {
           programs
             ? `<table><thead><tr><th>Start</th><th class="num">Power</th>
                <th class="num">SOC</th><th>Source</th></tr></thead>
-               <tbody>${programs}</tbody></table>`
+               <tbody>${programs}</tbody></table>
+               <p class="muted" style="margin:8px 0 0">Only the current or next
+               charge window is programmed; the other slots stay idle at the
+               reserve.</p>`
             : ""
         }
         <div class="actions">

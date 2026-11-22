@@ -333,9 +333,20 @@ period — every later slot within 10% of the peak — not against the single
 highest quarter hour. A volatile quarter-hour tariff that spikes once must not
 shrink a 32 kWh battery's plan to one 15-minute window.
 
-Six slots is a hard limit of the inverter, so at most three windows survive
-(each needs an idle slot after it). If the plan wants more, it says so through
-`tou_truncated` instead of quietly dropping the difference.
+The inverter's six slots are no longer a limit on the plan. KD Helios writes
+only the window that is active now, or the next one when none is active: one
+charging slot at its start and one idle slot at its end. The remaining slots
+stay idle at the reserve, and when that window ends the next one is written.
+A plan can therefore contain any number of cheap windows without dropping the
+least profitable one.
+
+The price of that flexibility is that only the current or next window is in the
+inverter at any time. The end slot is always part of what was written, so the
+battery still stops at the planned time if Home Assistant is unavailable. But a
+window *after* the next one is not pre-programmed: if Home Assistant is down
+when the current window ends, that next window has to wait for the next
+successful update. Writes happen at window transitions rather than only when
+the whole plan changes.
 
 #### Deye time-of-use mapping
 
@@ -351,7 +362,9 @@ three-phase energy-storage protocol for the **SG04LP3/SG05LP3 family**:
 
 A charging slot starts at the window start with source **grid** and the target
 SOC. It is followed by an idle slot at the window's end with the reserve SOC,
-which is what lets the battery discharge into the expensive hours.
+which is what lets the battery discharge into the expensive hours. The other
+four slots are written as idle reserve slots in the gaps, so they cannot
+interrupt the rolling window.
 
 #### Deliberately not included: saldering arbitrage
 
@@ -410,10 +423,11 @@ turn it off and it hands the inverter back.
 Two things make the automatic mode safe:
 
 - **It only rewrites when the schedule actually changed** — when the next charge
-  window moves by more than five minutes, when the target SOC changes, or when
-  there is suddenly nothing worth buying. It never rewrites because the window's
-  *end* drifted while the battery charged, and never more than once every ten
-  minutes, so the Modbus link is not hammered.
+  window moves by more than five minutes, when the target SOC changes, when a
+  window starts or ends, or when there is suddenly nothing worth buying. It
+  never rewrites because the window's *end* drifted while the battery charged.
+  Ordinary rewrites are throttled to one per ten minutes so the Modbus link is
+  not hammered; a window transition is written immediately.
 - **Releasing control never leaves grid charging behind.** All six slots are
   rewritten with the **generator** as their only source, so the inverter cannot
   silently keep buying power, and the work mode is written back to
@@ -752,9 +766,14 @@ helper, so a restart continues where it left off instead of resetting to zero.
 - **Fixed costs are manual.** They are not read from any source; provider
   monthly fees are published only in signup flows.
 - **Automatic control is coarse by design.** It reacts to the charge window
-  moving, not to every price tick, and it waits ten minutes between writes. A
-  plan that changes only in energy (the window shrinking as the battery fills)
-  is deliberately not rewritten.
+  moving, not to every price tick, and it waits ten minutes between ordinary
+  rewrites. A window transition is written immediately. A plan that changes only
+  in energy (the window shrinking as the battery fills) is deliberately not
+  rewritten.
+- **The rolling schedule needs Home Assistant at the transitions.** Only the
+  active or next window is in the inverter. The end slot still stops a charge
+  if Home Assistant disappears, but a window after the next one is not
+  pre-programmed and waits for the next successful update.
 - **Dynamic contracts only.** Fixed and variable contracts are not modelled in
   this version, and gas is out of scope.
 - **A reload during an API outage** (for example while adding a device) puts the
@@ -768,7 +787,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 327 tests
+.venv/bin/python -m pytest        # 340 tests
 .venv/bin/ruff check custom_components tests
 ```
 

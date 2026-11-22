@@ -82,7 +82,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 translation_domain=DOMAIN,
                 translation_key="no_inverter_device",
             )
-        if engine.tou_plan is None:
+        if engine.schedule_plan is None or engine.tou_plan is None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="no_plan",
@@ -94,7 +94,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
             )
 
         applied = AppliedPlan.from_plan(
-            engine.battery_plan, engine.tou_plan, dt_util.utcnow()
+            engine.schedule_plan, engine.tou_plan, dt_util.utcnow()
         )
         registers = applied and engine.tou_plan.registers()
         try:

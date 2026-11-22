@@ -26,6 +26,7 @@ from .battery import (
     build_tou_programs,
     charge_power_caps,
     plan_charge,
+    schedule_window_plan,
     settings_fingerprint,
     should_apply,
 )
@@ -199,6 +200,10 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             else None
         )
         self.battery_plan: ChargePlan | None = None
+        #: The one window currently programmed into the inverter, which is
+        #: either the active window or the next one. ``battery_plan`` keeps the
+        #: whole proposal for the dashboard.
+        self.schedule_plan: ChargePlan | None = None
         self.tou_plan: TouPlan | None = None
         self.applied_plan: AppliedPlan | None = (
             AppliedPlan.from_dict(storage.battery_state())
@@ -269,13 +274,13 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
 
         device_id = config.inverter_device_id
         if enabled:
-            if self.battery_plan is None or self.tou_plan is None:
+            if self.schedule_plan is None or self.tou_plan is None:
                 raise ValueError("There is no charge plan to write yet")
             self.last_verification = await async_write_tou_verified(
                 self.hass, device_id, self.tou_plan
             )
             self.applied_plan = AppliedPlan.from_plan(
-                self.battery_plan, self.tou_plan, dt_util.utcnow()
+                self.schedule_plan, self.tou_plan, dt_util.utcnow()
             )
             self._last_apply = dt_util.utcnow()
             self._applied_cap = None
@@ -311,7 +316,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         to the plan instead of only living in a log line.
         """
         config = self.battery_config
-        plan = self.battery_plan
+        plan = self.schedule_plan
         tou = self.tou_plan
         if config is None or plan is None or tou is None:
             return []
@@ -810,7 +815,10 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 suppressed=(hold[0], hold[1]) if hold is not None else None,
             )
             self.battery_plan = battery_plan
-            self.tou_plan = build_tou_programs(battery_plan, settings, now, hold=hold)
+            self.schedule_plan = schedule_window_plan(battery_plan, now)
+            self.tou_plan = build_tou_programs(
+                self.schedule_plan, settings, now, hold=hold
+            )
 
             blockers: list[Blocker] = list(battery_plan.blockers)
             if credit.blocker is not None:
@@ -822,16 +830,29 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                     Blocker(
                         SOURCE_PLAN,
                         "slots_truncated",
-                        {"windows": len(battery_plan.windows)},
+                        {"windows": len(self.schedule_plan.windows)},
                     )
                 )
 
             fingerprint = settings_fingerprint(settings) + (weekly.active,)
-            force = (
+            settings_changed = (
                 self._plan_fingerprint is not None
                 and fingerprint != self._plan_fingerprint
             )
             self._plan_fingerprint = fingerprint
+            # A new window (or the end of the old one) must be written even if
+            # the settings did not change: the rolling schedule has to move.
+            schedule_key = tuple(
+                (window.start, window.end) for window in self.schedule_plan.windows
+            )
+            applied_key = (
+                tuple(
+                    (window.start, window.end) for window in self.applied_plan.windows
+                )
+                if self.applied_plan is not None
+                else ()
+            )
+            force = settings_changed or schedule_key != applied_key
 
             blockers.extend(await self._async_sync_inverter(now, settings, force=force))
             blockers.extend(

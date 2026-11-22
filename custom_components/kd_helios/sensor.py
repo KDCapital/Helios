@@ -741,9 +741,13 @@ class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
         now = dt_util.utcnow()
         tou = self.coordinator.tou_plan
         applied = self._applied
-        applied_matches = bool(applied) and [
-            window.start for window in applied.windows
-        ] == [window.start for window in plan.windows]
+        schedule = self.coordinator.schedule_plan
+        applied_matches = (
+            applied is not None
+            and schedule is not None
+            and [window.start for window in applied.windows]
+            == [window.start for window in schedule.windows]
+        )
         return {
             "reason": plan.reason,
             "blockers": self.coordinator.blockers.as_list(),

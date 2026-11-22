@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.kd_helios.battery import WORK_MODE_REGISTER, ChargeSource
+from custom_components.kd_helios.battery import (
+    WORK_MODE_REGISTER,
+    ChargePlan,
+    ChargeSource,
+    ChargeWindow,
+)
 from custom_components.kd_helios.const import (
     CONF_ALLOW_INVERTER_WRITES,
     CONF_BATTERY_CAPACITY_KWH,
@@ -233,6 +241,72 @@ async def test_plan_is_reapplied_when_it_changes(hass: HomeAssistant) -> None:
     assert len(recorder.blocks) == 4
 
 
+async def test_the_rolling_schedule_writes_the_next_window(
+    hass: HomeAssistant, monkeypatch
+) -> None:
+    """When one window ends, the next one is written without a plan change."""
+    start = dt_util.parse_datetime(FROZEN)
+    assert start is not None
+
+    def window(offset_hours: int) -> ChargeWindow:
+        return ChargeWindow(
+            start=start + timedelta(hours=offset_hours),
+            end=start + timedelta(hours=offset_hours, minutes=30),
+            energy_kwh=2.0,
+            cost=0.10,
+            value=0.70,
+            profit=0.60,
+            average_price=0.05,
+            discharge_price=0.35,
+        )
+
+    first = window(1)
+    second = window(3)
+    proposal = ChargePlan(
+        generated_at=start,
+        soc_pct=25.0,
+        windows=(first, second),
+        energy_kwh=4.0,
+        cost=0.20,
+        expected_saving=1.20,
+    )
+    monkeypatch.setattr(
+        "custom_components.kd_helios.coordinator.plan_charge",
+        lambda *args, **kwargs: proposal,
+    )
+
+    entry = make_entry(
+        **{
+            CONF_ALLOW_INVERTER_WRITES: True,
+            CONF_INVERTER_DEVICE: INVERTER,
+        }
+    )
+    with freeze_time(FROZEN):
+        recorder = await _setup(hass, entry)
+    engine = entry.runtime_data.engine
+    entity_id = _switch_entity(hass, entry)
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": entity_id}, blocking=True
+    )
+    assert engine.schedule_plan is not None
+    assert engine.schedule_plan.windows == (first,)
+    recorder.clear()
+
+    # 15:00 CET: the first window has ended and the second is next.
+    with freeze_time("2026-11-20 14:00:00+00:00"):
+        await engine.async_refresh()
+
+    assert engine.schedule_plan is not None
+    assert engine.schedule_plan.windows == (second,)
+    assert engine.applied_plan is not None
+    assert engine.applied_plan.windows == (second,)
+    local_start = dt_util.as_local(second.start)
+    expected_hhmm = local_start.hour * 100 + local_start.minute
+    times = next(block for block in recorder.blocks if block["register"] == 148)
+    assert expected_hhmm in times["values"]
+
+
 async def test_a_write_before_solarman_loads_is_retried_without_a_repair(
     hass: HomeAssistant,
 ) -> None:
@@ -277,13 +351,14 @@ async def test_unchanged_plan_is_not_rewritten(hass: HomeAssistant) -> None:
     engine = entry.runtime_data.engine
     entity_id = _switch_entity(hass, entry)
 
-    await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": entity_id}, blocking=True
-    )
-    recorder.clear()
+    with freeze_time(FROZEN):
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": entity_id}, blocking=True
+        )
+        recorder.clear()
 
-    await engine.async_refresh()
-    await engine.async_refresh()
+        await engine.async_refresh()
+        await engine.async_refresh()
 
     assert recorder.blocks == []
 
