@@ -33,6 +33,7 @@ const BLOCKER_LABELS = {
   no_inverter: "No inverter selected",
   inverter_not_ready: "Waiting for the inverter integration to load",
   write_failed: "The inverter refused the schedule",
+  manual_charge: "Test charge running",
   not_delivering: "The battery is not delivering",
   weekly_full_charge: "Weekly full charge for cell balancing",
   no_forecast: "No solar forecast available",
@@ -237,6 +238,29 @@ class KdHeliosPanel extends HTMLElement {
     this._range = range;
     this._history = await this._loadHistory();
     this._render();
+  }
+
+  async _chargeNow() {
+    if (!this._data) return;
+    const ok = window.confirm(
+      "Charge from the grid for 15 minutes? This buys energy at the current price."
+    );
+    if (!ok) return;
+    this._busy = true;
+    this._render();
+    try {
+      await this._hass.callService("kd_helios", "charge_now", {
+        entry_id: this._data.entry.entry_id,
+        confirm: true,
+        minutes: 15,
+      });
+      await this._load();
+    } catch (err) {
+      this._error = err && err.message ? err.message : String(err);
+    } finally {
+      this._busy = false;
+      this._render();
+    }
   }
 
   async _apply() {
@@ -615,6 +639,9 @@ class KdHeliosPanel extends HTMLElement {
         ${this._blockers(battery.blockers)}
         <div class="actions">
           <button class="primary" id="apply" ${canWrite && !this._busy ? "" : "disabled"}>Write now</button>
+          <button id="charge-now" ${
+            canWrite && battery.control_enabled && !this._busy ? "" : "disabled"
+          }>Charge 15 min</button>
           <span class="muted" style="margin:0">${
             canWrite
               ? "Automatic control does this for you when enabled."
@@ -913,6 +940,8 @@ class KdHeliosPanel extends HTMLElement {
 
     const apply = this.shadowRoot.getElementById("apply");
     if (apply) apply.addEventListener("click", () => this._apply());
+    const chargeNow = this.shadowRoot.getElementById("charge-now");
+    if (chargeNow) chargeNow.addEventListener("click", () => this._chargeNow());
     const refresh = this.shadowRoot.getElementById("refresh");
     if (refresh) refresh.addEventListener("click", () => this._load());
   }

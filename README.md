@@ -506,10 +506,10 @@ Solarman is the right tool for *reading* this inverter, but two limits matter:
 - its entities are read-only.
 
 It does expose generic register services, so KD Helios writes through
-`solarman.write_multiple_holding_registers`, in four blocks with a short pause
-between them. Because that changes how a real battery behaves, the action
-refuses to run unless writes are enabled in the battery settings **and** the
-call passes `confirm: true`:
+`solarman.write_multiple_holding_registers`: the four TOU blocks plus the two
+master switches, with a short pause between them. Because that changes how a
+real battery behaves, the action refuses to run unless writes are enabled in
+the battery settings **and** the call passes `confirm: true`:
 
 ```yaml
 action: kd_helios.apply_tou_programs
@@ -521,6 +521,21 @@ data:
 It returns the programs and registers it wrote, so the result is auditable
 rather than a fire-and-forget write.
 
+For checking the controls without waiting for the planner's next cheap slot,
+`charge_now` writes a grid-charge window starting at the current minute and
+keeps the normal plan out of the way until it ends:
+
+```yaml
+action: kd_helios.charge_now
+data:
+  entry_id: 01ARZ3NDEKTSV4RRFFQ69G5FAV
+  confirm: true
+  minutes: 15
+```
+
+Inverter control must be on; the normal rolling plan resumes when the window
+ends. The panel exposes the same action as **Charge 15 min**.
+
 ---
 
 ## Sidebar panel
@@ -531,8 +546,8 @@ custom element — no build step, no external imports — served from
 `/kd_helios/kd-helios-panel.js`, so it works offline and survives Home Assistant
 upgrades.
 
-The panel is **read-only**, apart from writing the planned charge windows to the
-inverter. Setup and every setting live in Home Assistant's own config flows:
+The panel is **read-only**, apart from writing the planned charge windows and
+the 15-minute test charge to the inverter. Setup and every setting live in Home Assistant's own config flows:
 open **Settings → Devices & services → KD Helios** to add or edit the provider,
 devices, car, battery and grid connection. The empty states in the panel point
 there instead of offering a second, different form.
@@ -800,7 +815,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 343 tests
+.venv/bin/python -m pytest        # 344 tests
 .venv/bin/ruff check custom_components tests
 ```
 

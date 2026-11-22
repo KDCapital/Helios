@@ -8,7 +8,7 @@ from typing import Final
 
 DOMAIN: Final = "kd_helios"
 NAME: Final = "KD Helios"
-VERSION: Final = "0.2.5"
+VERSION: Final = "0.2.6"
 
 # ---------------------------------------------------------------------------
 # Config entry
@@ -180,6 +180,7 @@ MAX_BATTERY_HORIZON_HOURS: Final = 72
 #: Service that writes the time-of-use programs, and the Solarman service used
 #: to talk to the inverter.
 SERVICE_APPLY_TOU: Final = "apply_tou_programs"
+SERVICE_CHARGE_NOW: Final = "charge_now"
 SOLARMAN_WRITE_SERVICE: Final = "write_multiple_holding_registers"
 
 #: Net metering (saldering) ends on this date. From it onwards, export is paid

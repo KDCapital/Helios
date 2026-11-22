@@ -20,6 +20,7 @@ from .battery import (
     BatterySettings,
     ChargePlan,
     ChargeSource,
+    ChargeWindow,
     TouPlan,
     WorkMode,
     build_restore_programs,
@@ -214,6 +215,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.last_control_error: str | None = None
         self._last_apply: datetime | None = None
         self._applied_cap: float | None = None
+        #: End of a manual "charge now" test. Until then the coordinator must
+        #: not overwrite the test window with the normal plan.
+        self._manual_charge_until: datetime | None = None
         self.load_profile = LoadProfile.from_dict(
             storage.profile_state().get("buckets")
         )
@@ -296,6 +300,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 enable_charge=None,
             )
             self.applied_plan = None
+            self._manual_charge_until = None
             self.storage.async_set_battery({})
 
         self.control_enabled = enabled
@@ -303,6 +308,71 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         await self.storage.async_save()
         self.async_set_updated_data(self.data)
         _LOGGER.info("Inverter control %s", "enabled" if enabled else "released")
+
+    async def async_charge_now(self, minutes: int = 15) -> dict[str, Any]:
+        """Program a short grid charge starting in the current minute.
+
+        This is the manual test path: it writes a window from now for a few
+        minutes, so the controls can be checked without waiting for the
+        planner's next cheap slot. The coordinator leaves the window alone
+        until it ends.
+        """
+        config = self.battery_config
+        if config is None or config.inverter_device_id is None:
+            raise ValueError("No inverter is configured for this battery")
+        if not config.allow_writes:
+            raise ValueError(
+                "Writing to the inverter is disabled in the battery settings"
+            )
+        if not self.control_enabled:
+            raise ValueError(
+                "Turn inverter control on before starting a test charge"
+            )
+
+        now = dt_util.utcnow()
+        minutes = max(1, min(60, int(minutes)))
+        start = now.replace(second=0, microsecond=0)
+        end = start + timedelta(minutes=minutes)
+        power_kw = config.max_charge_kw
+        window = ChargeWindow(
+            start=start,
+            end=end,
+            energy_kwh=power_kw * minutes / 60.0,
+            cost=0.0,
+            value=0.0,
+            profit=0.0,
+            average_price=0.0,
+            discharge_price=0.0,
+        )
+        plan = ChargePlan(
+            generated_at=now,
+            soc_pct=read_number(self.hass, config.soc_entity),
+            windows=(window,),
+            energy_kwh=window.energy_kwh,
+            cost=0.0,
+            expected_saving=0.0,
+            reason="manual",
+        )
+        tou = build_tou_programs(plan, config.settings, now)
+        self.last_verification = await async_write_tou_verified(
+            self.hass, config.inverter_device_id, tou
+        )
+        self.schedule_plan = plan
+        self.tou_plan = tou
+        self.applied_plan = AppliedPlan.from_plan(plan, tou, now)
+        self._manual_charge_until = end
+        self._last_apply = now
+        self._applied_cap = None
+        self.last_control_error = None
+        self.storage.async_set_battery(self.applied_plan.as_dict())
+        self._clear_issue(ISSUE_INVERTER_WRITE_FAILED)
+        self.async_set_updated_data(self.data)
+        return {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "minutes": minutes,
+            "power_w": round(power_kw * 1000),
+        }
 
     async def _async_sync_inverter(
         self,
@@ -816,22 +886,35 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 suppressed=(hold[0], hold[1]) if hold is not None else None,
             )
             self.battery_plan = battery_plan
-            self.schedule_plan = schedule_window_plan(battery_plan, now)
-            self.tou_plan = build_tou_programs(
-                self.schedule_plan, settings, now, hold=hold
-            )
+            manual_until = self._manual_charge_until
+            manual = manual_until is not None and now < manual_until
+            if manual_until is not None and not manual:
+                self._manual_charge_until = None
+            if not manual:
+                self.schedule_plan = schedule_window_plan(battery_plan, now)
+                self.tou_plan = build_tou_programs(
+                    self.schedule_plan, settings, now, hold=hold
+                )
 
             blockers: list[Blocker] = list(battery_plan.blockers)
             if credit.blocker is not None:
                 blockers.append(credit.blocker)
             if weekly.blocker is not None:
                 blockers.append(weekly.blocker)
-            if self.tou_plan.truncated:
+            if not manual and self.tou_plan.truncated:
                 blockers.append(
                     Blocker(
                         SOURCE_PLAN,
                         "slots_truncated",
                         {"windows": len(self.schedule_plan.windows)},
+                    )
+                )
+            if manual and manual_until is not None:
+                blockers.append(
+                    Blocker(
+                        SOURCE_WRITE,
+                        "manual_charge",
+                        {"until": manual_until.isoformat()},
                     )
                 )
 
@@ -855,7 +938,10 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             )
             force = settings_changed or schedule_key != applied_key
 
-            blockers.extend(await self._async_sync_inverter(now, settings, force=force))
+            if not manual:
+                blockers.extend(
+                    await self._async_sync_inverter(now, settings, force=force)
+                )
             blockers.extend(
                 await self._async_update_power_cap(now, snapshots, grid_snapshot)
             )

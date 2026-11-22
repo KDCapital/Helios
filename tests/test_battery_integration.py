@@ -44,6 +44,7 @@ from custom_components.kd_helios.const import (
     CONF_TARGET_SOC,
     DOMAIN,
     SERVICE_APPLY_TOU,
+    SERVICE_CHARGE_NOW,
     SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_EV_CHARGER,
 )
@@ -384,6 +385,66 @@ async def test_action_writes_the_schedule_and_its_master_switches(
 
     assert result["entry_id"] == entry.entry_id
     assert len(result["programs"]) == 6
+
+
+async def test_charge_now_writes_the_current_slot(hass: HomeAssistant) -> None:
+    """The test action charges from the current minute, not the next slot."""
+    calls: list[dict] = []
+
+    async def fake_write(call) -> None:
+        calls.append(dict(call.data))
+
+    hass.services.async_register(
+        "solarman", "write_multiple_holding_registers", fake_write
+    )
+    with freeze_time(FROZEN):
+        entry = await _setup_with_battery(
+            hass,
+            **{
+                CONF_ALLOW_INVERTER_WRITES: True,
+                CONF_INVERTER_DEVICE: "inverter-device-id",
+            },
+        )
+        engine = entry.runtime_data.engine
+        engine.control_enabled = True
+
+        result = await hass.services.async_call(
+            DOMAIN,
+            SERVICE_CHARGE_NOW,
+            {"entry_id": entry.entry_id, "confirm": True, "minutes": 15},
+            blocking=True,
+            return_response=True,
+        )
+
+        now = dt_util.utcnow()
+        assert engine._manual_charge_until == now.replace(
+            second=0, microsecond=0
+        ) + timedelta(minutes=15)
+
+    assert result["minutes"] == 15
+    assert len(calls) == 6
+    sources = next(
+        call for call in calls if call["register"] == TOU_REGISTERS["sources"]
+    )
+    assert sources["values"].count(int(ChargeSource.GRID)) == 1
+
+    start = dt_util.as_local(dt_util.parse_datetime(result["start"]))
+    times = next(block for block in calls if block["register"] == TOU_REGISTERS["times"])
+    assert start.hour * 100 + start.minute in times["values"]
+    assert engine.schedule_plan is not None
+    assert engine.schedule_plan.reason == "manual"
+
+    # The normal plan must not overwrite the test window while it runs.
+    with freeze_time("2026-11-20 12:05:00+00:00"):
+        await engine.async_refresh()
+    assert engine._manual_charge_until is not None
+    assert engine.schedule_plan.reason == "manual"
+
+    # Once it has ended, the rolling plan takes over again.
+    with freeze_time("2026-11-20 12:16:00+00:00"):
+        await engine.async_refresh()
+    assert engine._manual_charge_until is None
+    assert engine.schedule_plan.reason != "manual"
 
 
 async def test_battery_flow_creates_the_subentry(hass: HomeAssistant) -> None:

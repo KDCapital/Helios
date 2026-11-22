@@ -22,3 +22,39 @@ apply_tou_programs:
       example: true
       selector:
         boolean:
+
+charge_now:
+  name: Charge now (test)
+  description: >-
+    Write a short grid-charge window starting now, to check that the inverter
+    controls are working. Requires inverter control to be on, writes to be
+    enabled and an explicit confirmation.
+  fields:
+    entry_id:
+      name: Config entry
+      description: >-
+        The KD Helios entry whose battery should be charged.
+      required: true
+      example: 01ARZ3NDEKTSV4RRFFQ69G5FAV
+      selector:
+        config_entry:
+          integration: kd_helios
+    confirm:
+      name: Confirm
+      description: >-
+        Must be true. This buys grid energy at the current price.
+      required: true
+      example: true
+      selector:
+        boolean:
+    minutes:
+      name: Minutes
+      description: >-
+        How long to charge, from 1 to 60 minutes. Defaults to 15.
+      required: false
+      example: 15
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: minutes

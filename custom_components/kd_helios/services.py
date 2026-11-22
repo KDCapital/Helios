@@ -27,13 +27,19 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
 from .battery import AppliedPlan
-from .const import DOMAIN, SERVICE_APPLY_TOU, SOLARMAN_WRITE_SERVICE
+from .const import (
+    DOMAIN,
+    SERVICE_APPLY_TOU,
+    SERVICE_CHARGE_NOW,
+    SOLARMAN_WRITE_SERVICE,
+)
 from .inverter import InverterNotReadyError, async_write_tou
 
 _LOGGER = logging.getLogger(__name__)
 
 ATTR_ENTRY_ID = "entry_id"
 ATTR_CONFIRM = "confirm"
+ATTR_MINUTES = "minutes"
 
 #: Pause between register writes: the inverter's Modbus link is easily overrun
 #: when several blocks are written back to back.
@@ -43,6 +49,16 @@ APPLY_TOU_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_ENTRY_ID): cv.string,
         vol.Required(ATTR_CONFIRM): cv.boolean,
+    }
+)
+
+CHARGE_NOW_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_ENTRY_ID): cv.string,
+        vol.Required(ATTR_CONFIRM): cv.boolean,
+        vol.Optional(ATTR_MINUTES, default=15): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=60)
+        ),
     }
 )
 
@@ -131,6 +147,68 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 for program in engine.tou_plan.programs
             ],
         }
+
+    async def async_charge_now(call: ServiceCall) -> ServiceResponse:
+        """Charge from the grid for a few minutes, for testing the controls."""
+        entry_id = call.data[ATTR_ENTRY_ID]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_entry",
+            )
+
+        engine = entry.runtime_data.engine
+        config = engine.battery_config
+        if config is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_battery",
+            )
+        if not config.allow_writes:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="writes_disabled",
+            )
+        if not call.data[ATTR_CONFIRM]:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="confirm_required",
+            )
+        if not config.inverter_device_id:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_inverter_device",
+            )
+        if not engine.control_enabled:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="control_off",
+            )
+        if not hass.services.has_service("solarman", SOLARMAN_WRITE_SERVICE):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="solarman_unavailable",
+            )
+
+        try:
+            result = await engine.async_charge_now(call.data[ATTR_MINUTES])
+        except InverterNotReadyError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="inverter_not_ready",
+            ) from err
+
+        await engine.storage.async_save()
+        return {"entry_id": entry_id, **result}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CHARGE_NOW,
+        async_charge_now,
+        schema=CHARGE_NOW_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
 
     hass.services.async_register(
         DOMAIN,

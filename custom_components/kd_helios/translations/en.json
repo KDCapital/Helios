@@ -687,6 +687,24 @@
           "description": "Must be true. Writing changes how the battery behaves."
         }
       }
+    },
+    "charge_now": {
+      "name": "Charge now (test)",
+      "description": "Write a short grid-charge window starting now, to check that the inverter controls are working.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry",
+          "description": "The KD Helios entry whose battery should be charged."
+        },
+        "confirm": {
+          "name": "Confirm",
+          "description": "Must be true. This buys grid energy at the current price."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "How long to charge, from 1 to 60 minutes. Defaults to 15."
+        }
+      }
     }
   },
   "exceptions": {
@@ -713,6 +731,9 @@
     },
     "inverter_not_ready": {
       "message": "The Solarman integration is still starting up. Try again once it has finished loading."
+    },
+    "control_off": {
+      "message": "Turn inverter control on before starting a test charge."
     }
   }
 }
