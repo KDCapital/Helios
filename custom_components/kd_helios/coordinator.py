@@ -611,6 +611,21 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             / 1000.0
         )
         grid_kw = (grid_snapshot.import_power or 0.0) / 1000.0 if grid_snapshot else 0.0
+        # The grid meter also measures the battery while it charges. Using that
+        # total as the house load makes the cap throttle the battery because of
+        # its own draw. The house-load sensor is the load the battery still has
+        # to fit beside; fall back to the grid total when it is not configured.
+        load_kw = grid_kw
+        if config.house_load_entity is not None:
+            house_w = read_power(self.hass, config.house_load_entity)
+            if house_w is not None:
+                load_kw = house_w / 1000.0
+        elif config.battery_power_entity is not None:
+            battery_w = read_power(self.hass, config.battery_power_entity)
+            if battery_w is not None:
+                # No house sensor: remove the battery's own contribution from
+                # the meter total. Sign conventions differ, so use magnitude.
+                load_kw = max(0.0, grid_kw - abs(battery_w) / 1000.0)
         temperature = (
             self._read_temperature(config.battery_temp_entity)
             if config.temp_charge_limit_enabled
@@ -619,7 +634,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         limit, blockers = charge_power_caps(
             config.settings.max_charge_kw,
             config.effective_import_cap,
-            grid_kw,
+            load_kw,
             ev_kw,
             config.priority,
             temperature_c=temperature,

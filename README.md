@@ -420,12 +420,17 @@ capacity and undoes the pause it was paid for. Two settings bound that:
 
 - **Priority** (`EV first`, the default): while a car draws more than 500 W, the
   battery takes 0 kW from the grid. `Battery first` removes that rule.
-- **Maximum grid import**: the battery only takes `cap − current import`, so car
-  and battery together cannot exceed what the connection carries.
+- **Maximum grid import**: the battery only takes `cap − everything that is not
+  the battery`. The house-load sensor is used when it is configured; otherwise
+  the battery power sensor is subtracted from the meter total. Without either,
+  the meter total is used, which is conservative because it includes the
+  battery's own charge.
 
 The cap is reactive: it rewrites the time-of-use power block when the allowed
 power changes by more than 0.25 kW, without touching the schedule, so it reacts
-within a coordinator tick instead of waiting for a new plan.
+within a coordinator tick instead of waiting for a new plan. Counting the
+battery's own draw as house load would make the cap fight itself, so the load
+used for headroom excludes the battery.
 
 #### Automatic control, and releasing it safely
 
@@ -815,7 +820,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 344 tests
+.venv/bin/python -m pytest        # 345 tests
 .venv/bin/ruff check custom_components tests
 ```
 

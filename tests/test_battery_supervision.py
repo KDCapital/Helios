@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from freezegun import freeze_time
 from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.kd_helios.battery import ChargePlan, ChargeWindow
@@ -18,6 +20,7 @@ from custom_components.kd_helios.const import (
     CONF_BATTERY_POWER_ENTITY,
     CONF_EFFICIENCY,
     CONF_HOUSE_LOAD_ENTITY,
+    CONF_IMPORT_CAP_KW,
     CONF_INVERTER_DEVICE,
     CONF_MAX_CHARGE_KW,
     CONF_PRICE_INTERVAL,
@@ -378,3 +381,34 @@ async def test_the_solar_hold_stops_the_grid_charge(hass: HomeAssistant) -> None
     assert "waiting_for_solar" in reasons
     # Nothing to buy, so nothing is written.
     assert inverter.registers == {}
+
+
+async def test_the_fuse_cap_uses_the_house_load_not_the_battery(
+    hass: HomeAssistant,
+) -> None:
+    """The battery's own draw must not be counted as house load."""
+    entry = make_entry(
+        **{
+            CONF_ALLOW_INVERTER_WRITES: True,
+            CONF_INVERTER_DEVICE: INVERTER,
+            CONF_HOUSE_LOAD_ENTITY: "sensor.house_load",
+            CONF_MAX_CHARGE_KW: 11.0,
+            CONF_IMPORT_CAP_KW: 17.0,
+        }
+    )
+    with freeze_time(FROZEN):
+        inverter = await _setup(hass, entry)
+        engine = entry.runtime_data.engine
+        engine.control_enabled = True
+        hass.states.async_set(
+            "sensor.house_load", "500", {"unit_of_measurement": "W"}
+        )
+
+        await engine.async_charge_now(15)
+        # The meter sees the battery's 11 kW on top of the 0.5 kW house load.
+        await engine._async_update_power_cap(
+            dt_util.utcnow(), {}, SimpleNamespace(import_power=11640)
+        )
+
+    assert inverter.registers[154] == 11000
+    assert all(inverter.registers[register] == 11000 for register in range(154, 160))

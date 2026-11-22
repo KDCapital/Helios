@@ -75,7 +75,12 @@ class EvPriorityCap:
 
 @dataclass(frozen=True, slots=True)
 class ImportHeadroomCap:
-    """Keep the battery and the rest of the house under the connection's limit."""
+    """Keep the battery and the rest of the house under the connection's limit.
+
+    ``grid_import_kw`` is the load the battery has to fit beside, not the meter
+    total: when the battery is already charging, its own draw is part of that
+    total and must be removed before calculating headroom.
+    """
 
     import_cap_kw: float
     grid_import_kw: float
@@ -92,7 +97,7 @@ class ImportHeadroomCap:
             "import_cap",
             {
                 "cap_kw": round(self.import_cap_kw, 2),
-                "import_kw": round(max(0.0, self.grid_import_kw), 2),
+                "load_kw": round(max(0.0, self.grid_import_kw), 2),
                 "headroom_kw": round(headroom, 2),
             },
         )

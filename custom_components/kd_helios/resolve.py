@@ -18,6 +18,7 @@ from .models import BatteryConfig, DeviceConfig, GridConfig
 BATTERY_HINTS: dict[str, tuple[str, ...]] = {
     "soc_entity": ("state of charge", "battery soc", "soc"),
     "house_load_entity": ("total load", "load power", "house consumption"),
+    "battery_power_entity": ("battery power", "battery_power"),
 }
 
 #: Name hints per car field for an EVCC loadpoint. More specific names first,
@@ -112,7 +113,7 @@ def resolve_battery(hass: HomeAssistant, config: BatteryConfig) -> BatteryConfig
     """Fill in the battery sensor fields from the linked inverter."""
     if config.inverter_device_id is None:
         return config
-    if config.soc_entity and config.house_load_entity:
+    if config.soc_entity and config.house_load_entity and config.battery_power_entity:
         return config
 
     found = match_for_device(hass, config.inverter_device_id, BATTERY_HINTS)
@@ -121,6 +122,8 @@ def resolve_battery(hass: HomeAssistant, config: BatteryConfig) -> BatteryConfig
         changes["soc_entity"] = found["soc_entity"]
     if not config.house_load_entity and "house_load_entity" in found:
         changes["house_load_entity"] = found["house_load_entity"]
+    if not config.battery_power_entity and "battery_power_entity" in found:
+        changes["battery_power_entity"] = found["battery_power_entity"]
     return replace(config, **changes) if changes else config
 
 
