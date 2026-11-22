@@ -469,10 +469,12 @@ turn it off and it hands the inverter back.
 
 Two things make the automatic mode safe:
 
-- **It only writes when the state actually changed** — when a charge window
-  starts or ends, when the target SOC changes, or when the car's hold state
-  changes. The six values are compared with what was last written, so the
-  Modbus link is not hammered.
+- **It writes when the state changes, and re-checks every five minutes** —
+  a charge window start/end, target-SOC change or hold change is written
+  immediately. Every five minutes the inverter is read back (or rewritten
+  when reads are unavailable), so a manual change to the TOU SOC, source or
+  current cannot silently stay in force. The proven Deye planner does the same
+  on its five-minute cycle.
 - **Releasing control never leaves grid charging behind.** All six slots are
   written with charging **off** and the reserve SOC, and the work mode is
   written back to self-consumption. Which work mode that is, is a setting:
@@ -847,7 +849,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 349 tests
+.venv/bin/python -m pytest        # 350 tests
 .venv/bin/ruff check custom_components tests
 ```
 

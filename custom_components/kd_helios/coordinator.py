@@ -59,6 +59,7 @@ from .grid import GridSnapshot, GridTracker
 from .inverter import (
     InverterNotReadyError,
     InverterWriteError,
+    async_control_matches,
     async_write_control_verified,
     async_write_registers,
 )
@@ -78,6 +79,11 @@ from .sources import read_number, read_power
 from .storage import HeliosStorage
 
 _LOGGER = logging.getLogger(__name__)
+
+#: Re-assert the control state even when our own key did not change. This
+#: detects a manual change on the inverter and rewrites it, just as the proven
+#: Deye planner does on its five-minute cycle.
+CONTROL_RESYNC_INTERVAL = timedelta(minutes=5)
 
 
 class PriceCoordinator(DataUpdateCoordinator[PriceSeries]):
@@ -213,12 +219,13 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self._control_key: tuple | None = None
         self._applied_current: int | None = None
         self._max_charge_current_a: int | None = None
+        self._last_control_check: datetime | None = None
         #: End of a manual test charge, or None. It forces grid charging for
         #: the rest of the current price quarter.
         self._test_charge_until: datetime | None = None
         #: Recent control decisions, newest last. Exposed through diagnostics
         #: and the status sensor so a power or mode surprise can be explained.
-        self.decision_log: deque[dict[str, Any]] = deque(maxlen=40)
+        self.decision_log: deque[dict[str, Any]] = deque(maxlen=200)
         self.applied_plan: AppliedPlan | None = (
             AppliedPlan.from_dict(storage.battery_state())
             if self.battery_config is not None
@@ -398,6 +405,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             )
             self._control_key = self._control_key_for(control)
             self._applied_current = control.charge_current_a
+            self._last_control_check = dt_util.utcnow()
             self.applied_plan = AppliedPlan.from_plan(
                 self.schedule_plan, self.tou_plan, dt_util.utcnow()
             )
@@ -411,6 +419,8 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             self.applied_plan = None
             self._control_key = None
             self._applied_current = 0
+            self._last_control_check = None
+            self._test_charge_until = None
             self.storage.async_set_battery({})
 
         self.control_enabled = enabled
@@ -476,6 +486,13 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         if self._max_charge_current_a is None:
             config = self.battery_config
             device_id = config.inverter_device_id if config is not None else None
+            model = ""
+            if device_id is not None:
+                device = dr.async_get(self.hass).async_get(device_id)
+                if device is not None:
+                    model = f"{device.model or ''} {device.name or ''}".upper()
+            model_max = 240 if "SG05LP3" in model else 185
+            discovered: int | None = None
             if device_id is not None:
                 registry = er.async_get(self.hass)
                 for item in registry.entities.values():
@@ -497,22 +514,13 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                         maximum = state.attributes.get("max")
                         try:
                             if maximum is not None:
-                                self._max_charge_current_a = max(
-                                    1, min(400, int(float(maximum)))
-                                )
+                                discovered = max(1, min(400, int(float(maximum))))
                         except (TypeError, ValueError):
                             pass
                     break
-
-            if self._max_charge_current_a is None:
-                model = ""
-                if device_id is not None:
-                    device = dr.async_get(self.hass).async_get(device_id)
-                    if device is not None:
-                        model = f"{device.model or ''} {device.name or ''}".upper()
-                self._max_charge_current_a = (
-                    240 if ("SG05LP3" in model and "12K" in model) else 185
-                )
+            # The hardware ceiling wins over a generic Solarman entity max:
+            # some profiles expose 350 A for a 12K that is rated for 240 A.
+            self._max_charge_current_a = min(discovered or model_max, model_max)
 
         inverter_max = self._max_charge_current_a
         config = self.battery_config
@@ -564,7 +572,31 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
 
         key = self._control_key_for(control)
         if key == self._control_key:
-            return []
+            due = (
+                self._last_control_check is None
+                or now - self._last_control_check >= CONTROL_RESYNC_INTERVAL
+            )
+            if not due:
+                return []
+            # Compare and re-write the current the cap actually applied, not
+            # the uncapped plan value. Otherwise every resync would briefly
+            # raise the charge current back to full power.
+            resync_control = control
+            if charging and self._applied_current is not None:
+                resync_control = replace(
+                    control, charge_current_a=self._applied_current
+                )
+            matches = await async_control_matches(
+                self.hass, config.inverter_device_id, resync_control
+            )
+            if matches:
+                self._last_control_check = now
+                return []
+            if matches is None:
+                self._record_decision("resync_unreadable")
+            else:
+                self._record_decision("resync_drift")
+            control = resync_control
 
         try:
             result = await async_write_control_verified(
@@ -587,6 +619,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self._clear_issue(ISSUE_INVERTER_WRITE_FAILED)
         self._control_key = key
         self._applied_current = control.charge_current_a
+        self._last_control_check = now
         self._record_decision(
             "write",
             charge=charging,
@@ -622,6 +655,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         # the next tick instead of trusting the last key.
         self._control_key = None
         self._applied_current = None
+        self._last_control_check = None
         return [Blocker(SOURCE_WRITE, "write_failed", {"error": message})]
 
     def _issue_id(self, key: str) -> str:

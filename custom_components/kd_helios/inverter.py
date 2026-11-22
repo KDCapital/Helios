@@ -338,6 +338,22 @@ async def _reload_tou_schedule(hass: HomeAssistant, device_id: str) -> None:
     )
 
 
+async def async_control_matches(
+    hass: HomeAssistant,
+    device_id: str,
+    control: ControlPlan,
+) -> bool | None:
+    """Return whether the inverter still holds the wanted control state.
+
+    ``None`` means the read is unavailable; the caller then rewrites on its
+    normal resync interval instead of assuming the state survived.
+    """
+    mismatches = await _verify_registers(hass, device_id, control.registers())
+    if mismatches is None:
+        return None
+    return not mismatches
+
+
 async def async_write_control_verified(
     hass: HomeAssistant,
     device_id: str,

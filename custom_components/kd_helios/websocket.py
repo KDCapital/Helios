@@ -143,7 +143,7 @@ def _battery_payload(runtime: Any, now: Any) -> dict[str, Any] | None:
                 for program in applied.programs
             ],
         }
-    payload["decisions"] = list(runtime.engine.decision_log)
+    payload["decisions"] = list(runtime.engine.decision_log)[-60:]
     return payload
 
 

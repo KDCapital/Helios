@@ -460,3 +460,26 @@ async def test_the_test_charge_runs_until_the_quarter_ends(
     by_register = {block["register"]: block["values"] for block in recorder.blocks}
     assert by_register[172] == [int(ChargeSource.OFF)] * 6
     assert by_register[128] == [0]
+
+
+async def test_control_reasserts_its_state_after_five_minutes(
+    hass: HomeAssistant,
+) -> None:
+    """A manual change on the inverter is corrected on the resync cycle."""
+    entry, recorder = await _add_control(hass)
+    engine = entry.runtime_data.engine
+    entity_id = _switch_entity(hass, entry)
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": entity_id}, blocking=True
+    )
+    recorder.clear()
+
+    old_check = dt_util.parse_datetime(FROZEN)
+    assert old_check is not None
+    engine._last_control_check = old_check - timedelta(minutes=6)
+    with freeze_time(FROZEN):
+        await engine.async_refresh()
+
+    assert recorder.blocks
+    assert any(block["register"] == 172 for block in recorder.blocks)
