@@ -425,3 +425,38 @@ async def test_control_state_survives_a_reload(hass: HomeAssistant) -> None:
     by_register = {block["register"]: block["values"] for block in recorder.blocks}
     assert by_register[172] == [int(ChargeSource.OFF)] * 6
     assert by_register[142] == [int(engine.control_plan.work_mode)]
+
+
+async def test_the_test_charge_runs_until_the_quarter_ends(
+    hass: HomeAssistant,
+) -> None:
+    """The test button forces grid charging for the current price quarter."""
+    entry, recorder = await _add_control(hass)
+    engine = entry.runtime_data.engine
+    entity_id = _switch_entity(hass, entry)
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": entity_id}, blocking=True
+    )
+    recorder.clear()
+
+    with freeze_time(FROZEN):
+        result = await engine.async_charge_quarter()
+
+    assert result["until"] == "2026-11-20T12:15:00+00:00"
+    assert engine._test_charge_until is not None
+    assert engine.control_plan is not None
+    assert engine.control_plan.programs[0].source is ChargeSource.GRID
+    assert engine.control_plan.programs[0].soc_pct == 100
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[172] == [int(ChargeSource.GRID)] * 6
+    assert by_register[128][0] > 0
+
+    recorder.clear()
+    with freeze_time("2026-11-20 12:16:00+00:00"):
+        await engine.async_refresh()
+
+    assert engine._test_charge_until is None
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[172] == [int(ChargeSource.OFF)] * 6
+    assert by_register[128] == [0]

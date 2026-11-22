@@ -61,6 +61,11 @@ def _battery_payload(runtime: Any, now: Any) -> dict[str, Any] | None:
         "allow_writes": config.allow_writes,
         "has_inverter": config.inverter_device_id is not None,
         "control_enabled": runtime.engine.control_enabled,
+        "test_charge_until": (
+            runtime.engine._test_charge_until.isoformat()
+            if runtime.engine._test_charge_until is not None
+            else None
+        ),
         "restore_work_mode": config.restore_work_mode,
         "blockers": runtime.engine.blockers.as_list(),
         "weekly_full_charge": bool(
@@ -346,7 +351,33 @@ async def websocket_dashboard(
     connection.send_result(msg["id"], build_dashboard(hass, entry))
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/test_charge",
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_test_charge(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Start a test charge for the rest of the current price quarter."""
+    entry = _loaded_entry(hass, msg.get("entry_id"))
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "No KD Helios entry is loaded")
+        return
+    try:
+        result = await entry.runtime_data.engine.async_charge_quarter()
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_state", str(err))
+        return
+    connection.send_result(msg["id"], result)
+
+
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register the panel's WebSocket commands."""
     websocket_api.async_register_command(hass, websocket_dashboard)
     websocket_api.async_register_command(hass, websocket_history)
+    websocket_api.async_register_command(hass, websocket_test_charge)

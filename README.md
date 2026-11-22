@@ -576,6 +576,12 @@ then cards for the EV charger, the device breakdown, the battery and the tariff.
 The **Decision log** tab shows the recent plan, control and power-cap decisions
 newest first, with the inputs behind each one.
 
+The dashboard header has a **Charge 15 min** button for testing. It forces grid
+charging until the end of the current 15-minute price quarter, even when the
+planner has no window. It requires inverter control to be on and writes to be
+enabled, and it still respects the maximum grid charge current, the fuse cap,
+EV priority and the temperature derate.
+
 ### What is real, and what is deliberately absent
 
 The dashboard shows **only values the integration actually has**. Three things
@@ -841,7 +847,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 348 tests
+.venv/bin/python -m pytest        # 349 tests
 .venv/bin/ruff check custom_components tests
 ```
 

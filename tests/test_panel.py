@@ -184,7 +184,7 @@ async def test_dashboard_command_is_registered(hass) -> None:
     assert f"{DOMAIN}/dashboard" in commands
 
 
-async def test_only_the_read_commands_are_registered(hass) -> None:
+async def test_only_the_panel_commands_are_registered(hass) -> None:
     """Configuration goes through Home Assistant's config flows, not the panel."""
     from homeassistant.components import websocket_api
 
@@ -195,7 +195,11 @@ async def test_only_the_read_commands_are_registered(hass) -> None:
         for name in hass.data[websocket_api.DOMAIN]
         if name.startswith(f"{DOMAIN}/")
     }
-    assert registered == {f"{DOMAIN}/dashboard", f"{DOMAIN}/history"}
+    assert registered == {
+        f"{DOMAIN}/dashboard",
+        f"{DOMAIN}/history",
+        f"{DOMAIN}/test_charge",
+    }
 
 
 def test_the_panel_does_not_write_configuration() -> None:

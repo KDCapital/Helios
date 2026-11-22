@@ -278,6 +278,24 @@ class KdHeliosPanel extends HTMLElement {
     }
   }
 
+  async _testCharge() {
+    if (!this._data || this._busy) return;
+    this._busy = true;
+    this._render();
+    try {
+      await this._hass.callWS({
+        type: "kd_helios/test_charge",
+        entry_id: this._data.entry.entry_id,
+      });
+      await this._load();
+    } catch (err) {
+      this._error = err && err.message ? err.message : String(err);
+    } finally {
+      this._busy = false;
+      this._render();
+    }
+  }
+
   // -- formatting ---------------------------------------------------------
   _currency() {
     return (this._hass && this._hass.config && this._hass.config.currency) || "EUR";
@@ -362,6 +380,14 @@ class KdHeliosPanel extends HTMLElement {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
+    });
+  }
+
+  _clock(iso) {
+    if (!iso) return "";
+    return new Date(iso).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
     });
   }
 
@@ -987,8 +1013,10 @@ class KdHeliosPanel extends HTMLElement {
           <span class="spacer"></span>
           <span class="chip"><span class="dot"></span>Live tariff ${this._money(prices.current, 3)}/kWh</span>
           ${control}
+          ${battery && battery.test_charge_until ? `<span class="chip warn"><span class="dot"></span>Test charge until ${this._clock(battery.test_charge_until)}</span>` : ""}
           ${this._error ? `<span class="chip warn"><span class="dot"></span>${this._esc(this._error)}</span>` : ""}
           <div class="ranges">${this._rangeTabs()}</div>
+          <button id="test-charge" title="Charge the battery for the rest of the current 15-minute price quarter" ${!battery || !battery.control_enabled || !battery.allow_writes || !battery.has_inverter || battery.test_charge_until || this._busy ? "disabled" : ""}>${battery && battery.test_charge_until ? "Test charge active" : "Charge 15 min"}</button>
           <button id="refresh">Refresh</button>
         </div>
 
@@ -1050,6 +1078,8 @@ class KdHeliosPanel extends HTMLElement {
 
     const apply = this.shadowRoot.getElementById("apply");
     if (apply) apply.addEventListener("click", () => this._apply());
+    const testCharge = this.shadowRoot.getElementById("test-charge");
+    if (testCharge) testCharge.addEventListener("click", () => this._testCharge());
     const refresh = this.shadowRoot.getElementById("refresh");
     if (refresh) refresh.addEventListener("click", () => this._load());
   }

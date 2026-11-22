@@ -213,6 +213,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self._control_key: tuple | None = None
         self._applied_current: int | None = None
         self._max_charge_current_a: int | None = None
+        #: End of a manual test charge, or None. It forces grid charging for
+        #: the rest of the current price quarter.
+        self._test_charge_until: datetime | None = None
         #: Recent control decisions, newest last. Exposed through diagnostics
         #: and the status sensor so a power or mode surprise can be explained.
         self.decision_log: deque[dict[str, Any]] = deque(maxlen=40)
@@ -340,6 +343,35 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
     def _persist_control(self) -> None:
         """Store the control state."""
         self.storage.async_set_control({"enabled": self.control_enabled})
+
+    async def async_charge_quarter(self) -> dict[str, Any]:
+        """Force a grid charge until the current 15-minute quarter ends.
+
+        This is the panel's test button: it bypasses the planner for the rest
+        of the current price quarter, but still respects the current ceiling,
+        the fuse cap, EV priority and the temperature derate.
+        """
+        config = self.battery_config
+        if config is None or config.inverter_device_id is None:
+            raise ValueError("No inverter is configured for this battery")
+        if not config.allow_writes:
+            raise ValueError(
+                "Writing to the inverter is disabled in the battery settings"
+            )
+        if not self.control_enabled:
+            raise ValueError("Turn inverter control on before starting a test charge")
+
+        now = dt_util.utcnow()
+        minutes = (now.minute // 15 + 1) * 15
+        end = now.replace(minute=0, second=0, microsecond=0) + timedelta(
+            minutes=minutes
+        )
+        self._test_charge_until = end
+        await self.async_refresh()
+        return {
+            "until": end.isoformat(),
+            "minutes": max(1, round((end - now).total_seconds() / 60)),
+        }
 
     async def async_set_control(self, enabled: bool) -> None:
         """Take or release control of the inverter.
@@ -1063,7 +1095,12 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             )
             self.battery_plan = battery_plan
             active_window = battery_plan.active_window(now)
-            charge = active_window is not None
+            if self._test_charge_until is not None and now >= self._test_charge_until:
+                self._test_charge_until = None
+            test_charge = (
+                self._test_charge_until is not None and now < self._test_charge_until
+            )
+            charge = test_charge or active_window is not None
             hold_soc = None
             if not charge and hold is not None and hold[0] <= now < hold[1]:
                 hold_soc = hold[2]
@@ -1079,8 +1116,11 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 settings.max_charge_kw if charge else 0.0, voltage, max_current
             )
             effective_kw = round(current_a * voltage / 1000.0, 2) if charge else 0.0
+            control_settings = (
+                replace(settings, target_soc_pct=100.0) if test_charge else settings
+            )
             control = build_control_plan(
-                settings,
+                control_settings,
                 charge=charge,
                 hold_soc=hold_soc,
                 power_w=self._discharge_power_w(self.battery_config),
@@ -1109,7 +1149,13 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             self._record_decision(
                 "control",
                 charge=charge,
-                target_soc=settings.target_soc_pct,
+                test_charge=test_charge,
+                test_until=(
+                    self._test_charge_until.isoformat()
+                    if self._test_charge_until is not None
+                    else None
+                ),
+                target_soc=control_settings.target_soc_pct,
                 reserve_soc=settings.reserve_soc_pct,
                 program_soc=control.programs[0].soc_pct,
                 program_source=int(control.programs[0].source),

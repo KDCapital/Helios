@@ -8,7 +8,7 @@ from typing import Final
 
 DOMAIN: Final = "kd_helios"
 NAME: Final = "KD Helios"
-VERSION: Final = "0.3.6"
+VERSION: Final = "0.3.7"
 
 # ---------------------------------------------------------------------------
 # Config entry
