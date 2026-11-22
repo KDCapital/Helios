@@ -269,6 +269,48 @@ def test_detection_offers_the_solarman_device_for_the_inverter(hass) -> None:
     assert suggestions["soc_entity"].startswith("sensor.")
 
 
+def test_grid_suggestions_use_the_fields_the_model_reads(hass) -> None:
+    """A suggestion filed under a name nothing reads is dropped without error.
+
+    The panel prefills a form by field key, so a homewizard suggestion keyed
+    ``import_energy_entity`` never reached the ``import_entity`` input that
+    GridConfig actually reads.
+    """
+    from dataclasses import fields
+
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.kd_helios.const import (
+        CONF_EXPORT_ENTITY,
+        CONF_IMPORT_ENTITY,
+        CONF_IMPORT_POWER_ENTITY,
+    )
+    from custom_components.kd_helios.models import GridConfig
+
+    registry = er.async_get(hass)
+    for unique, object_id, name in (
+        ("import", "p1_total_energy_import_kwh", "Total energy import"),
+        ("export", "p1_total_energy_export_kwh", "Total energy export"),
+        ("power", "p1_active_power", "Active power"),
+    ):
+        registry.async_get_or_create(
+            "sensor",
+            "homewizard",
+            unique,
+            suggested_object_id=object_id,
+            original_name=name,
+        )
+
+    suggestions = detect_entities(hass)["grid"]
+
+    assert suggestions == {
+        CONF_IMPORT_ENTITY: "sensor.p1_total_energy_import_kwh",
+        CONF_EXPORT_ENTITY: "sensor.p1_total_energy_export_kwh",
+        CONF_IMPORT_POWER_ENTITY: "sensor.p1_active_power",
+    }
+    assert set(suggestions) <= {field.name for field in fields(GridConfig)}
+
+
 def test_the_inverter_supplies_soc_and_house_load(hass) -> None:
     """Picking the inverter is enough; the sensors are derived from it."""
     from homeassistant.helpers import device_registry as dr

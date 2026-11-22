@@ -17,10 +17,20 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
+    CONF_EV_CAPACITY_ENTITY,
+    CONF_EV_DEPARTURE_ENTITY,
+    CONF_EV_POWER_ENTITY,
+    CONF_EV_SOC_ENTITY,
+    CONF_EXPORT_ENTITY,
+    CONF_HOUSE_LOAD_ENTITY,
+    CONF_IMPORT_ENTITY,
+    CONF_IMPORT_POWER_ENTITY,
+    CONF_INVERTER_DEVICE,
     CONF_KIND,
     CONF_NAME,
     CONF_PRICE_INTERVAL,
     CONF_PROVIDER,
+    CONF_SOC_ENTITY,
     PRICE_INTERVALS,
     PROVIDERS,
     SUBENTRY_TYPE_BATTERY,
@@ -246,21 +256,23 @@ def contract(entry: ConfigEntry) -> dict[str, Any]:
 
 
 #: What a sensor name has to contain to be offered for a field, per platform.
+#: The keys are the data keys the models read, so a suggestion cannot be dropped
+#: silently by being filed under a name nothing consumes.
 _HINTS: dict[str, dict[str, tuple[str, ...]]] = {
     "homewizard": {
-        "import_energy_entity": ("import", "total_energy_import"),
-        "export_energy_entity": ("export",),
-        "import_power_entity": ("power", "active_power"),
+        CONF_IMPORT_ENTITY: ("import", "total_energy_import"),
+        CONF_EXPORT_ENTITY: ("export",),
+        CONF_IMPORT_POWER_ENTITY: ("power", "active_power"),
     },
     "solarman": {
-        "soc_entity": ("soc", "state of charge"),
-        "house_load_entity": ("load power", "total load"),
+        CONF_SOC_ENTITY: ("soc", "state of charge"),
+        CONF_HOUSE_LOAD_ENTITY: ("load power", "total load"),
     },
     "evcc": {
-        "ev_soc_entity": ("soc",),
-        "ev_power_entity": ("charge power", "power"),
-        "ev_departure_entity": ("plan", "departure", "target time"),
-        "ev_capacity_entity": ("capacity", "battery size"),
+        CONF_EV_SOC_ENTITY: ("soc",),
+        CONF_EV_POWER_ENTITY: ("charge power", "power"),
+        CONF_EV_DEPARTURE_ENTITY: ("plan", "departure", "target time"),
+        CONF_EV_CAPACITY_ENTITY: ("capacity", "battery size"),
     },
 }
 
@@ -302,7 +314,7 @@ def detect_entities(hass: HomeAssistant) -> dict[str, dict[str, str]]:
             found_battery = dict(found)
             if solarman_device is not None:
                 # The inverter field is a device, not an entity.
-                found_battery["inverter_device"] = solarman_device
+                found_battery[CONF_INVERTER_DEVICE] = solarman_device
             suggestions["battery"] = found_battery
         elif kind == "evcc":
             suggestions["ev_charger"] = found
