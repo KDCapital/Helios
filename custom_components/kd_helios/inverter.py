@@ -40,7 +40,22 @@ _LOGGER = logging.getLogger(__name__)
 
 SOLARMAN_DOMAIN = "solarman"
 SOLARMAN_READ_SERVICE = "read_multiple_holding_registers"
-WRITE_PAUSE = 0.3
+SOLARMAN_WRITE_SINGLE_SERVICE = "write_holding_register"
+WRITE_PAUSE = 0.5
+
+#: A busy inverter answers a write with Modbus "Acknowledge": accepted, but it
+#: needs a long time to process it. Retrying the same block after a pause is
+#: safe because the registers are written idempotently.
+WRITE_ATTEMPTS = 3
+WRITE_RETRY_PAUSE = 1.0
+_TRANSIENT_WRITE_MARKERS = (
+    "server has accepted",
+    "acknowledge",
+    "busy",
+    "timeout",
+    "timed out",
+    "try again",
+)
 
 
 class InverterWriteError(HomeAssistantError):
@@ -109,6 +124,44 @@ def _raise_if_not_ready(err: AttributeError) -> None:
     raise InverterNotReadyError(
         "The Solarman integration has not finished setting up this inverter"
     ) from err
+
+
+def _is_transient_write_error(err: Exception) -> bool:
+    """Return True when the inverter asked us to try the write again later."""
+    message = str(err).lower()
+    return any(marker in message for marker in _TRANSIENT_WRITE_MARKERS)
+
+
+async def _async_write_call(
+    hass: HomeAssistant,
+    service: str,
+    data: dict[str, Any],
+    *,
+    description: str,
+) -> None:
+    """Call a Solarman write service, retrying a busy inverter."""
+    for attempt in range(1, WRITE_ATTEMPTS + 1):
+        try:
+            await hass.services.async_call(
+                SOLARMAN_DOMAIN,
+                service,
+                data,
+                blocking=True,
+            )
+            return
+        except AttributeError as err:
+            _raise_if_not_ready(err)
+        except Exception as err:
+            if attempt >= WRITE_ATTEMPTS or not _is_transient_write_error(err):
+                raise
+            _LOGGER.warning(
+                "Inverter busy writing %s (attempt %s/%s): %s; retrying",
+                description,
+                attempt,
+                WRITE_ATTEMPTS,
+                err,
+            )
+            await asyncio.sleep(WRITE_RETRY_PAUSE * attempt)
 
 
 async def async_read_registers(
@@ -214,15 +267,12 @@ async def async_write_registers(
         if not first:
             await asyncio.sleep(WRITE_PAUSE)
         first = False
-        try:
-            await hass.services.async_call(
-                SOLARMAN_DOMAIN,
-                SOLARMAN_WRITE_SERVICE,
-                {"device": device_id, "register": register, "values": values},
-                blocking=True,
-            )
-        except AttributeError as err:
-            _raise_if_not_ready(err)
+        await _async_write_call(
+            hass,
+            SOLARMAN_WRITE_SERVICE,
+            {"device": device_id, "register": register, "values": values},
+            description=f"registers {register}..{register + len(values) - 1}",
+        )
         written[register] = values
         _LOGGER.info(
             "Wrote registers %s..%s with %s",
@@ -233,27 +283,22 @@ async def async_write_registers(
 
     if work_mode is not None:
         await asyncio.sleep(WRITE_PAUSE)
-        try:
-            await hass.services.async_call(
-                SOLARMAN_DOMAIN,
-                "write_holding_register",
-                {
-                    "device": device_id,
-                    "register": WORK_MODE_REGISTER,
-                    "value": int(work_mode),
-                },
-                blocking=True,
-            )
-        except AttributeError as err:
-            _raise_if_not_ready(err)
+        await _async_write_call(
+            hass,
+            SOLARMAN_WRITE_SINGLE_SERVICE,
+            {
+                "device": device_id,
+                "register": WORK_MODE_REGISTER,
+                "value": int(work_mode),
+            },
+            description=f"work mode {int(work_mode)}",
+        )
         _LOGGER.info("Wrote work mode %s", int(work_mode))
 
     return written
 
 
-def _tou_registers(
-    tou: TouPlan, *, enable_charge: bool | None
-) -> dict[int, list[int]]:
+def _tou_registers(tou: TouPlan, *, enable_charge: bool | None) -> dict[int, list[int]]:
     """Return the TOU blocks plus the master switches they need.
 
     The four time/power/SOC/source blocks are ignored by the inverter when
@@ -261,12 +306,18 @@ def _tou_registers(
     last, after the programs, so the inverter never applies a half-written
     schedule.
     """
-    registers = tou.registers()
-    if enable_charge is not None:
-        registers[GRID_CHARGE_REGISTER] = [1 if enable_charge else 0]
-        registers[TOU_ENABLE_REGISTER] = [
-            TOU_ENABLE_ALL_DAYS if enable_charge else 0
-        ]
+    blocks = tou.registers()
+    if enable_charge is None:
+        # Release: cut the grid source first, before touching times or power.
+        # A failure after this block leaves the inverter unable to buy power.
+        registers = {TOU_REGISTERS["sources"]: blocks[TOU_REGISTERS["sources"]]}
+        for name in ("times", "power", "soc"):
+            registers[TOU_REGISTERS[name]] = blocks[TOU_REGISTERS[name]]
+        return registers
+
+    registers = blocks
+    registers[GRID_CHARGE_REGISTER] = [1 if enable_charge else 0]
+    registers[TOU_ENABLE_REGISTER] = [TOU_ENABLE_ALL_DAYS if enable_charge else 0]
     return registers
 
 

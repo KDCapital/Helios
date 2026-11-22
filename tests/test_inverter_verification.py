@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from homeassistant.core import HomeAssistant, SupportsResponse
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -37,6 +38,7 @@ class FakeInverter:
 
     def __init__(self) -> None:
         self.registers: dict[int, int] = {}
+        self.write_order: list[int] = []
         self.writes = 0
         self.reads = 0
         self.corrupt_next_read = False
@@ -45,6 +47,7 @@ class FakeInverter:
     async def write_multiple(self, call) -> None:
         self.writes += 1
         register = call.data["register"]
+        self.write_order.append(register)
         for offset, value in enumerate(call.data["values"]):
             self.registers[register + offset] = value
         if self.corrupt_always:
@@ -53,6 +56,7 @@ class FakeInverter:
                 self.registers[register + offset] = 0
 
     async def write_single(self, call) -> None:
+        self.write_order.append(call.data["register"])
         self.registers[call.data["register"]] = call.data["value"]
 
     async def read_multiple(self, call) -> dict[int, int]:
@@ -226,3 +230,31 @@ async def test_a_release_leaves_the_master_switches_alone(
 
     assert 130 not in inverter.registers
     assert 146 not in inverter.registers
+    # Cut the grid source before changing times or power.
+    assert inverter.write_order[0] == 172
+
+
+async def test_a_busy_inverter_is_written_again(
+    hass: HomeAssistant, monkeypatch
+) -> None:
+    """Modbus Acknowledge means "try later", not "give up"."""
+    monkeypatch.setattr("custom_components.kd_helios.inverter.WRITE_RETRY_PAUSE", 0)
+    calls = {"count": 0}
+
+    async def busy_once(call) -> None:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise HomeAssistantError(
+                "The server has accepted the request and is processing it, "
+                "but a long duration of time will be required to do so"
+            )
+
+    hass.services.async_register(
+        "solarman", "write_multiple_holding_registers", busy_once
+    )
+
+    result = await async_write_tou_verified(hass, DEVICE, make_plan())
+
+    assert result["verified"] is None
+    # Six blocks, with the first one retried once.
+    assert calls["count"] == 7

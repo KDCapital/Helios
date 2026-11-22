@@ -374,6 +374,11 @@ work mode is left alone while charging; it is only written back to the
 configured restore mode when control is released, together with the
 generator-only restore slots.
 
+A busy inverter can answer a write with Modbus *Acknowledge* ("accepted, but
+this will take a while"). The write is retried before it is reported as
+failed. Releasing control writes the source block first, so a failure halfway
+through cannot leave a grid-charging schedule behind.
+
 #### Deliberately not included: saldering arbitrage
 
 While saldering runs (until 1 January 2027), energy returned to the grid is
@@ -795,7 +800,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 342 tests
+.venv/bin/python -m pytest        # 343 tests
 .venv/bin/ruff check custom_components tests
 ```
 
