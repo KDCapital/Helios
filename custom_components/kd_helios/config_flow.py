@@ -38,6 +38,7 @@ from .const import (
     CONF_EV_DEPARTURE_ENTITY,
     CONF_EV_DEPARTURE_WEEKDAY,
     CONF_EV_DEPARTURE_WEEKEND,
+    CONF_EV_DEVICE,
     CONF_EV_PACK_KWH,
     CONF_EV_POWER_ENTITY,
     CONF_EV_SOC_ENTITY,
@@ -210,9 +211,15 @@ def _optional_entity(
 
 
 def _ev_schedule_schema() -> vol.Schema:
-    """Schema for the car's charging schedule."""
+    """Schema for the car and its optional charging schedule."""
     return vol.Schema(
         {
+            vol.Optional(CONF_EV_DEVICE): vol.Any(
+                None,
+                selector.DeviceSelector(
+                    selector.DeviceSelectorConfig(integration="evcc")
+                ),
+            ),
             vol.Optional(CONF_EV_PACK_KWH): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=1,
@@ -338,10 +345,11 @@ def _ere_schema() -> vol.Schema:
 
 
 def _ev_settings_schema() -> vol.Schema:
-    """Schema for an EV charger with reimbursement and ERE expanded."""
+    """Schema for an EV charger with the car, reimbursement and ERE expanded."""
     return vol.Schema(
         {
             **_device_schema().schema,
+            **_ev_schedule_schema().schema,
             **_reimbursement_schema().schema,
             **_ere_schema().schema,
         }
@@ -913,23 +921,28 @@ class EvChargerSubentryFlow(ConfigSubentryFlow):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Handle the basic charger step."""
+        """Handle the metering that the cost calculation needs."""
         errors: dict[str, str] = {}
         if user_input is not None:
             errors = _validate_device(user_input)
             if not errors:
                 self._device = dict(user_input)
-                return await self.async_step_reimbursement()
+                return await self.async_step_vehicle()
 
         return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema(
-                {
-                    **_device_schema().schema,
-                    **_ev_schedule_schema().schema,
-                }
-            ),
-            errors=errors,
+            step_id="user", data_schema=_device_schema(), errors=errors
+        )
+
+    async def async_step_vehicle(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle the optional car and charging plan."""
+        if user_input is not None:
+            self._device |= dict(user_input)
+            return await self.async_step_reimbursement()
+
+        return self.async_show_form(
+            step_id="vehicle", data_schema=_ev_schedule_schema(), errors={}
         )
 
     async def async_step_reimbursement(

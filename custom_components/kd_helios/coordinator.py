@@ -69,7 +69,7 @@ from .prices import (
 )
 from .profile import LoadProfile
 from .resolve import resolve_ev, resolve_grid, resolve_joulo
-from .sources import read_number
+from .sources import read_number, read_power
 from .storage import HeliosStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -417,41 +417,43 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         config = self.battery_config
         if config is None:
             return None
-        ev = next(
-            (
-                tracker.config
-                for tracker in self.trackers.values()
-                if tracker.config.has_ev_schedule
-            ),
-            None,
-        )
-        if ev is None:
-            return None
+        # More than one car can be configured; use the first one that actually
+        # has everything needed, so an idle or unreadable car does not hide the
+        # other one's window.
+        for tracker in self.trackers.values():
+            ev = tracker.config
+            if not ev.has_ev_schedule:
+                continue
 
-        soc = read_number(self.hass, ev.ev_soc_entity)
-        if soc is None:
-            return None
-        capacity = ev.ev_pack_kwh
-        if ev.ev_capacity_entity is not None:
-            capacity = read_number(self.hass, ev.ev_capacity_entity) or capacity
-        power_kw = read_number(self.hass, ev.ev_power_entity) or 0.0
-        if capacity <= 0 or power_kw <= 0:
-            return None
+            soc = read_number(self.hass, ev.ev_soc_entity)
+            if soc is None:
+                continue
+            capacity = ev.ev_pack_kwh
+            if ev.ev_capacity_entity is not None:
+                capacity = read_number(self.hass, ev.ev_capacity_entity) or capacity
+            power_w = read_power(self.hass, ev.ev_power_entity)
+            if power_w is None:
+                # The charger's own power sensor is a good proxy for the car's.
+                power_w = read_power(self.hass, ev.power_entity)
+            power_kw = (power_w or 0.0) / 1000.0
+            if capacity <= 0 or power_kw <= 0:
+                continue
 
-        departure = self._ev_departure(now, ev)
-        if departure is None:
-            return None
+            departure = self._ev_departure(now, ev)
+            if departure is None:
+                continue
 
-        needed = energy_needed_kwh(capacity, ev.ev_target_soc, soc)
-        if needed <= 0:
-            return None
+            needed = energy_needed_kwh(capacity, ev.ev_target_soc, soc)
+            if needed <= 0:
+                continue
 
-        window = ev_charge_window(
-            series.priced_slots(now, departure), departure, needed, power_kw
-        )
-        if window is None:
-            return None
-        return (window.start, window.end, soc)
+            window = ev_charge_window(
+                series.priced_slots(now, departure), departure, needed, power_kw
+            )
+            if window is None:
+                continue
+            return (window.start, window.end, soc)
+        return None
 
     def _ev_departure(self, now, config) -> datetime | None:
         """Return the next departure time of the car."""

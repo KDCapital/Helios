@@ -336,33 +336,43 @@
       },
       "step": {
         "user": {
-          "title": "Laadpaal toevoegen",
-          "description": "Koppel de vermogens- of energiesensor van de lader. Een energiesensor (kWh) heeft de voorkeur, want die is exact.\n\nDe volgende twee stappen vragen naar de werkgeversvergoeding en ERE-certificaten; die gelden alleen voor laden.",
+          "title": "Een laadpaal toevoegen",
+          "description": "Deze pagina is alles wat KD Helios nodig heeft om het laden te beprijzen: de vermogenssensor van de lader, de cumulatieve energiesensor, of beide. Een energiesensor (kWh) is exact en heeft de voorkeur; de vermogenssensor alleen volgt het laden live.\n\nVoeg één item per laadpunt of auto toe. Elk item houdt zijn eigen sensoren, vergoeding en ERE en verschijnt apart op het dashboard.",
           "data": {
             "name": "Naam",
-            "power_entity": "Vermogenssensor",
-            "energy_entity": "Energiesensor",
+            "power_entity": "Vermogenssensor lader",
+            "energy_entity": "Energiesensor lader"
+          },
+          "data_description": {
+            "name": "De naam in Home Assistant. Gebruik bij meerdere auto's of laadpunten een herkenbare naam, bijvoorbeeld \"Laadpaal garage\".",
+            "power_entity": "Actueel vermogen van dit laadpunt in W of kW, bijvoorbeeld de Charge power van EVCC of een vermogensmeter op de lader. Voor de live weergave; voeg voor exacte kosten ook de energiesensor toe.",
+            "energy_entity": "Cumulatieve energie in kWh, bijvoorbeeld de Charge energy van EVCC of een kWh-meter. Heeft de voorkeur: elke kWh uit deze teller wordt exact beprijsd."
+          }
+        },
+        "vehicle": {
+          "title": "Auto en laadplan (optioneel)",
+          "description": "Alleen nodig als KD Helios het laden vóór vertrek moet plannen en de thuisbatterij uit dat venster moet houden. Laat de accucapaciteit leeg als je alleen kosten wilt volgen; je kunt dit later toevoegen via Opnieuw configureren.\n\nKies je het EVCC-apparaat, dan worden de sensoren hieronder automatisch ingevuld; wat je zelf invult, gaat voor.",
+          "data": {
+            "ev_device": "Auto-apparaat (EVCC)",
             "ev_pack_kwh": "Accu van de auto",
             "ev_target_soc": "Doel-SOC auto",
-            "ev_departure_weekday": "Vertrek op werkdagen",
+            "ev_departure_weekday": "Vertrek op weekdagen",
             "ev_departure_weekend": "Vertrek in het weekend",
             "ev_soc_entity": "SOC-sensor auto",
             "ev_capacity_entity": "Capaciteitssensor auto",
-            "ev_power_entity": "Vermogenssensor lader",
+            "ev_power_entity": "Laadvermogensensor auto",
             "ev_departure_entity": "Vertreksensor"
           },
           "data_description": {
-            "name": "De naam in Home Assistant, bijvoorbeeld \"Laadpaal\".",
-            "power_entity": "Een sensor in W of kW met het actuele vermogen.",
-            "energy_entity": "Een cumulatieve sensor in kWh. Gaat voor op de vermogenssensor.",
-            "ev_pack_kwh": "Hiermee bepalen we hoeveel energie de auto nog nodig heeft.",
-            "ev_target_soc": "Het laadniveau waar de auto naartoe laadt.",
-            "ev_departure_weekday": "Wanneer de auto op een werkdag vertrekt; het goedkope venster wordt daarvoor gepland.",
-            "ev_departure_weekend": "Wanneer de auto in het weekend vertrekt.",
-            "ev_soc_entity": "Een EVCC- of Tibber-sensor met de laadstand van de auto.",
-            "ev_capacity_entity": "Optioneel: een sensor met de bruikbare accucapaciteit in plaats van de waarde hierboven.",
-            "ev_power_entity": "Het vermogen van de lader, gebruikt om het laadvenster te bepalen.",
-            "ev_departure_entity": "Optioneel: een EVCC-vertrektijdsensor. Overschrijft de tijden hierboven."
+            "ev_device": "Het EVCC-apparaat of laadpunt van deze auto. De SOC-, laadvermogen-, capaciteits- en vertreksensoren worden automatisch gebruikt.",
+            "ev_pack_kwh": "Nuttige accucapaciteit in kWh, bijvoorbeeld 77 voor een Tesla Model 3 Long Range. Zonder dit (of een capaciteitssensor) wordt er geen laadplan gemaakt.",
+            "ev_target_soc": "Het laadniveau dat de auto voor vertrek moet halen, bijvoorbeeld 80% voor dagelijks gebruik.",
+            "ev_departure_weekday": "Tijd waarop de auto normaal op weekdagen vertrekt. De goedkoopste uren daarvoor worden gekozen.",
+            "ev_departure_weekend": "Tijd waarop de auto in het weekend vertrekt.",
+            "ev_soc_entity": "Laadniveau van de auto in %, bijvoorbeeld de Vehicle SOC van EVCC. Nodig om te weten hoeveel energie er nog ontbreekt.",
+            "ev_capacity_entity": "Optionele sensor met de nuttige accucapaciteit in kWh, als de auto die publiceert. Gaat voor op de vaste waarde hierboven.",
+            "ev_power_entity": "Laadvermogen van de auto in W of kW, bijvoorbeeld de Charge power van EVCC. Bepaalt de grootte van het laadvenster; laat leeg om de vermogenssensor van de lader te gebruiken.",
+            "ev_departure_entity": "Optionele datum/tijd- of tijdsensor met het volgende vertrek, bijvoorbeeld het plan van EVCC. Gaat voor op de vaste tijden hierboven."
           }
         },
         "reimbursement": {
@@ -407,11 +417,11 @@
         },
         "reconfigure": {
           "title": "Laadpaal bewerken",
-          "description": "Wijzig elke instelling van deze lader. De totalen, inclusief de al afgerekende energie, blijven behouden.",
+          "description": "Wijzig elke instelling van deze lader, inclusief het optionele laadplan. De totalen, ook de al beprijsde energie, blijven behouden.",
           "data": {
             "name": "Naam",
-            "power_entity": "Vermogenssensor",
-            "energy_entity": "Energiesensor",
+            "power_entity": "Vermogenssensor lader",
+            "energy_entity": "Energiesensor lader",
             "reimbursement_mode": "Soort vergoeding",
             "reimbursement_rate": "Vaste vergoeding",
             "reimbursement_surcharge": "Vaste toeslag",
@@ -423,12 +433,42 @@
             "ere_price": "Prijs per ERE",
             "ere_price_entity": "Sensor met actuele ERE-prijs",
             "ere_credits_entity": "Joulo ERE-tegoedsensor",
-            "ere_kwh_entity": "Joulo totaal kWh-sensor"
+            "ere_kwh_entity": "Joulo totaal kWh-sensor",
+            "ev_device": "Auto-apparaat (EVCC)",
+            "ev_pack_kwh": "Accu van de auto",
+            "ev_target_soc": "Doel-SOC auto",
+            "ev_departure_weekday": "Vertrek op weekdagen",
+            "ev_departure_weekend": "Vertrek in het weekend",
+            "ev_soc_entity": "SOC-sensor auto",
+            "ev_capacity_entity": "Capaciteitssensor auto",
+            "ev_power_entity": "Laadvermogensensor auto",
+            "ev_departure_entity": "Vertreksensor"
           },
           "data_description": {
             "reimbursement_basis": "EPEX spot is exclusief btw en energiebelasting. All-in is wat je thuis betaalt.",
-            "reimbursement_interval": "Hoe vaak het tarief van je werkgever wisselt, onafhankelijk van je eigen contract.",
-            "ere_per_kwh": "Wordt ook gebruikt als terugvalwaarde zolang er nog geen Joulo-verhouding is."
+            "reimbursement_interval": "Hoe vaak het tarief van je werkgever wisselt. Kies per uur als de vergoeding per uur wordt afgerekend terwijl je eigen contract per kwartier rekent; de vergoeding gebruikt dan het uurgemiddelde in plaats van de kwartierprijs.",
+            "ere_per_kwh": "Wordt ook gebruikt als terugvalwaarde zolang er nog geen Joulo-verhouding is.",
+            "ev_device": "Het EVCC-apparaat of laadpunt van deze auto. De SOC-, laadvermogen-, capaciteits- en vertreksensoren worden automatisch gebruikt.",
+            "ev_pack_kwh": "Nuttige accucapaciteit in kWh, bijvoorbeeld 77 voor een Tesla Model 3 Long Range. Zonder dit (of een capaciteitssensor) wordt er geen laadplan gemaakt.",
+            "ev_target_soc": "Het laadniveau dat de auto voor vertrek moet halen, bijvoorbeeld 80% voor dagelijks gebruik.",
+            "ev_departure_weekday": "Tijd waarop de auto normaal op weekdagen vertrekt. De goedkoopste uren daarvoor worden gekozen.",
+            "ev_departure_weekend": "Tijd waarop de auto in het weekend vertrekt.",
+            "ev_soc_entity": "Laadniveau van de auto in %, bijvoorbeeld de Vehicle SOC van EVCC. Nodig om te weten hoeveel energie er nog ontbreekt.",
+            "ev_capacity_entity": "Optionele sensor met de nuttige accucapaciteit in kWh, als de auto die publiceert. Gaat voor op de vaste waarde hierboven.",
+            "ev_power_entity": "Laadvermogen van de auto in W of kW, bijvoorbeeld de Charge power van EVCC. Bepaalt de grootte van het laadvenster; laat leeg om de vermogenssensor van de lader te gebruiken.",
+            "ev_departure_entity": "Optionele datum/tijd- of tijdsensor met het volgende vertrek, bijvoorbeeld het plan van EVCC. Gaat voor op de vaste tijden hierboven.",
+            "name": "De naam in Home Assistant. Gebruik bij meerdere auto's of laadpunten een herkenbare naam, bijvoorbeeld \"Laadpaal garage\".",
+            "power_entity": "Actueel vermogen van dit laadpunt in W of kW, bijvoorbeeld de Charge power van EVCC of een vermogensmeter op de lader. Voor de live weergave; voeg voor exacte kosten ook de energiesensor toe.",
+            "energy_entity": "Cumulatieve energie in kWh, bijvoorbeeld de Charge energy van EVCC of een kWh-meter. Heeft de voorkeur: elke kWh uit deze teller wordt exact beprijsd.",
+            "reimbursement_mode": "Geen vergoeding, een vast tarief, of de dynamische formule.",
+            "reimbursement_rate": "Bedrag dat je werkgever per kWh betaalt, in euro.",
+            "reimbursement_surcharge": "Vast bedrag bovenop de marktprijs, in euro per kWh.",
+            "reimbursement_percent": "Vermenigvuldiger na de toeslag. 100 betekent geen extra marge, 105 voegt vijf procent toe.",
+            "ere_mode": "Geen ERE-waarde, een vaste verhouding, of de Joulo-integratie.",
+            "ere_price": "Waarde van één ERE-certificaat in euro.",
+            "ere_price_entity": "Optionele sensor met de actuele prijs per ERE, bijvoorbeeld de Joulo-marktprijssensor.",
+            "ere_credits_entity": "Cumulatief ERE-tegoed, bijvoorbeeld sensor.joulo_total_ere_credits.",
+            "ere_kwh_entity": "Cumulatief geladen energie, bijvoorbeeld sensor.joulo_total_all_kwh."
           }
         }
       },

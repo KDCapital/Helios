@@ -19,6 +19,7 @@ from custom_components.kd_helios.const import (
     CONF_ERE_PRICE_ENTITY,
     CONF_EV_DEPARTURE_WEEKDAY,
     CONF_EV_DEPARTURE_WEEKEND,
+    CONF_EV_DEVICE,
     CONF_EV_PACK_KWH,
     CONF_EV_SOC_ENTITY,
     CONF_EV_TARGET_SOC,
@@ -204,12 +205,21 @@ async def _start_flow(hass, entry: MockConfigEntry, subentry_type: str) -> dict:
 
 
 async def _add_ev_charger(
-    hass, entry: MockConfigEntry, reimbursement: dict, ere: dict
+    hass,
+    entry: MockConfigEntry,
+    reimbursement: dict,
+    ere: dict,
+    vehicle: dict | None = None,
+    basic: dict | None = None,
 ) -> dict:
     """Walk the EV charger flow to the end."""
     result = await _start_flow(hass, entry, SUBENTRY_TYPE_EV_CHARGER)
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], EV_INPUT
+        result["flow_id"], basic or EV_INPUT
+    )
+    assert result["step_id"] == "vehicle"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], vehicle or {}
     )
     assert result["step_id"] == "reimbursement"
     result = await hass.config_entries.subentries.async_configure(
@@ -239,8 +249,8 @@ async def test_plain_device_is_added_in_one_step(hass, loaded_entry) -> None:
     assert CONF_REIMBURSEMENT_MODE not in subentry.data
 
 
-async def test_ev_charger_walks_all_three_steps(hass, loaded_entry) -> None:
-    """An EV charger is its own entry point and collects both extras."""
+async def test_ev_charger_walks_all_four_steps(hass, loaded_entry) -> None:
+    """Metering comes first, then the optional car, reimbursement and ERE."""
     result = await _add_ev_charger(
         hass,
         loaded_entry,
@@ -250,6 +260,13 @@ async def test_ev_charger_walks_all_three_steps(hass, loaded_entry) -> None:
             CONF_REIMBURSEMENT_INTERVAL: "hourly",
         },
         {CONF_ERE_MODE: "fixed", CONF_ERE_PER_KWH: 0.25, CONF_ERE_PRICE: 4.0},
+        vehicle={
+            CONF_EV_PACK_KWH: 77,
+            CONF_EV_TARGET_SOC: 80,
+            CONF_EV_DEPARTURE_WEEKDAY: "07:00",
+            CONF_EV_DEPARTURE_WEEKEND: "09:30",
+            CONF_EV_SOC_ENTITY: "sensor.car_soc",
+        },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
@@ -260,8 +277,63 @@ async def test_ev_charger_walks_all_three_steps(hass, loaded_entry) -> None:
     assert subentry.data[CONF_KIND] == "ev_charger"
     assert subentry.data[CONF_REIMBURSEMENT_SURCHARGE] == pytest.approx(0.025)
     assert subentry.data[CONF_ERE_PER_KWH] == pytest.approx(0.25)
+    assert subentry.data[CONF_EV_PACK_KWH] == pytest.approx(77)
+    assert subentry.data[CONF_EV_TARGET_SOC] == 80
     # And nothing of it leaks into the plain device list.
     assert loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE) == []
+
+
+async def test_the_car_page_is_optional(hass, loaded_entry) -> None:
+    """Cost tracking alone never needs the car or its sensors."""
+    result = await _add_ev_charger(
+        hass,
+        loaded_entry,
+        {CONF_REIMBURSEMENT_MODE: "none"},
+        {CONF_ERE_MODE: "none"},
+        vehicle={},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[0]
+    assert CONF_EV_PACK_KWH not in subentry.data
+    assert CONF_EV_DEVICE not in subentry.data
+    assert CONF_REIMBURSEMENT_MODE in subentry.data
+
+
+async def test_two_ev_chargers_are_tracked_separately(hass, loaded_entry) -> None:
+    """A household with two cars adds one charger per car."""
+    first = await _add_ev_charger(
+        hass,
+        loaded_entry,
+        {CONF_REIMBURSEMENT_MODE: "none"},
+        {CONF_ERE_MODE: "none"},
+        vehicle={CONF_EV_PACK_KWH: 77},
+    )
+    second = await _add_ev_charger(
+        hass,
+        loaded_entry,
+        {CONF_REIMBURSEMENT_MODE: "fixed", CONF_REIMBURSEMENT_RATE: 0.35},
+        {CONF_ERE_MODE: "none"},
+        vehicle={CONF_EV_PACK_KWH: 52},
+        basic={
+            CONF_NAME: "Laadpaal tweede auto",
+            CONF_ENERGY_ENTITY: "sensor.ev2_energy",
+        },
+    )
+    assert first["type"] is FlowResultType.CREATE_ENTRY
+    assert second["type"] is FlowResultType.CREATE_ENTRY
+
+    subentries = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)
+    assert len(subentries) == 2
+    first_subentry, second_subentry = subentries
+    assert first_subentry.data[CONF_NAME] == "EV charger"
+    assert second_subentry.data[CONF_NAME] == "Laadpaal tweede auto"
+    assert first_subentry.data[CONF_ENERGY_ENTITY] == "sensor.ev_energy"
+    assert second_subentry.data[CONF_ENERGY_ENTITY] == "sensor.ev2_energy"
+    assert first_subentry.data[CONF_REIMBURSEMENT_MODE] == "none"
+    assert second_subentry.data[CONF_REIMBURSEMENT_RATE] == pytest.approx(0.35)
+    assert first_subentry.data[CONF_EV_PACK_KWH] == pytest.approx(77)
+    assert second_subentry.data[CONF_EV_PACK_KWH] == pytest.approx(52)
 
 
 async def test_device_needs_a_source_entity(hass, loaded_entry) -> None:
@@ -291,6 +363,9 @@ async def test_fixed_reimbursement_needs_a_rate(hass, loaded_entry) -> None:
     result = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_EV_CHARGER)
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], EV_INPUT
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {}
     )
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
@@ -394,6 +469,66 @@ async def test_reconfigure_updates_a_device(hass, loaded_entry) -> None:
 
     subentries = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_DEVICE)
     assert subentries[0].title == "Heat pump (basement)"
+
+
+async def test_the_evcc_device_is_stored_on_the_car_page(hass, loaded_entry) -> None:
+    """Picking the EVCC loadpoint is what derives the car's sensors at runtime."""
+    result = await _add_ev_charger(
+        hass,
+        loaded_entry,
+        {CONF_REIMBURSEMENT_MODE: "none"},
+        {CONF_ERE_MODE: "none"},
+        vehicle={CONF_EV_DEVICE: "evcc-loadpoint-1", CONF_EV_PACK_KWH: 77},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[0]
+    assert subentry.data[CONF_EV_DEVICE] == "evcc-loadpoint-1"
+
+
+async def test_reconfigure_exposes_the_car_plan(hass, loaded_entry) -> None:
+    """Editing a charger must not hide the fields the new step collected."""
+    await _add_ev_charger(
+        hass,
+        loaded_entry,
+        {CONF_REIMBURSEMENT_MODE: "none"},
+        {CONF_ERE_MODE: "none"},
+        vehicle={CONF_EV_PACK_KWH: 77, CONF_EV_SOC_ENTITY: "sensor.car_soc"},
+    )
+    subentry = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[0]
+
+    result = await hass.config_entries.subentries.async_init(
+        (loaded_entry.entry_id, SUBENTRY_TYPE_EV_CHARGER),
+        context={"source": SOURCE_RECONFIGURE, "subentry_id": subentry.subentry_id},
+    )
+    assert result["step_id"] == "reconfigure"
+    schema = result["data_schema"].schema
+    for key in (
+        CONF_EV_DEVICE,
+        CONF_EV_PACK_KWH,
+        CONF_EV_TARGET_SOC,
+        CONF_EV_SOC_ENTITY,
+    ):
+        assert key in schema
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            **EV_INPUT,
+            CONF_EV_PACK_KWH: 82,
+            CONF_EV_TARGET_SOC: 90,
+            CONF_EV_DEPARTURE_WEEKDAY: "06:30",
+            CONF_EV_DEPARTURE_WEEKEND: "09:00",
+            CONF_REIMBURSEMENT_MODE: "none",
+            CONF_ERE_MODE: "none",
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    await hass.async_block_till_done()
+
+    updated = loaded_entry.get_subentries_of_type(SUBENTRY_TYPE_EV_CHARGER)[0]
+    assert updated.data[CONF_EV_PACK_KWH] == pytest.approx(82)
+    assert updated.data[CONF_EV_TARGET_SOC] == 90
 
 
 async def test_legacy_ev_device_keeps_its_reimbursement(hass, loaded_entry) -> None:
@@ -714,17 +849,27 @@ async def test_the_battery_flow_asks_for_the_connection(hass, loaded_entry) -> N
 
 
 async def test_the_ev_flow_asks_for_the_cars_schedule(hass, loaded_entry) -> None:
-    """The car's schedule is on the EV charger, not on a plain device."""
+    """Metering is its own page; the car's schedule comes after it."""
     result = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_EV_CHARGER)
     keys = {str(key) for key in result["data_schema"].schema}
+    assert CONF_POWER_ENTITY in keys
+    assert CONF_ENERGY_ENTITY in keys
+    assert CONF_EV_PACK_KWH not in keys
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], EV_INPUT
+    )
+    assert result["step_id"] == "vehicle"
+    vehicle_keys = {str(key) for key in result["data_schema"].schema}
     for key in (
+        CONF_EV_DEVICE,
         CONF_EV_PACK_KWH,
         CONF_EV_TARGET_SOC,
         CONF_EV_DEPARTURE_WEEKDAY,
         CONF_EV_DEPARTURE_WEEKEND,
         CONF_EV_SOC_ENTITY,
     ):
-        assert key in keys
+        assert key in vehicle_keys
 
     device = await _start_flow(hass, loaded_entry, SUBENTRY_TYPE_DEVICE)
     assert CONF_EV_PACK_KWH not in {str(key) for key in device["data_schema"].schema}

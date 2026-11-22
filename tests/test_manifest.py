@@ -123,7 +123,7 @@ def test_every_subentry_type_has_translations() -> None:
     assert "ev_charger" in subentries
     charger = subentries["ev_charger"]
     assert charger["initiate_flow"]["user"]
-    for step in ("user", "reimbursement", "ere", "reconfigure"):
+    for step in ("user", "vehicle", "reimbursement", "ere", "reconfigure"):
         assert step in charger["step"], step
 
     assert "grid" in subentries
@@ -177,6 +177,17 @@ def test_translations_contain_no_key_references() -> None:
     for name in ("strings.json", "translations/en.json", "translations/nl.json"):
         text = (COMPONENT / name).read_text(encoding="utf-8")
         assert "%key:" not in text, f"{name} still contains a key reference"
+
+
+def test_ev_steps_are_described_in_both_languages() -> None:
+    """Every EV field carries a description, including the optional car page."""
+    for name in ("translations/en.json", "translations/nl.json"):
+        data = json.loads((COMPONENT / name).read_text(encoding="utf-8"))
+        charger = data["config_subentries"]["ev_charger"]
+        for step, content in charger["step"].items():
+            assert content.get("title"), (name, step)
+            for key in content.get("data", {}):
+                assert content.get("data_description", {}).get(key), (name, step, key)
 
 
 def test_grid_steps_are_described_in_both_languages() -> None:

@@ -337,32 +337,42 @@
       "step": {
         "user": {
           "title": "Add an EV charger",
-          "description": "Attach the power or energy entity of the charger. An energy entity (kWh) is preferred because it is exact.\n\nThe next two steps ask about employer reimbursement and ERE certificates, which only apply to charging.",
+          "description": "This page is all KD Helios needs to price charging: the charger's power sensor, its cumulative energy sensor, or both. An energy sensor (kWh) is exact and preferred; the power sensor alone follows charging live.\n\nAdd one entry per charging point or car. Each keeps its own sensors, reimbursement and ERE, and appears separately on the dashboard.",
           "data": {
             "name": "Name",
-            "power_entity": "Power entity",
-            "energy_entity": "Energy entity",
+            "power_entity": "Charger power sensor",
+            "energy_entity": "Charger energy sensor"
+          },
+          "data_description": {
+            "name": "Shown in Home Assistant. When you have more than one car or charging point, use a name you recognise, for example \"Laadpaal garage\".",
+            "power_entity": "Live power of this charging point in W or kW, for example EVCC's Charge power or a power meter on the charger. Used for the live reading; add the energy sensor as well for exact cost totals.",
+            "energy_entity": "Cumulative energy in kWh, for example EVCC's Charge energy or a kWh meter. Preferred: every kWh from this counter is priced exactly."
+          }
+        },
+        "vehicle": {
+          "title": "Car and charging plan (optional)",
+          "description": "Only needed if KD Helios should plan charging before the car leaves and keep the home battery out of that window. Leave the car battery size empty when you only want cost tracking; you can add this later with Reconfigure.\n\nPicking the EVCC device fills the sensors below; anything you enter yourself takes priority.",
+          "data": {
+            "ev_device": "Car device (EVCC)",
             "ev_pack_kwh": "Car battery size",
             "ev_target_soc": "Car target SOC",
             "ev_departure_weekday": "Departure on weekdays",
             "ev_departure_weekend": "Departure in the weekend",
             "ev_soc_entity": "Car SOC sensor",
             "ev_capacity_entity": "Car capacity sensor",
-            "ev_power_entity": "Charger power sensor",
+            "ev_power_entity": "Car charging power sensor",
             "ev_departure_entity": "Departure sensor"
           },
           "data_description": {
-            "name": "The name shown in Home Assistant, for example \"EV charger\".",
-            "power_entity": "A sensor in W or kW that reports current power.",
-            "energy_entity": "A cumulative sensor in kWh. Takes precedence over the power entity.",
-            "ev_pack_kwh": "Used to work out how much energy the car still needs.",
-            "ev_target_soc": "The charge level the car charges to.",
-            "ev_departure_weekday": "When the car leaves on a weekday; the cheap window is planned before it.",
-            "ev_departure_weekend": "When the car leaves on a weekend day.",
-            "ev_soc_entity": "An EVCC or Tibber sensor with the car's state of charge.",
-            "ev_capacity_entity": "Optional: a sensor with the usable pack size, instead of the value above.",
-            "ev_power_entity": "The charger's power, used to size the charging window.",
-            "ev_departure_entity": "Optional: an EVCC departure time sensor. Overrides the times above."
+            "ev_device": "The EVCC device or loadpoint for this car. Its SOC, charging power, capacity and departure sensors are used automatically.",
+            "ev_pack_kwh": "Usable battery size in kWh, for example 77 for a Tesla Model 3 Long Range. Without this (or a capacity sensor) no charging is planned.",
+            "ev_target_soc": "The charge level the car should reach before departure, for example 80% for daily use.",
+            "ev_departure_weekday": "Time the car normally leaves on weekdays. The cheapest hours before it are chosen.",
+            "ev_departure_weekend": "Time the car normally leaves on weekend days.",
+            "ev_soc_entity": "State of charge of the car in %, for example EVCC's Vehicle SOC. Needed to know how much energy is still missing.",
+            "ev_capacity_entity": "Optional sensor with the usable battery size in kWh, if the car publishes it. Overrides the fixed size above.",
+            "ev_power_entity": "Charging power of the car in W or kW, for example EVCC's Charge power. Used to size the charging window; leave empty to use the charger's power sensor.",
+            "ev_departure_entity": "Optional date/time or time sensor with the next departure, for example EVCC's plan. Overrides the fixed times above."
           }
         },
         "reimbursement": {
@@ -407,11 +417,11 @@
         },
         "reconfigure": {
           "title": "Edit EV charger",
-          "description": "Change any setting of this charger. Its totals, including the energy already priced, are preserved.",
+          "description": "Change any setting of this charger, including the optional car plan. Its totals, including the energy already priced, are preserved.",
           "data": {
             "name": "Name",
-            "power_entity": "Power entity",
-            "energy_entity": "Energy entity",
+            "power_entity": "Charger power sensor",
+            "energy_entity": "Charger energy sensor",
             "reimbursement_mode": "Reimbursement type",
             "reimbursement_rate": "Fixed reimbursement",
             "reimbursement_surcharge": "Fixed surcharge",
@@ -423,12 +433,42 @@
             "ere_price": "Price per ERE",
             "ere_price_entity": "Live ERE price entity",
             "ere_credits_entity": "Joulo ERE credits entity",
-            "ere_kwh_entity": "Joulo total kWh entity"
+            "ere_kwh_entity": "Joulo total kWh entity",
+            "ev_device": "Car device (EVCC)",
+            "ev_pack_kwh": "Car battery size",
+            "ev_target_soc": "Car target SOC",
+            "ev_departure_weekday": "Departure on weekdays",
+            "ev_departure_weekend": "Departure in the weekend",
+            "ev_soc_entity": "Car SOC sensor",
+            "ev_capacity_entity": "Car capacity sensor",
+            "ev_power_entity": "Car charging power sensor",
+            "ev_departure_entity": "Departure sensor"
           },
           "data_description": {
             "reimbursement_basis": "EPEX spot excludes VAT and energy tax. All-in is what you pay at home.",
-            "reimbursement_interval": "How often the tariff your employer uses changes, independently of your own contract.",
-            "ere_per_kwh": "Also used as the fallback while a Joulo ratio is not available yet."
+            "reimbursement_interval": "How often the tariff your employer uses changes. Choose per hour when the reimbursement settles hourly while your own contract settles per quarter; the reimbursement then uses the hour average instead of the quarter hour price.",
+            "ere_per_kwh": "Also used as the fallback while a Joulo ratio is not available yet.",
+            "ev_device": "The EVCC device or loadpoint for this car. Its SOC, charging power, capacity and departure sensors are used automatically.",
+            "ev_pack_kwh": "Usable battery size in kWh, for example 77 for a Tesla Model 3 Long Range. Without this (or a capacity sensor) no charging is planned.",
+            "ev_target_soc": "The charge level the car should reach before departure, for example 80% for daily use.",
+            "ev_departure_weekday": "Time the car normally leaves on weekdays. The cheapest hours before it are chosen.",
+            "ev_departure_weekend": "Time the car normally leaves on weekend days.",
+            "ev_soc_entity": "State of charge of the car in %, for example EVCC's Vehicle SOC. Needed to know how much energy is still missing.",
+            "ev_capacity_entity": "Optional sensor with the usable battery size in kWh, if the car publishes it. Overrides the fixed size above.",
+            "ev_power_entity": "Charging power of the car in W or kW, for example EVCC's Charge power. Used to size the charging window; leave empty to use the charger's power sensor.",
+            "ev_departure_entity": "Optional date/time or time sensor with the next departure, for example EVCC's plan. Overrides the fixed times above.",
+            "name": "Shown in Home Assistant. When you have more than one car or charging point, use a name you recognise, for example \"Laadpaal garage\".",
+            "power_entity": "Live power of this charging point in W or kW, for example EVCC's Charge power or a power meter on the charger. Used for the live reading; add the energy sensor as well for exact cost totals.",
+            "energy_entity": "Cumulative energy in kWh, for example EVCC's Charge energy or a kWh meter. Preferred: every kWh from this counter is priced exactly.",
+            "reimbursement_mode": "No reimbursement, a fixed rate, or the dynamic formula.",
+            "reimbursement_rate": "Amount your employer pays per kWh, in euros.",
+            "reimbursement_surcharge": "Fixed amount added to the market price, in euros per kWh.",
+            "reimbursement_percent": "Multiplier applied after the surcharge. 100 means no extra margin, 105 adds five percent.",
+            "ere_mode": "No ERE value, a fixed ratio, or the Joulo integration.",
+            "ere_price": "Value of one ERE certificate in euros.",
+            "ere_price_entity": "Optional sensor with the live price per ERE, for example the Joulo market price sensor.",
+            "ere_credits_entity": "Cumulative ERE credits, for example sensor.joulo_total_ere_credits.",
+            "ere_kwh_entity": "Cumulative charged energy, for example sensor.joulo_total_all_kwh."
           }
         }
       },

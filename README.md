@@ -76,8 +76,10 @@ metering:
 - **Add device** (in Dutch: *Apparaat toevoegen*) — an appliance or a circuit.
   Name, power entity, energy entity. Done. It is **never** asked about employer
   reimbursement or ERE certificates, because neither applies to a heat pump.
-- **Add EV charger** (in Dutch: *Laadpaal toevoegen*) — the same fields, then
-  reimbursement and ERE in two more steps.
+- **Add EV charger** (in Dutch: *Laadpaal toevoegen*) — the same metering
+  fields, then an optional step for the car and its charging plan, then employer
+  reimbursement and ERE. Add one entry per charging point or car: each keeps its
+  own sensors, reimbursement and ERE, and shows up separately on the dashboard.
 
 Both appear under the same **Add** menu on the integration page, and they are
 separate subentry types (`device` and `ev_charger`), so the list of devices and
@@ -88,7 +90,6 @@ the edit forms stay short and specific.
 | Field | Meaning |
 |---|---|
 | **Name** | Shown in Home Assistant, for example `EV charger`. |
-| **Device type** | `Appliance or circuit`, or `EV charger` to unlock reimbursement and ERE. |
 | **Power entity** | A sensor in W or kW. Integrated over time. |
 | **Energy entity** | A cumulative sensor in kWh. Preferred, because it is exact. |
 
@@ -100,7 +101,12 @@ the old and the new reading.
 
 #### Add EV charger
 
-The following two sections are part of the charger workflow only.
+The charger workflow starts with the same metering the cost calculation needs.
+Only after that comes the optional car page — pack size, target SOC, departure
+times and the EVCC sensors (or the EVCC device, whose sensors are then found
+automatically). Leaving the car battery size empty keeps the charger cost-only;
+the page can be completed later with **Reconfigure**. Reimbursement and ERE come
+last, and are part of the charger workflow only.
 
 ### 3. Employer reimbursement (EV chargers)
 
@@ -355,11 +361,15 @@ ever becomes attractive again.
 
 #### The car's window
 
-The EV charger subentry carries the car's schedule: pack size, target SOC,
-weekday and weekend departure, and optionally EVCC sensors for SOC, capacity,
-power and departure (an EVCC departure entity overrides the times). The battery
-derives the car's cheap window from it — the cheapest slots before departure
-that deliver the energy the car still needs.
+An EV charger can optionally carry the car's schedule: pack size, target SOC,
+weekday and weekend departure, and EVCC sensors for SOC, capacity, power and
+departure (an EVCC departure entity overrides the times; picking the EVCC device
+fills them in). It is set on its own page after the metering, so a charger that
+is only tracked for costs never needs it. The battery derives the car's cheap
+window from it — the cheapest slots before departure that deliver the energy the
+car still needs — using the car's power sensor, or the charger's power sensor
+when none is set. With more than one car configured, the first one that has all
+its readings and an upcoming departure gets the hold.
 
 Inside that window the battery **holds**: slots that do not charge are rewritten
 to the current SOC, so a car resuming after a grid-reward pause is served by the
@@ -753,7 +763,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 319 tests
+.venv/bin/python -m pytest        # 326 tests
 .venv/bin/ruff check custom_components tests
 ```
 

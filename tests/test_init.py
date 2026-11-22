@@ -139,6 +139,44 @@ async def test_setup_creates_hub_and_device_entities(hass, entry) -> None:
         assert hass.states.get(item.entity_id) is not None, item.entity_id
 
 
+async def test_two_ev_chargers_are_both_tracked(hass) -> None:
+    """A second car is a second charger subentry, not a second integration."""
+    second = {
+        "subentry_type": SUBENTRY_TYPE_EV_CHARGER,
+        "data": {
+            **EV_DATA,
+            CONF_NAME: "Laadpaal tweede auto",
+            CONF_ENERGY_ENTITY: "sensor.ev2_energy",
+        },
+        "title": "Laadpaal tweede auto",
+        "unique_id": None,
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=USER_INPUT,
+        unique_id="zonneplan_quarterly",
+        title="Zonneplan",
+        subentries_data=[EV_SUBENTRY, second],
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("sensor.ev_energy", "10", {"unit_of_measurement": "kWh"})
+    hass.states.async_set("sensor.ev2_energy", "20", {"unit_of_measurement": "kWh"})
+
+    with freeze_time("2026-11-20 12:00:00+00:00"):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    from custom_components.kd_helios.websocket import build_dashboard
+
+    assert len(entry.runtime_data.engine.trackers) == 2
+    dashboard = build_dashboard(hass, entry)
+    evs = [row for row in dashboard["devices"] if row["kind"] == "ev_charger"]
+    assert {row["name"] for row in evs} == {
+        "EV charger",
+        "Laadpaal tweede auto",
+    }
+
+
 async def test_price_sensor_matches_the_provider_tariff(hass, entry) -> None:
     """The tariff sensors expose the recorded all-in and spot prices."""
     with freeze_time("2026-11-20 12:00:00+00:00"):
