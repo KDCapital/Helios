@@ -30,7 +30,6 @@ from custom_components.kd_helios.const import (
     CONF_IMPORT_CAP_KW,
     CONF_INVERTER_DEVICE,
     CONF_MAX_CHARGE_KW,
-    CONF_MAX_GRID_CHARGE_CURRENT,
     CONF_PRICE_INTERVAL,
     CONF_PROVIDER,
     CONF_RESERVE_SOC,
@@ -439,20 +438,3 @@ async def test_the_fuse_cap_uses_the_house_load_not_the_battery(
         )
 
     assert inverter.registers[GRID_CHARGE_CURRENT_REGISTER] == 185
-
-
-async def test_the_user_can_cap_the_grid_charge_current(
-    hass: HomeAssistant,
-) -> None:
-    """A configured current ceiling is never exceeded by the controller."""
-    entry = make_entry(
-        **{
-            CONF_ALLOW_INVERTER_WRITES: True,
-            CONF_INVERTER_DEVICE: INVERTER,
-            CONF_MAX_GRID_CHARGE_CURRENT: 100,
-        }
-    )
-    with freeze_time(FROZEN):
-        await _setup(hass, entry)
-        engine = entry.runtime_data.engine
-        assert engine._max_grid_charge_current() == 100

@@ -51,7 +51,6 @@ from .const import (
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
     CONF_MAX_DISCHARGE_KW,
-    CONF_MAX_GRID_CHARGE_CURRENT,
     CONF_METER_DEVICE,
     CONF_NAME,
     CONF_PHASES,
@@ -418,8 +417,6 @@ class BatteryConfig:
     soc_entity: str | None = None
     capacity_kwh: float = 10.0
     max_charge_kw: float = 3.0
-    #: User ceiling for the grid-charge current. 0 means the inverter maximum.
-    max_grid_charge_current_a: int = 0
     reserve_soc_pct: float = 10.0
     target_soc_pct: float = 100.0
     efficiency_pct: float = 90.0
@@ -495,9 +492,6 @@ class BatteryConfig:
             soc_entity=as_entity_id(data.get(CONF_SOC_ENTITY)),
             capacity_kwh=as_float(data.get(CONF_BATTERY_CAPACITY_KWH), 10.0),
             max_charge_kw=as_float(data.get(CONF_MAX_CHARGE_KW), 3.0),
-            max_grid_charge_current_a=int(
-                as_float(data.get(CONF_MAX_GRID_CHARGE_CURRENT), 0.0)
-            ),
             reserve_soc_pct=as_float(data.get(CONF_RESERVE_SOC), 10.0),
             target_soc_pct=as_float(data.get(CONF_TARGET_SOC), 100.0),
             efficiency_pct=as_float(data.get(CONF_EFFICIENCY), 90.0),

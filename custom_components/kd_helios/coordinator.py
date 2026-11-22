@@ -522,12 +522,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             # some profiles expose 350 A for a 12K that is rated for 240 A.
             self._max_charge_current_a = min(discovered or model_max, model_max)
 
-        inverter_max = self._max_charge_current_a
-        config = self.battery_config
-        user_max = config.max_grid_charge_current_a if config is not None else 0
-        if user_max > 0:
-            return max(1, min(inverter_max, user_max))
-        return inverter_max
+        return self._max_charge_current_a
 
     def _battery_voltage(self) -> float:
         """Return the pack voltage used to turn charge power into current."""
