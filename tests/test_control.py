@@ -166,7 +166,7 @@ async def test_turning_control_on_writes_the_plan(hass: HomeAssistant) -> None:
 
     assert engine.control_enabled is True
     assert engine.applied_plan is not None
-    assert len(recorder.blocks) == 6
+    assert len(recorder.blocks) == 8
     by_register = {block["register"]: block["values"] for block in recorder.blocks}
     assert by_register[130] == [1]
     assert by_register[146] == [255]
@@ -242,7 +242,7 @@ async def test_plan_is_reapplied_when_it_changes(hass: HomeAssistant) -> None:
         await engine.async_refresh()
 
     assert engine.applied_plan is not None
-    assert len(recorder.blocks) == 6
+    assert len(recorder.blocks) == 8
 
 
 async def test_the_rolling_schedule_writes_the_next_window(

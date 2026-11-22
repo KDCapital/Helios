@@ -110,7 +110,7 @@ async def test_one_bad_read_back_is_retried(hass: HomeAssistant) -> None:
 
     assert result["verified"] is True
     assert result["attempts"] == 2
-    assert inverter.writes == 12
+    assert inverter.writes == 16
 
 
 async def test_a_persistent_mismatch_is_an_error(hass: HomeAssistant) -> None:
@@ -122,7 +122,7 @@ async def test_a_persistent_mismatch_is_an_error(hass: HomeAssistant) -> None:
     with pytest.raises(InverterWriteError):
         await async_write_tou_verified(hass, DEVICE, make_plan())
 
-    assert inverter.writes == 12
+    assert inverter.writes == 16
 
 
 async def test_without_a_read_service_the_write_is_trusted(
@@ -141,7 +141,7 @@ async def test_without_a_read_service_the_write_is_trusted(
 
     assert result["verified"] is None
     assert result["attempts"] == 1
-    assert inverter.writes == 6
+    assert inverter.writes == 8
 
 
 async def test_the_schedule_can_be_read_back(hass: HomeAssistant) -> None:
@@ -256,5 +256,5 @@ async def test_a_busy_inverter_is_written_again(
     result = await async_write_tou_verified(hass, DEVICE, make_plan())
 
     assert result["verified"] is None
-    # Six blocks, with the first one retried once.
-    assert calls["count"] == 7
+    # Eight writes, with the first one retried once.
+    assert calls["count"] == 9

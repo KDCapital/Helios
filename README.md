@@ -369,7 +369,10 @@ interrupt the rolling window.
 Writing the slots is not enough on its own. KD Helios also enables **Grid
 Charge** (register 130) and the weekly **TOU schedule** (register 146 = 0x00FF),
 because the inverter ignores every TOU slot while either master is off. The
-weekday checkboxes on the inverter's TOU page are that same weekly mask. The
+weekday checkboxes on the inverter's TOU page are that same weekly mask. Some
+Deye firmware only reloads the TOU table when that master changes, so after
+writing the programs KD Helios toggles the weekly mask off and on again; that
+is what makes the new times take effect without touching the inverter. The
 work mode is left alone while charging; it is only written back to the
 configured restore mode when control is released, together with the
 generator-only restore slots.
@@ -539,7 +542,7 @@ data:
 ```
 
 Inverter control must be on; the normal rolling plan resumes when the window
-ends. The panel exposes the same action as **Charge 15 min**.
+ends.
 
 ---
 

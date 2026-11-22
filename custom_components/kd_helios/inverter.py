@@ -321,6 +321,21 @@ def _tou_registers(tou: TouPlan, *, enable_charge: bool | None) -> dict[int, lis
     return registers
 
 
+async def _reload_tou_schedule(hass: HomeAssistant, device_id: str) -> None:
+    """Toggle the weekly TOU mask so the inverter re-reads the table.
+
+    Several Deye firmwares accept writes to the six programs but only reload
+    the schedule when the Time-of-Use master changes. Writing the mask to the
+    same value it already holds is not a change, so the table is applied but
+    not activated until someone edits a setting on the inverter itself.
+    """
+    await async_write_registers(hass, device_id, {TOU_ENABLE_REGISTER: [0]})
+    await asyncio.sleep(WRITE_PAUSE)
+    await async_write_registers(
+        hass, device_id, {TOU_ENABLE_REGISTER: [TOU_ENABLE_ALL_DAYS]}
+    )
+
+
 async def async_write_tou(
     hass: HomeAssistant,
     device_id: str,
@@ -334,6 +349,8 @@ async def async_write_tou(
     written = await async_write_registers(
         hass, device_id, registers, work_mode=work_mode
     )
+    if enable_charge is True:
+        await _reload_tou_schedule(hass, device_id)
     return {
         "registers": {str(register): values for register, values in written.items()},
         "programs": [
@@ -369,6 +386,8 @@ async def async_write_tou_verified(
 
     for attempt in range(1, attempts + 1):
         await async_write_registers(hass, device_id, registers, work_mode=work_mode)
+        if enable_charge is True:
+            await _reload_tou_schedule(hass, device_id)
         read_back = await _verify_registers(hass, device_id, registers)
         if read_back is None:
             _LOGGER.debug(

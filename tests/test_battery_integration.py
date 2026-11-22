@@ -376,7 +376,7 @@ async def test_action_writes_the_schedule_and_its_master_switches(
             return_response=True,
         )
 
-    assert len(calls) == 6
+    assert len(calls) == 8
     assert [call["register"] for call in calls] == [
         TOU_REGISTERS["times"],
         TOU_REGISTERS["power"],
@@ -384,10 +384,14 @@ async def test_action_writes_the_schedule_and_its_master_switches(
         TOU_REGISTERS["sources"],
         GRID_CHARGE_REGISTER,
         TOU_ENABLE_REGISTER,
+        TOU_ENABLE_REGISTER,
+        TOU_ENABLE_REGISTER,
     ]
-    masters = {call["register"]: call["values"] for call in calls}
-    assert masters[GRID_CHARGE_REGISTER] == [1]
-    assert masters[TOU_ENABLE_REGISTER] == [0x00FF]
+    assert calls[4]["values"] == [1]
+    # The TOU master is toggled off and on so the inverter reloads the table.
+    assert calls[5]["values"] == [0x00FF]
+    assert calls[6]["values"] == [0]
+    assert calls[7]["values"] == [0x00FF]
     for call in calls:
         assert call["device"] == "inverter-device-id"
         expected_count = (
@@ -443,7 +447,7 @@ async def test_charge_now_writes_the_current_slot(hass: HomeAssistant) -> None:
         ) + timedelta(minutes=15)
 
     assert result["minutes"] == 15
-    assert len(calls) == 6
+    assert len(calls) == 8
     sources = next(
         call for call in calls if call["register"] == TOU_REGISTERS["sources"]
     )
