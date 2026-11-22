@@ -59,6 +59,11 @@ RESTORE_SLOT_MINUTES = (0, 240, 480, 720, 960, 1200)
 #: At most one automatic write per this interval, to spare the Modbus link.
 AUTO_APPLY_MIN_INTERVAL = timedelta(minutes=10)
 
+#: Prices within this fraction of the highest later price count as the same
+#: expensive period. Quarter-hour tariffs can spike for one slot; sizing the
+#: discharge budget on that slot alone would cap a whole plan to 15 minutes.
+PEAK_PLATEAU_RATIO = 0.9
+
 #: A drifting charge start smaller than this is not worth rewriting for.
 AUTO_APPLY_TOLERANCE = timedelta(minutes=5)
 
@@ -519,16 +524,17 @@ def plan_charge(
             continue
 
         peak_index = index + 1 + later.index(peak_price)
-        # The whole run at the peak price is what the battery can serve, not
-        # just the first quarter hour of it.
-        peak_end_index = peak_index
-        while (
-            peak_end_index + 1 < len(slots)
-            and abs(slots[peak_end_index + 1][2] - peak_price) < 1e-12
-        ):
-            peak_end_index += 1
         peak_start = slots[peak_index][0]
-        peak_end = slots[peak_end_index][1]
+        # What the battery can serve is the expensive period, not one slot in
+        # it: a volatile quarter-hour price can spike once and fall back to
+        # prices that are still within a tenth of it. Count every later slot
+        # in that band, so the plan is not capped to the spike's 15 minutes.
+        threshold = peak_price * PEAK_PLATEAU_RATIO
+        peak_hours = sum(
+            max(0.0, (slot_end - slot_start).total_seconds() / 3600.0)
+            for slot_start, slot_end, slot_price in slots[index + 1 :]
+            if slot_price >= threshold
+        )
         candidates.append(
             _Candidate(
                 start=start,
@@ -536,7 +542,7 @@ def plan_charge(
                 price=price,
                 peak_price=peak_price,
                 kwh=max_kwh,
-                peak_hours=max(0.0, (peak_end - peak_start).total_seconds() / 3600.0),
+                peak_hours=peak_hours,
                 peak_start=peak_start,
             )
         )

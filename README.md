@@ -273,7 +273,7 @@ battery discharge into the expensive ones.
 | **Planning horizon** | How far ahead to look for a cheaper hour to charge from and a dearer one to discharge into. |
 | **Inverter device** | The Solarman inverter, needed before writes can be enabled. |
 | **Allow writing to the inverter** | Off by default. |
-| **Maximum discharge power** | Optional. Caps what the evening peak can absorb, so the plan does not buy energy it cannot sell back in time. |
+| **Maximum discharge power** | Optional. Caps what the expensive hours can absorb, so the plan does not buy energy it cannot sell back in time. |
 | **Battery power sensor** | Optional. Signed W, used to notice a schedule that is in force but not running. |
 | **Battery temperature sensor** | Optional. Required for the thermal charge limit. |
 | **Weekly full charge** | Optional, with a day of the week. Charges to 100 % so an LFP pack can balance its cells. |
@@ -327,6 +327,11 @@ Each candidate quarter hour is valued against the **highest price that comes
 after it** within the horizon, times the round-trip efficiency. Slots whose
 spread does not cover the losses are not bought at all — with a flat tariff the
 plan is simply "do nothing", which is the honest answer.
+
+The maximum discharge power caps the purchase against the whole expensive
+period — every later slot within 10% of the peak — not against the single
+highest quarter hour. A volatile quarter-hour tariff that spikes once must not
+shrink a 32 kWh battery's plan to one 15-minute window.
 
 Six slots is a hard limit of the inverter, so at most three windows survive
 (each needs an idle slot after it). If the plan wants more, it says so through
@@ -763,7 +768,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 326 tests
+.venv/bin/python -m pytest        # 327 tests
 .venv/bin/ruff check custom_components tests
 ```
 

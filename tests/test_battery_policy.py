@@ -133,6 +133,45 @@ def test_a_slow_discharge_caps_what_is_bought() -> None:
     assert plan.windows[0].energy_kwh == pytest.approx(4.0)
 
 
+def test_a_single_quarter_hour_spike_does_not_cap_the_plan() -> None:
+    """The expensive period, not its 15-minute maximum, sizes the charge.
+
+    A battery that can discharge 11 kW can serve the whole evening; capping the
+    purchase to 11 kW x one quarter hour left a 32 kWh battery at 13% with a
+    2.8 kWh plan and one 15-minute window.
+    """
+    start = datetime(2026, 11, 22, 7, 0, tzinfo=UTC)
+    points: dict[datetime, tuple[float, float]] = {}
+    for index in range(36 * 4):
+        when = start + timedelta(minutes=15 * index)
+        local_hour = (when.hour + 1) % 24
+        price = 0.38 if 12 <= local_hour < 20 else 0.35
+        if local_hour == 18 and when.minute == 0:
+            price = 0.417
+        points[when] = (price, price / 2)
+
+    settings = BatterySettings(
+        capacity_kwh=32.0,
+        max_charge_kw=11.0,
+        reserve_soc_pct=10.0,
+        target_soc_pct=100.0,
+        efficiency_pct=90.0,
+        horizon_hours=36,
+    )
+    plan = plan_charge(
+        build_series(points),
+        settings,
+        start,
+        soc_pct=13.0,
+        max_discharge_kw=11.0,
+    )
+
+    # 13 to 100 percent of 32 kWh is 27.84 kWh.
+    assert plan.energy_kwh == pytest.approx(27.84)
+    window = plan.windows[0]
+    assert window.end - window.start >= timedelta(hours=2)
+
+
 def test_without_a_discharge_limit_the_target_is_still_filled() -> None:
     """An unknown discharge rating must not shrink the charge."""
     plan = plan_charge(make_prices(NOON, DAY), SETTINGS, NOON, soc_pct=20.0)
