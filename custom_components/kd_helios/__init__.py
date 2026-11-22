@@ -12,9 +12,10 @@ import logging
 from dataclasses import dataclass
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import EVENT_HOMEASSISTANT_STARTED, HomeAssistant
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN, Platform
+from homeassistant.core import EVENT_HOMEASSISTANT_STARTED, HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     CONF_PRICE_INTERVAL,
@@ -50,6 +51,47 @@ class HeliosRuntimeData:
 
 
 type HeliosConfigEntry = ConfigEntry[HeliosRuntimeData]
+
+#: Entity fields whose first usable state should trigger an accounting tick.
+#: Home Assistant sets custom integrations up concurrently, so the inverter's
+#: sensors can still be unavailable (or not created yet) during our first
+#: refresh; a reload was the old way to pick them up.
+_SOURCE_ENTITY_FIELDS = (
+    "soc_entity",
+    "house_load_entity",
+    "battery_power_entity",
+    "battery_temp_entity",
+    "solar_forecast_entity",
+    "import_entity",
+    "export_entity",
+    "import_power_entity",
+    "export_power_entity",
+    "power_entity",
+    "energy_entity",
+    "ev_soc_entity",
+    "ev_power_entity",
+    "ev_capacity_entity",
+    "ev_target_soc_entity",
+    "ev_departure_entity",
+)
+
+
+def _source_entities(engine: HeliosEngine) -> set[str]:
+    """Return the configured source entities the engine reads."""
+    configs = [engine.battery_config]
+    if engine.grid_tracker is not None:
+        configs.append(engine.grid_tracker.config)
+    configs.extend(tracker.config for tracker in engine.trackers.values())
+
+    entities: set[str] = set()
+    for config in configs:
+        if config is None:
+            continue
+        for field in _SOURCE_ENTITY_FIELDS:
+            value = getattr(config, field, None)
+            if isinstance(value, str) and value:
+                entities.add(value)
+    return entities
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -92,6 +134,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HeliosConfigEntry) -> bo
     entry.runtime_data = HeliosRuntimeData(
         prices=prices, engine=engine, storage=storage
     )
+    _async_refresh_when_sources_are_ready(hass, entry, engine)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -100,6 +143,49 @@ async def async_setup_entry(hass: HomeAssistant, entry: HeliosConfigEntry) -> bo
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     _async_sync_no_device_issue(hass, entry)
     return True
+
+
+def _async_refresh_when_sources_are_ready(
+    hass: HomeAssistant,
+    entry: HeliosConfigEntry,
+    engine: HeliosEngine,
+) -> None:
+    """Refresh once the inverter's sensors become usable.
+
+    The first refresh during a cold start can run before Solarman has created
+    or populated its entities. Reloading the integration then worked because it
+    ran the refresh later. This does that automatically: a source entity that
+    turns usable triggers a tick, and a refresh after Home Assistant has
+    started catches everything that was already usable but not yet created.
+    """
+
+    @callback
+    def _source_ready(event) -> None:
+        old = event.data.get("old_state")
+        new = event.data.get("new_state")
+        if new is None or new.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+        if old is not None and old.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+        hass.async_create_task(engine.async_refresh())
+
+    entities = _source_entities(engine)
+    if entities:
+        entry.async_on_unload(
+            async_track_state_change_event(hass, list(entities), _source_ready)
+        )
+
+    async def _refresh_after_start(_event: object = None) -> None:
+        await engine.async_request_refresh()
+
+    if hass.is_running:
+        hass.async_create_task(engine.async_refresh())
+    else:
+        entry.async_on_unload(
+            hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, _refresh_after_start
+            )
+        )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: HeliosConfigEntry) -> bool:

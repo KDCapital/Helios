@@ -809,6 +809,12 @@ helper, so a restart continues where it left off instead of resetting to zero.
   pre-programmed and waits for the next successful update.
 - **Dynamic contracts only.** Fixed and variable contracts are not modelled in
   this version, and gas is out of scope.
+- **Startup order is handled.** A cold start can set KD Helios up before
+  Solarman has created or populated its entities. The integration retries
+  battery and grid sensor resolution on each tick, refreshes when a source
+  sensor first becomes usable, and refreshes once after Home Assistant has
+  started, so a manual reload is no longer needed for the SOC or other
+  inverter readings.
 - **A reload during an API outage** (for example while adding a device) puts the
   entry in retry until epexprijzen.nl answers again, because prices are not
   cached across restarts. Home Assistant retries automatically.
@@ -820,7 +826,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 345 tests
+.venv/bin/python -m pytest        # 346 tests
 .venv/bin/ruff check custom_components tests
 ```
 

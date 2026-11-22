@@ -242,6 +242,27 @@ async def test_a_current_sensor_does_not_break_the_accounting_tick(
     assert end > start
 
 
+async def test_soc_arriving_after_setup_refreshes_the_plan(
+    hass: HomeAssistant,
+) -> None:
+    """A late inverter sensor must not need an integration reload."""
+    entry = make_entry()
+    entry.add_to_hass(hass)
+
+    with freeze_time(FROZEN):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        engine = entry.runtime_data.engine
+        assert engine.battery_plan is not None
+        assert engine.battery_plan.soc_pct is None
+
+        hass.states.async_set(SOC_ENTITY, "50", {"unit_of_measurement": "%"})
+        await hass.async_block_till_done()
+
+        assert engine.battery_plan.soc_pct == pytest.approx(50.0)
+
+
 async def test_battery_plan_attributes_expose_windows_and_programs(
     hass: HomeAssistant,
 ) -> None:

@@ -71,7 +71,7 @@ from .prices import (
     build_price_series,
 )
 from .profile import LoadProfile
-from .resolve import resolve_ev, resolve_grid, resolve_joulo
+from .resolve import resolve_battery, resolve_ev, resolve_grid, resolve_joulo
 from .sources import read_number, read_power
 from .storage import HeliosStorage
 
@@ -196,7 +196,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
 
         battery_subentries = entry.get_subentries_of_type(SUBENTRY_TYPE_BATTERY)
         self.battery_config: BatteryConfig | None = (
-            BatteryConfig.from_subentry(battery_subentries[0])
+            resolve_battery(hass, BatteryConfig.from_subentry(battery_subentries[0]))
             if battery_subentries
             else None
         )
@@ -257,6 +257,81 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         )
 
     # -- inverter control ---------------------------------------------------
+    def _refresh_battery_sensors(self) -> None:
+        """Retry auto-resolution once the inverter entities exist.
+
+        A cold start can set this entry up before Solarman has registered its
+        sensors. Resolution is retried on each tick until the missing fields
+        are filled; once found they are kept, because the user's explicit
+        choices still win in :func:`resolve_battery`.
+        """
+        config = self.battery_config
+        if config is None:
+            return
+        if (
+            config.soc_entity
+            and config.house_load_entity
+            and config.battery_power_entity
+        ):
+            return
+        subentries = self.entry.get_subentries_of_type(SUBENTRY_TYPE_BATTERY)
+        if not subentries:
+            return
+        resolved = resolve_battery(
+            self.hass, BatteryConfig.from_subentry(subentries[0])
+        )
+        if resolved != config:
+            self.battery_config = resolved
+
+    def _refresh_grid_config(self) -> None:
+        """Retry grid auto-resolution after a cold-start ordering race."""
+        tracker = self.grid_tracker
+        if tracker is None:
+            return
+        config = tracker.config
+        if config.import_entity and config.export_entity and config.import_power_entity:
+            return
+        subentries = self.entry.get_subentries_of_type(SUBENTRY_TYPE_GRID)
+        if not subentries:
+            return
+        resolved = resolve_grid(self.hass, GridConfig.from_subentry(subentries[0]))
+        if resolved != config:
+            tracker.config = resolved
+
+    def _refresh_device_configs(self) -> None:
+        """Retry EV and ERE auto-resolution after a cold-start race."""
+        ev_fields = (
+            "ev_soc_entity",
+            "ev_target_soc_entity",
+            "ev_power_entity",
+            "ev_departure_entity",
+            "ev_capacity_entity",
+        )
+        ere_fields = ("credits_entity", "kwh_entity", "price_entity")
+        for subentry in device_subentries(self.entry):
+            tracker = self.trackers.get(subentry.subentry_id)
+            if tracker is None:
+                continue
+            config = tracker.config
+            missing_ev = config.ev_device_id is not None and any(
+                getattr(config, field, None) is None for field in ev_fields
+            )
+            missing_ere = config.ere.mode.value == "joulo" and any(
+                getattr(config.ere, field, None) is None for field in ere_fields
+            )
+            if not missing_ev and not missing_ere:
+                continue
+            try:
+                resolved = resolve_joulo(
+                    self.hass,
+                    resolve_ev(self.hass, DeviceConfig.from_subentry(subentry)),
+                )
+            except Exception as err:  # noqa: BLE001 - a bad registry read is retried
+                _LOGGER.debug("Could not resolve %s yet: %s", subentry.title, err)
+                continue
+            if resolved != config:
+                tracker.config = resolved
+
     def _persist_control(self) -> None:
         """Store the control state."""
         self.storage.async_set_control({"enabled": self.control_enabled})
@@ -325,9 +400,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 "Writing to the inverter is disabled in the battery settings"
             )
         if not self.control_enabled:
-            raise ValueError(
-                "Turn inverter control on before starting a test charge"
-            )
+            raise ValueError("Turn inverter control on before starting a test charge")
 
         now = dt_util.utcnow()
         minutes = max(1, min(60, int(minutes)))
@@ -871,6 +944,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             }
         )
 
+        self._refresh_grid_config()
         grid_snapshot: GridSnapshot | None = None
         if self.grid_tracker is not None:
             self.grid_tracker.update(now, available_series)
@@ -879,6 +953,8 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
 
         self._learn_load(now)
 
+        self._refresh_battery_sensors()
+        self._refresh_device_configs()
         battery_plan: ChargePlan | None = None
         if self.battery_config is not None:
             series_for_plan = available_series or PriceSeries.empty(
