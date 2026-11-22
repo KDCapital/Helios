@@ -24,6 +24,7 @@ const BLOCKER_LABELS = {
   waiting_for_solar: "Waiting for solar to cover the charge",
   partly_solar: "Solar covers part of the charge",
   hold_conflict: "The car's window blocks the cheap hours",
+  at_reserve: "Battery is at its reserve SOC",
   slots_truncated: "The plan does not fit the six inverter slots",
   ev_charging: "The car is charging",
   import_cap: "The connection is at its limit",
@@ -372,8 +373,8 @@ class KdHeliosPanel extends HTMLElement {
           entry.windows
         )} windows`;
       case "control":
-        return `${entry.charge ? "charging" : "idle"} · target ${value(
-          entry.target_soc
+        return `${entry.charge ? "charging" : "idle"} · SOC ${value(
+          entry.program_soc
         )}% · ${value(entry.current_a)} A (${value(entry.effective_kw)} kW at ${value(
           entry.voltage_v
         )} V)`;

@@ -48,6 +48,7 @@ from .const import (
 )
 from .decisions import (
     SOURCE_DELIVERY,
+    SOURCE_PLAN,
     SOURCE_WRITE,
     Blocker,
     BlockerRegistry,
@@ -1109,6 +1110,10 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 "control",
                 charge=charge,
                 target_soc=settings.target_soc_pct,
+                reserve_soc=settings.reserve_soc_pct,
+                program_soc=control.programs[0].soc_pct,
+                program_source=int(control.programs[0].source),
+                program_power_w=control.programs[0].power_w,
                 hold_soc=hold_soc,
                 voltage_v=round(voltage, 2),
                 voltage_source=(
@@ -1136,6 +1141,23 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 blockers.append(credit.blocker)
             if weekly.blocker is not None:
                 blockers.append(weekly.blocker)
+            hold_active = hold is not None and hold[0] <= now < hold[1]
+            if (
+                not charge
+                and not hold_active
+                and soc_pct is not None
+                and soc_pct <= settings.reserve_soc_pct + 0.5
+            ):
+                blockers.append(
+                    Blocker(
+                        SOURCE_PLAN,
+                        "at_reserve",
+                        {
+                            "soc": round(soc_pct, 1),
+                            "reserve": settings.reserve_soc_pct,
+                        },
+                    )
+                )
 
             blockers.extend(await self._async_sync_inverter(now))
             blockers.extend(
