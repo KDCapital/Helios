@@ -29,6 +29,7 @@ from custom_components.kd_helios.const import (
     CONF_HOUSE_LOAD_ENTITY,
     CONF_IMPORT_CAP_KW,
     CONF_INVERTER_DEVICE,
+    CONF_INVERTER_MODEL,
     CONF_MAX_CHARGE_KW,
     CONF_PRICE_INTERVAL,
     CONF_PROVIDER,
@@ -438,3 +439,22 @@ async def test_the_fuse_cap_uses_the_house_load_not_the_battery(
         )
 
     assert inverter.registers[GRID_CHARGE_CURRENT_REGISTER] == 185
+
+
+async def test_the_inverter_model_override_sets_the_current_ceiling(
+    hass: HomeAssistant,
+) -> None:
+    """A wrong auto-detection can be corrected without guessing the current."""
+    cases = (("sg04lp3", 185), ("sg05lp3", 240))
+    for model, expected in cases:
+        entry = make_entry(
+            **{
+                CONF_ALLOW_INVERTER_WRITES: True,
+                CONF_INVERTER_DEVICE: INVERTER,
+                CONF_INVERTER_MODEL: model,
+            }
+        )
+        with freeze_time(FROZEN):
+            await _setup(hass, entry)
+            engine = entry.runtime_data.engine
+            assert engine._max_grid_charge_current() == expected

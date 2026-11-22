@@ -272,6 +272,7 @@ battery discharge into the expensive ones.
 | **Round-trip efficiency** | A stored kWh returns this fraction, so a spread has to beat the losses. |
 | **Planning horizon** | How far ahead to look for a cheaper hour to charge from and a dearer one to discharge into. |
 | **Inverter device** | The Solarman inverter, needed before writes can be enabled. |
+| **Inverter model** | Auto-detect from the device, or select SG04LP3 (185 A) / SG05LP3 (240 A) when the detected current ceiling is wrong. |
 | **Allow writing to the inverter** | Off by default. |
 | **Maximum discharge power** | Optional. Caps what the expensive hours can absorb, so the plan does not buy energy it cannot sell back in time. |
 | **Battery power sensor** | Optional. Signed W, used to notice a schedule that is in force but not running. |
@@ -283,7 +284,9 @@ The charge register is current, so KD Helios derives it from the configured
 maximum charge power and the measured battery voltage; the inverter's own
 current maximum is the ceiling. The BMS is the final protection and may clamp
 lower. There is deliberately no separate current setting: set the maximum
-charge power to the battery's real power limit.
+charge power to the battery's real power limit. The **Inverter model** field
+exists because some Solarman device registries have no model string; select
+the model there when auto-detection returns the wrong 185 A / 240 A ceiling.
 
 `Planned charge`, `Planned saving`, `Applied plan saving`, `Next charge start`
 and `Status` appear on the battery device.
@@ -854,7 +857,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 348 tests
+.venv/bin/python -m pytest        # 349 tests
 .venv/bin/ruff check custom_components tests
 ```
 

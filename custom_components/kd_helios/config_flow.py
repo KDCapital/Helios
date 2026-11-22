@@ -58,6 +58,7 @@ from .const import (
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
     CONF_INVERTER_DEVICE,
+    CONF_INVERTER_MODEL,
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
     CONF_MAX_DISCHARGE_KW,
@@ -507,6 +508,13 @@ def _battery_schema() -> vol.Schema:
                 selector.DeviceSelector(
                     selector.DeviceSelectorConfig(integration="solarman")
                 ),
+            ),
+            vol.Required(CONF_INVERTER_MODEL, default="auto"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=["auto", "sg04lp3", "sg05lp3"],
+                    mode=selector.SelectSelectorMode.LIST,
+                    translation_key="inverter_model",
+                )
             ),
             vol.Required(
                 CONF_ALLOW_INVERTER_WRITES, default=False

@@ -208,6 +208,7 @@
             "efficiency": "Rendement heen en terug",
             "battery_horizon_hours": "Planningshorizon",
             "inverter_device": "Omvormerapparaat",
+            "inverter_model": "Omvormermodel",
             "allow_inverter_writes": "Schrijven naar de omvormer toestaan",
             "restore_work_mode": "Bij loslaten: werkmodus",
             "priority": "Prioriteit",
@@ -237,6 +238,7 @@
             "efficiency": "Rendement heen en terug. 90 procent betekent dat een opgeslagen kWh 0,9 kWh teruggeeft.",
             "battery_horizon_hours": "Hoe ver vooruit wordt gezocht naar een duurder uur om in te ontladen. Prijzen dekken vandaag en morgen.",
             "inverter_device": "Het Solarman-omvormerapparaat, nodig voordat schrijven aangezet kan worden.",
+            "inverter_model": "Automatisch lezen gebruikt het Solarman-omvormermodel. Kies SG04LP3 (185 A) of SG05LP3 (240 A) als het gevonden stroommaximum niet klopt.",
             "allow_inverter_writes": "Standaard uit. Schrijven verandert het gedrag van je batterij en moet bewust worden gestart.",
             "restore_work_mode": "De werkmodus die wordt geschreven als je de omvormerbesturing uitzet, zodat de omvormer teruggaat naar zelfverbruik. In die stand mag alleen de generator laden, nooit het net.",
             "priority": "**EV** geeft een ladende auto de goedkope uren en houdt de batterij tegen, zodat die niet wordt volgeladen om een auto te dekken die al laadt. **Batterij** vult eerst de batterij.",
@@ -270,6 +272,7 @@
             "efficiency": "Rendement heen en terug",
             "battery_horizon_hours": "Planningshorizon",
             "inverter_device": "Omvormerapparaat",
+            "inverter_model": "Omvormermodel",
             "allow_inverter_writes": "Schrijven naar de omvormer toestaan",
             "restore_work_mode": "Bij loslaten: werkmodus",
             "priority": "Prioriteit",
@@ -633,6 +636,13 @@
         "0": "Verkopen eerst",
         "1": "Geen export naar belasting",
         "2": "Geen export naar CT"
+      }
+    },
+    "inverter_model": {
+      "options": {
+        "auto": "Auto-detect",
+        "sg04lp3": "SG04LP3 (185 A)",
+        "sg05lp3": "SG05LP3 (240 A)"
       }
     },
     "priority": {

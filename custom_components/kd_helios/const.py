@@ -8,7 +8,7 @@ from typing import Final
 
 DOMAIN: Final = "kd_helios"
 NAME: Final = "KD Helios"
-VERSION: Final = "0.4.0"
+VERSION: Final = "0.4.1"
 
 # ---------------------------------------------------------------------------
 # Config entry
@@ -67,6 +67,7 @@ CONF_TARGET_SOC: Final = "target_soc"
 CONF_EFFICIENCY: Final = "efficiency"
 CONF_BATTERY_HORIZON_HOURS: Final = "battery_horizon_hours"
 CONF_INVERTER_DEVICE: Final = "inverter_device"
+CONF_INVERTER_MODEL: Final = "inverter_model"
 CONF_ALLOW_INVERTER_WRITES: Final = "allow_inverter_writes"
 CONF_RESTORE_WORK_MODE: Final = "restore_work_mode"
 CONF_PRIORITY: Final = "priority"

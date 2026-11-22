@@ -48,6 +48,7 @@ from .const import (
     CONF_IMPORT_ENTITY,
     CONF_IMPORT_POWER_ENTITY,
     CONF_INVERTER_DEVICE,
+    CONF_INVERTER_MODEL,
     CONF_KIND,
     CONF_MAX_CHARGE_KW,
     CONF_MAX_DISCHARGE_KW,
@@ -422,6 +423,8 @@ class BatteryConfig:
     efficiency_pct: float = 90.0
     horizon_hours: int = 36
     inverter_device_id: str | None = None
+    #: The Deye model determines the hardware grid-charge current ceiling.
+    inverter_model: str = "auto"
     allow_writes: bool = False
     #: Who may use the cheap hours first.
     priority: Priority = Priority.EV
@@ -497,6 +500,7 @@ class BatteryConfig:
             efficiency_pct=as_float(data.get(CONF_EFFICIENCY), 90.0),
             horizon_hours=int(as_float(data.get(CONF_BATTERY_HORIZON_HOURS), 36.0)),
             inverter_device_id=as_entity_id(data.get(CONF_INVERTER_DEVICE)),
+            inverter_model=str(data.get(CONF_INVERTER_MODEL) or "auto"),
             allow_writes=as_bool(data.get(CONF_ALLOW_INVERTER_WRITES)),
             priority=_as_enum(Priority, data.get(CONF_PRIORITY), Priority.EV),
             import_cap_kw=as_float(data.get(CONF_IMPORT_CAP_KW)),

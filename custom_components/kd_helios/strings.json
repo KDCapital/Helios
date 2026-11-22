@@ -208,6 +208,7 @@
             "efficiency": "Round-trip efficiency",
             "battery_horizon_hours": "Planning horizon",
             "inverter_device": "Inverter device",
+            "inverter_model": "Inverter model",
             "allow_inverter_writes": "Allow writing to the inverter",
             "restore_work_mode": "On release: work mode",
             "priority": "Priority",
@@ -237,6 +238,7 @@
             "efficiency": "Round-trip efficiency. 90 percent means a stored kWh returns 0.9 kWh.",
             "battery_horizon_hours": "How far ahead to look for a cheaper hour to discharge into. Battery prices cover today and tomorrow.",
             "inverter_device": "The Solarman inverter device, required before writes can be enabled.",
+            "inverter_model": "Auto-detect reads the Solarman inverter model. Select SG04LP3 (185 A) or SG05LP3 (240 A) if the detected current ceiling is wrong.",
             "allow_inverter_writes": "Off by default. Writes change how your battery behaves and must be triggered explicitly.",
             "restore_work_mode": "The work mode written when you switch inverter control off, so the inverter goes back to self-consumption. Charging is also limited to the generator in that state, never the grid.",
             "priority": "**EV** gives a charging car the cheap hours and holds the battery back, so it is never filled just to cover a car that is already charging. **Battery** fills the battery first.",
@@ -270,6 +272,7 @@
             "efficiency": "Round-trip efficiency",
             "battery_horizon_hours": "Planning horizon",
             "inverter_device": "Inverter device",
+            "inverter_model": "Inverter model",
             "allow_inverter_writes": "Allow writing to the inverter",
             "restore_work_mode": "On release: work mode",
             "priority": "Priority",
@@ -633,6 +636,13 @@
         "0": "Selling first",
         "1": "Zero export to load",
         "2": "Zero export to CT"
+      }
+    },
+    "inverter_model": {
+      "options": {
+        "auto": "Auto-detect",
+        "sg04lp3": "SG04LP3 (185 A)",
+        "sg05lp3": "SG05LP3 (240 A)"
       }
     },
     "priority": {

@@ -219,6 +219,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self._control_key: tuple | None = None
         self._applied_current: int | None = None
         self._max_charge_current_a: int | None = None
+        self._max_current_source: str = "unknown"
         self._last_control_check: datetime | None = None
         #: End of a manual test charge, or None. It forces grid charging for
         #: the rest of the current price quarter.
@@ -479,49 +480,76 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         """Return the grid-charge current ceiling the controller may use.
 
         The SG04LP3 register stops at 185 A, while the SG05LP3-SM2 accepts
-        240 A. Prefer the number entity's own ``max`` attribute; fall back to
-        the model when Solarman has not exposed it. A configured user maximum
-        is applied on top, so the controller never exceeds it.
+        240 A. A user-selected model wins; otherwise the inverter device model
+        is used. The Solarman number entity's own maximum is only a fallback,
+        because some profiles expose a generic 350 A for a 240 A inverter.
         """
-        if self._max_charge_current_a is None:
-            config = self.battery_config
-            device_id = config.inverter_device_id if config is not None else None
-            model = ""
-            if device_id is not None:
-                device = dr.async_get(self.hass).async_get(device_id)
-                if device is not None:
-                    model = f"{device.model or ''} {device.name or ''}".upper()
-            model_max = 240 if "SG05LP3" in model else 185
-            discovered: int | None = None
-            if device_id is not None:
-                registry = er.async_get(self.hass)
-                for item in registry.entities.values():
-                    if item.device_id != device_id or item.domain != "number":
-                        continue
-                    label = " ".join(
-                        part
-                        for part in (
-                            item.original_name,
-                            item.entity_id,
-                            item.translation_key,
-                        )
-                        if part
-                    ).lower()
-                    if "grid" not in label or "current" not in label:
-                        continue
-                    state = self.hass.states.get(item.entity_id)
-                    if state is not None:
-                        maximum = state.attributes.get("max")
-                        try:
-                            if maximum is not None:
-                                discovered = max(1, min(400, int(float(maximum))))
-                        except (TypeError, ValueError):
-                            pass
-                    break
-            # The hardware ceiling wins over a generic Solarman entity max:
-            # some profiles expose 350 A for a 12K that is rated for 240 A.
-            self._max_charge_current_a = min(discovered or model_max, model_max)
+        config = self.battery_config
+        override = config.inverter_model if config is not None else "auto"
+        if override == "sg04lp3":
+            self._max_current_source = "selected SG04LP3"
+            return 185
+        if override == "sg05lp3":
+            self._max_current_source = "selected SG05LP3"
+            return 240
 
+        if self._max_charge_current_a is not None:
+            return self._max_charge_current_a
+
+        device_id = config.inverter_device_id if config is not None else None
+        model = ""
+        discovered: int | None = None
+        if device_id is not None:
+            device = dr.async_get(self.hass).async_get(device_id)
+            if device is not None:
+                parts = [
+                    device.manufacturer,
+                    device.model,
+                    device.name,
+                    device.sw_version,
+                ]
+                parts += [str(value) for _, value in device.identifiers]
+                model = " ".join(part for part in parts if part).upper()
+
+            registry = er.async_get(self.hass)
+            for item in registry.entities.values():
+                if item.device_id != device_id or item.domain != "number":
+                    continue
+                label = " ".join(
+                    part
+                    for part in (
+                        item.original_name,
+                        item.entity_id,
+                        item.translation_key,
+                    )
+                    if part
+                ).lower()
+                if "grid" not in label or "current" not in label:
+                    continue
+                state = self.hass.states.get(item.entity_id)
+                if state is not None:
+                    maximum = state.attributes.get("max")
+                    try:
+                        if maximum is not None:
+                            discovered = max(1, min(400, int(float(maximum))))
+                    except (TypeError, ValueError):
+                        pass
+                break
+
+        if "SG05LP3" in model:
+            self._max_charge_current_a = 240
+            self._max_current_source = f"detected {model.strip()}"
+        elif "SG04LP3" in model:
+            self._max_charge_current_a = 185
+            self._max_current_source = f"detected {model.strip()}"
+        elif discovered is not None:
+            # Unknown model: trust a plausible entity maximum, but not the
+            # generic 350 A profile value.
+            self._max_charge_current_a = min(discovered, 240)
+            self._max_current_source = "entity maximum"
+        else:
+            self._max_charge_current_a = 185
+            self._max_current_source = "fallback"
         return self._max_charge_current_a
 
     def _battery_voltage(self) -> float:
@@ -860,6 +888,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             voltage_v=round(voltage, 2),
             current_a=current,
             max_current_a=max_current,
+            max_current_source=self._max_current_source,
             effective_kw=round(current * voltage / 1000.0, 2) if charging else 0.0,
             reasons=[blocker.reason for blocker in blockers],
         )
@@ -1197,6 +1226,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 requested_current_a=requested_a,
                 current_a=current_a,
                 max_current_a=max_current,
+                max_current_source=self._max_current_source,
                 effective_kw=effective_kw,
                 power_w=self._discharge_power_w(self.battery_config),
             )
