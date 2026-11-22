@@ -166,10 +166,12 @@ async def test_turning_control_on_writes_the_plan(hass: HomeAssistant) -> None:
 
     assert engine.control_enabled is True
     assert engine.applied_plan is not None
-    assert len(recorder.blocks) == 8
+    assert len(recorder.blocks) == 7
     by_register = {block["register"]: block["values"] for block in recorder.blocks}
     assert by_register[130] == [1]
     assert by_register[146] == [255]
+    assert by_register[142] == [2]
+    assert 148 not in by_register
     assert hass.states.get(_switch_entity(hass, entry)).state == "on"
 
 
@@ -190,12 +192,14 @@ async def test_turning_control_off_releases_the_inverter(hass: HomeAssistant) ->
 
     assert engine.control_enabled is False
     assert engine.applied_plan is None
-    # The charge source block is the fourth write: every slot generator only.
     sources = next(block for block in recorder.blocks if block["register"] == 172)
-    assert sources["values"] == [int(ChargeSource.GENERATOR)] * 6
+    assert sources["values"] == [int(ChargeSource.OFF)] * 6
     assert all(value != int(ChargeSource.GRID) for value in sources["values"])
+    current = next(block for block in recorder.blocks if block["register"] == 128)
+    assert current["values"] == [0]
     # And the work mode goes back to self-consumption.
-    assert recorder.work_modes == [1]
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[142] == [1]
 
 
 async def test_release_honours_the_configured_work_mode(
@@ -221,7 +225,8 @@ async def test_release_honours_the_configured_work_mode(
         "switch", "turn_off", {"entity_id": entity_id}, blocking=True
     )
 
-    assert recorder.work_modes == [2]
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[142] == [2]
     assert WORK_MODE_REGISTER == 142
 
 
@@ -236,19 +241,19 @@ async def test_plan_is_reapplied_when_it_changes(hass: HomeAssistant) -> None:
     )
     recorder.clear()
 
-    # The plan in force is gone, so the next tick has to write it again.
-    engine.applied_plan = None
+    # Forget what was written, so the next tick has to write the state again.
+    engine._control_key = None
     with freeze_time("2026-11-20 13:00:00+00:00"):
         await engine.async_refresh()
 
     assert engine.applied_plan is not None
-    assert len(recorder.blocks) == 8
+    assert len(recorder.blocks) == 7
 
 
-async def test_the_rolling_schedule_writes_the_next_window(
+async def test_control_follows_the_active_window(
     hass: HomeAssistant, monkeypatch
 ) -> None:
-    """When one window ends, the next one is written without a plan change."""
+    """The controller writes the state of the window active right now."""
     start = dt_util.parse_datetime(FROZEN)
     assert start is not None
 
@@ -293,23 +298,45 @@ async def test_the_rolling_schedule_writes_the_next_window(
     await hass.services.async_call(
         "switch", "turn_on", {"entity_id": entity_id}, blocking=True
     )
+    # Before the first window the battery is idle.
+    assert engine.schedule_plan is not None
+    assert engine.schedule_plan.windows == ()
+    recorder.clear()
+
+    # 14:15 CET: inside the first window, so it must charge from the grid.
+    with freeze_time("2026-11-20 13:15:00+00:00"):
+        await engine.async_refresh()
+
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[172] == [int(ChargeSource.GRID)] * 6
+    assert by_register[166] == [100] * 6
+    assert by_register[128][0] > 0
+    assert 148 not in by_register
     assert engine.schedule_plan is not None
     assert engine.schedule_plan.windows == (first,)
     recorder.clear()
 
-    # 15:00 CET: the first window has ended and the second is next.
+    # 15:00 CET: the first window has ended and the second has not started.
     with freeze_time("2026-11-20 14:00:00+00:00"):
         await engine.async_refresh()
 
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[172] == [int(ChargeSource.OFF)] * 6
+    assert by_register[128] == [0]
+    assert 148 not in by_register
+    assert engine.schedule_plan is not None
+    assert engine.schedule_plan.windows == ()
+
+    # 16:15 CET: inside the second window, charging starts again.
+    recorder.clear()
+    with freeze_time("2026-11-20 15:15:00+00:00"):
+        await engine.async_refresh()
+
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[172] == [int(ChargeSource.GRID)] * 6
+    assert by_register[128][0] > 0
     assert engine.schedule_plan is not None
     assert engine.schedule_plan.windows == (second,)
-    assert engine.applied_plan is not None
-    assert engine.applied_plan.windows == (second,)
-    assert recorder.work_modes == []
-    local_start = dt_util.as_local(second.start)
-    expected_hhmm = local_start.hour * 100 + local_start.minute
-    times = next(block for block in recorder.blocks if block["register"] == 148)
-    assert expected_hhmm in times["values"]
 
 
 async def test_a_write_before_solarman_loads_is_retried_without_a_repair(
@@ -386,5 +413,7 @@ async def test_control_state_survives_a_reload(hass: HomeAssistant) -> None:
     engine = entry.runtime_data.engine
     assert engine.control_enabled is True
     assert engine.applied_plan is not None
-    # The restored plan matches the proposal, so nothing was written.
-    assert recorder.blocks == []
+    # A restart does not know the last written state, so it writes it once.
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[172] == [int(ChargeSource.OFF)] * 6
+    assert by_register[142] == [int(engine.control_plan.work_mode)]

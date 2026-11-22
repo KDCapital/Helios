@@ -56,6 +56,16 @@ WORK_MODE_REGISTER = 142
 #: is not enough: with this off, the inverter ignores every grid source.
 GRID_CHARGE_REGISTER = 130
 
+#: Battery grid-charging current. On a Deye this, not the TOU power block,
+#: sets how fast the battery charges from the grid.
+GRID_CHARGE_CURRENT_REGISTER = 128
+
+#: The inverter accepts 0..185 A on that register.
+GRID_CHARGE_CURRENT_MAX = 185
+
+#: Nominal pack voltage used when no battery voltage sensor is configured.
+DEFAULT_BATTERY_VOLTAGE = 51.2
+
 #: Weekly bitmask that enables the TOU schedule. 0x00FF enables every day.
 TOU_ENABLE_REGISTER = 146
 TOU_ENABLE_ALL_DAYS = 0x00FF
@@ -210,6 +220,37 @@ class TouPlan:
         """Return register address to values for a multi-register write."""
         return {
             TOU_REGISTERS["times"]: [program.hhmm for program in self.programs],
+            TOU_REGISTERS["power"]: [program.power_w for program in self.programs],
+            TOU_REGISTERS["soc"]: [program.soc_pct for program in self.programs],
+            TOU_REGISTERS["sources"]: [
+                int(program.source) for program in self.programs
+            ],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ControlPlan:
+    """The state Deye should hold now, written to all six TOU slots.
+
+    Deye applies a change to the six program values immediately, but a change
+    to their start times is only picked up after a manual confirmation on the
+    inverter. The controller therefore leaves the times alone and gives every
+    slot the same SOC, power and charging state. Time of Use stays enabled and
+    the slots are fixed around the day, so whichever slot is active does the
+    same thing.
+    """
+
+    programs: tuple[TouProgram, ...]
+    charge_current_a: int
+    work_mode: WorkMode = WorkMode.ZERO_EXPORT_TO_CT
+
+    def registers(self) -> dict[int, list[int]]:
+        """Return the register blocks to write, without the static times."""
+        return {
+            TOU_ENABLE_REGISTER: [TOU_ENABLE_ALL_DAYS],
+            WORK_MODE_REGISTER: [int(self.work_mode)],
+            GRID_CHARGE_REGISTER: [1],
+            GRID_CHARGE_CURRENT_REGISTER: [self.charge_current_a],
             TOU_REGISTERS["power"]: [program.power_w for program in self.programs],
             TOU_REGISTERS["soc"]: [program.soc_pct for program in self.programs],
             TOU_REGISTERS["sources"]: [
@@ -790,6 +831,48 @@ def schedule_window_plan(plan: ChargePlan, now: datetime) -> ChargePlan:
         energy_kwh=window.energy_kwh,
         cost=window.cost,
         expected_saving=window.profit,
+    )
+
+
+def charge_current_a(power_kw: float, voltage: float) -> int:
+    """Return the battery grid-charge current for a charge power."""
+    if power_kw <= 0 or voltage <= 0:
+        return 0
+    return max(1, min(GRID_CHARGE_CURRENT_MAX, round(power_kw * 1000.0 / voltage)))
+
+
+def build_control_plan(
+    settings: BatterySettings,
+    *,
+    charge: bool,
+    hold_soc: float | None,
+    power_w: int,
+    charge_current_a: int,
+    work_mode: WorkMode = WorkMode.ZERO_EXPORT_TO_CT,
+) -> ControlPlan:
+    """Return the six identical TOU programs for the current state.
+
+    The times are only for display and diagnostics; the controller never
+    writes them. The inverter keeps its six existing, day-covering slots.
+    """
+    reserve = max(0, min(100, round(settings.reserve_soc_pct)))
+    target = max(reserve, min(100, round(settings.target_soc_pct)))
+    soc = target if charge else reserve
+    if not charge and hold_soc is not None:
+        soc = max(reserve, min(100, round(hold_soc)))
+    programs = tuple(
+        TouProgram(
+            minute,
+            max(0, int(power_w)),
+            soc,
+            ChargeSource.GRID if charge else ChargeSource.OFF,
+        )
+        for minute in RESTORE_SLOT_MINUTES
+    )
+    return ControlPlan(
+        programs=programs,
+        charge_current_a=max(0, int(charge_current_a)),
+        work_mode=work_mode,
     )
 
 

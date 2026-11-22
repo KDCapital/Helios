@@ -333,20 +333,18 @@ period — every later slot within 10% of the peak — not against the single
 highest quarter hour. A volatile quarter-hour tariff that spikes once must not
 shrink a 32 kWh battery's plan to one 15-minute window.
 
-The inverter's six slots are no longer a limit on the plan. KD Helios writes
-only the window that is active now, or the next one when none is active: one
-charging slot at its start and one idle slot at its end. The remaining slots
-stay idle at the reserve, and when that window ends the next one is written.
-A plan can therefore contain any number of cheap windows without dropping the
-least profitable one.
+The planner can hold any number of cheap windows, but the inverter is not given
+a forward schedule. Deye applies a change to the six program **values**
+immediately, while a change to their **start times** waits for a manual
+confirmation on the inverter itself. KD Helios therefore leaves the six times
+alone and writes the same SOC, power and charging state into all six programs.
+Whichever slot is active does the same thing; the controller updates that state
+when the plan enters or leaves a window. Set the six times once on the inverter,
+for example 00:00, 04:00, 08:00, 12:00, 16:00 and 20:00, covering the whole day.
 
-The price of that flexibility is that only the current or next window is in the
-inverter at any time. The end slot is always part of what was written, so the
-battery still stops at the planned time if Home Assistant is unavailable. But a
-window *after* the next one is not pre-programmed: if Home Assistant is down
-when the current window ends, that next window has to wait for the next
-successful update. Writes happen at window transitions rather than only when
-the whole plan changes.
+The trade-off is the same as any current-state controller: if Home Assistant is
+unavailable, the inverter keeps the last state it was given until the next
+successful update. There is no pre-programmed end slot to fall back on.
 
 #### Deye time-of-use mapping
 
@@ -360,22 +358,21 @@ three-phase energy-storage protocol for the **SG04LP3/SG05LP3 family**:
 | TOU SOC 1–6 | 166–171 | percent |
 | TOU Charge Source 1–6 | 172–177 | 0 off, 1 grid, 2 generator, 3 both |
 
-A charging slot starts at the window start with source **grid** and the target
-SOC. It is followed by an idle slot at the window's end with the reserve SOC,
-which is what lets the battery discharge into the expensive hours. The other
-four slots are written as idle reserve slots in the gaps, so they cannot
-interrupt the rolling window.
+The times are **not** written by the controller; the six values are repeated in
+all six slots. In a charging state every slot gets source **grid**, the target
+SOC and **maximum discharge power** (the TOU power block is a discharge limit,
+not the charge rate). The charge rate comes from the separate **Battery Grid
+Charging Current** register (128), calculated from the wanted kilowatts and the
+battery voltage. The battery-voltage sensor is used when configured or
+auto-resolved; otherwise 51.2 V is assumed. In an idle state every slot gets
+source **off**, the reserve SOC and maximum discharge power. A hold state uses
+the current SOC.
 
-Writing the slots is not enough on its own. KD Helios also enables **Grid
-Charge** (register 130) and the weekly **TOU schedule** (register 146 = 0x00FF),
-because the inverter ignores every TOU slot while either master is off. The
-weekday checkboxes on the inverter's TOU page are that same weekly mask. Some
-Deye firmware only reloads the TOU table when that master changes, so after
-writing the programs KD Helios toggles the weekly mask off and on again; that
-is what makes the new times take effect without touching the inverter. The
-work mode is left alone while charging; it is only written back to the
-configured restore mode when control is released, together with the
-generator-only restore slots.
+KD Helios also keeps **Grid Charge** (register 130) and the weekly **TOU
+schedule** (register 146 = 0x00FF) enabled, and sets the work mode to **Zero
+Export To CT** while it controls the inverter. The work mode returns to the
+configured restore mode when control is released, together with a
+self-consumption state in all six slots.
 
 A busy inverter can answer a write with Modbus *Acknowledge* ("accepted, but
 this will take a while"). The write is retried before it is reported as
@@ -429,11 +426,11 @@ capacity and undoes the pause it was paid for. Two settings bound that:
   the meter total is used, which is conservative because it includes the
   battery's own charge.
 
-The cap is reactive: it rewrites the time-of-use power block when the allowed
-power changes by more than 0.25 kW, without touching the schedule, so it reacts
-within a coordinator tick instead of waiting for a new plan. Counting the
-battery's own draw as house load would make the cap fight itself, so the load
-used for headroom excludes the battery.
+The cap is reactive: it rewrites the **Battery Grid Charging Current** when the
+allowed charge power changes, without touching the rest of the control state,
+so it reacts within a coordinator tick instead of waiting for a new plan.
+Counting the battery's own draw as house load would make the cap fight itself,
+so the load used for headroom excludes the battery.
 
 #### Automatic control, and releasing it safely
 
@@ -443,17 +440,14 @@ turn it off and it hands the inverter back.
 
 Two things make the automatic mode safe:
 
-- **It only rewrites when the schedule actually changed** — when the next charge
-  window moves by more than five minutes, when the target SOC changes, when a
-  window starts or ends, or when there is suddenly nothing worth buying. It
-  never rewrites because the window's *end* drifted while the battery charged.
-  Ordinary rewrites are throttled to one per ten minutes so the Modbus link is
-  not hammered; a window transition is written immediately.
+- **It only writes when the state actually changed** — when a charge window
+  starts or ends, when the target SOC changes, or when the car's hold state
+  changes. The six values are compared with what was last written, so the
+  Modbus link is not hammered.
 - **Releasing control never leaves grid charging behind.** All six slots are
-  rewritten with the **generator** as their only source, so the inverter cannot
-  silently keep buying power, and the work mode is written back to
-  self-consumption. Which work mode that is, is a setting: *Selling first*,
-  *Zero export to load* (default) or *Zero export to CT*.
+  written with charging **off** and the reserve SOC, and the work mode is
+  written back to self-consumption. Which work mode that is, is a setting:
+  *Selling first*, *Zero export to load* (default) or *Zero export to CT*.
 
 The switch is only available when writes were enabled in the battery settings
 and an inverter device is selected — the config permission is the master gate,
@@ -475,10 +469,10 @@ Two more checks cover what a write cannot prove:
   than 50 W gets a grace period, then a strike, then a Repair. A battery that
   accepts the schedule and does nothing otherwise looks identical to a working
   one in every entity.
-- **A setting that moved.** The plan is rebuilt when anything it reads changes
-  (capacity, power, reserve, target, efficiency, horizon, the weekly cycle), and
-  the throttle that spares the Modbus link is bypassed, so a schedule computed
-  for another question cannot stay in force for ten minutes.
+- **A setting that moved.** The control state is rebuilt when anything it reads
+  changes (capacity, power, reserve, target, efficiency, horizon, the weekly
+  cycle), and the new state is written immediately; it cannot stay in force
+  from an older question.
 
 #### Battery health
 
@@ -514,10 +508,11 @@ Solarman is the right tool for *reading* this inverter, but two limits matter:
 - its entities are read-only.
 
 It does expose generic register services, so KD Helios writes through
-`solarman.write_multiple_holding_registers`: the four TOU blocks plus the two
-master switches, with a short pause between them. Because that changes how a
-real battery behaves, the action refuses to run unless writes are enabled in
-the battery settings **and** the call passes `confirm: true`:
+`solarman.write_multiple_holding_registers`: the TOU enable and work-mode
+masters, the grid-charge current, and the three program value blocks, with a
+short pause between them. It never writes the six start times. Because that
+changes how a real battery behaves, the action refuses to run unless writes are
+enabled in the battery settings **and** the call passes `confirm: true`:
 
 ```yaml
 action: kd_helios.apply_tou_programs
@@ -529,20 +524,6 @@ data:
 It returns the programs and registers it wrote, so the result is auditable
 rather than a fire-and-forget write.
 
-For checking the controls without waiting for the planner's next cheap slot,
-`charge_now` writes a grid-charge window starting at the current minute and
-keeps the normal plan out of the way until it ends:
-
-```yaml
-action: kd_helios.charge_now
-data:
-  entry_id: 01ARZ3NDEKTSV4RRFFQ69G5FAV
-  confirm: true
-  minutes: 15
-```
-
-Inverter control must be on; the normal rolling plan resumes when the window
-ends.
 
 ---
 
@@ -801,15 +782,15 @@ helper, so a restart continues where it left off instead of resetting to zero.
   than fetched live. Re-check it when your contract changes.
 - **Fixed costs are manual.** They are not read from any source; provider
   monthly fees are published only in signup flows.
-- **Automatic control is coarse by design.** It reacts to the charge window
-  moving, not to every price tick, and it waits ten minutes between ordinary
-  rewrites. A window transition is written immediately. A plan that changes only
-  in energy (the window shrinking as the battery fills) is deliberately not
-  rewritten.
-- **The rolling schedule needs Home Assistant at the transitions.** Only the
-  active or next window is in the inverter. The end slot still stops a charge
-  if Home Assistant disappears, but a window after the next one is not
-  pre-programmed and waits for the next successful update.
+- **Automatic control writes only when the state changes.** A window start or
+  end, a target-SOC change or a hold change is written immediately; an unchanged
+  state is not rewritten. A plan that changes only in energy (the window
+  shrinking as the battery fills) is deliberately not rewritten.
+- **The current state needs Home Assistant to change.** The inverter keeps the
+  last SOC, power and charging state it was given. If Home Assistant is
+  unavailable when a window ends, the battery keeps doing what it was doing
+  until the next successful update. The six TOU start times are not changed by
+  the integration; set them once on the inverter so they cover the whole day.
 - **Dynamic contracts only.** Fixed and variable contracts are not modelled in
   this version, and gas is out of scope.
 - **Startup order is handled.** A cold start can set KD Helios up before
@@ -829,7 +810,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 346 tests
+.venv/bin/python -m pytest        # 345 tests
 .venv/bin/ruff check custom_components tests
 ```
 

@@ -15,21 +15,20 @@ from homeassistant.util import dt as dt_util
 
 from .accounting import DeviceSnapshot, DeviceTracker
 from .battery import (
-    TOU_REGISTERS,
+    DEFAULT_BATTERY_VOLTAGE,
+    GRID_CHARGE_CURRENT_REGISTER,
     AppliedPlan,
     BatterySettings,
     ChargePlan,
     ChargeSource,
     ChargeWindow,
+    ControlPlan,
     TouPlan,
     WorkMode,
-    build_restore_programs,
-    build_tou_programs,
+    build_control_plan,
+    charge_current_a,
     charge_power_caps,
     plan_charge,
-    schedule_window_plan,
-    settings_fingerprint,
-    should_apply,
 )
 from .const import (
     ACCOUNTING_UPDATE_INTERVAL,
@@ -46,7 +45,6 @@ from .const import (
 )
 from .decisions import (
     SOURCE_DELIVERY,
-    SOURCE_PLAN,
     SOURCE_WRITE,
     Blocker,
     BlockerRegistry,
@@ -57,8 +55,8 @@ from .grid import GridSnapshot, GridTracker
 from .inverter import (
     InverterNotReadyError,
     InverterWriteError,
+    async_write_control_verified,
     async_write_registers,
-    async_write_tou_verified,
 )
 from .maintenance import WeeklyFullCharge, WeeklyResult
 from .models import BatteryConfig, DeviceConfig, GridConfig, device_subentries
@@ -206,6 +204,10 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         #: whole proposal for the dashboard.
         self.schedule_plan: ChargePlan | None = None
         self.tou_plan: TouPlan | None = None
+        #: The state the inverter should hold now, written to all six slots.
+        self.control_plan: ControlPlan | None = None
+        self._control_key: tuple | None = None
+        self._applied_current: int | None = None
         self.applied_plan: AppliedPlan | None = (
             AppliedPlan.from_dict(storage.battery_state())
             if self.battery_config is not None
@@ -213,11 +215,6 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         )
         self.control_enabled: bool = bool(storage.control_state().get("enabled", False))
         self.last_control_error: str | None = None
-        self._last_apply: datetime | None = None
-        self._applied_cap: float | None = None
-        #: End of a manual "charge now" test. Until then the coordinator must
-        #: not overwrite the test window with the normal plan.
-        self._manual_charge_until: datetime | None = None
         self.load_profile = LoadProfile.from_dict(
             storage.profile_state().get("buckets")
         )
@@ -240,7 +237,6 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         )
         #: What the weekly full charge wanted from the last tick.
         self.weekly_result: WeeklyResult = WeeklyResult()
-        self._plan_fingerprint: tuple[float | bool, ...] | None = None
         integrity = storage.integrity_state()
         self._not_delivering_since: datetime | None = None
         self._delivery_strikes = int(integrity.get("strikes", 0) or 0)
@@ -272,6 +268,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             config.soc_entity
             and config.house_load_entity
             and config.battery_power_entity
+            and config.battery_voltage_entity
         ):
             return
         subentries = self.entry.get_subentries_of_type(SUBENTRY_TYPE_BATTERY)
@@ -339,9 +336,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
     async def async_set_control(self, enabled: bool) -> None:
         """Take or release control of the inverter.
 
-        Taking control writes the current plan. Releasing it never leaves grid
-        charging behind: the programs are rewritten so only the generator may
-        charge, and the work mode goes back to self-consumption.
+        Taking control writes the current state. Releasing it never leaves grid
+        charging behind: all six programs are written with charging off and the
+        reserve SOC, and the work mode goes back to self-consumption.
         """
         config = self.battery_config
         if config is None or config.inverter_device_id is None:
@@ -353,29 +350,27 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
 
         device_id = config.inverter_device_id
         if enabled:
-            if self.schedule_plan is None or self.tou_plan is None:
+            control = self.control_plan
+            if control is None or self.schedule_plan is None or self.tou_plan is None:
                 raise ValueError("There is no charge plan to write yet")
-            self.last_verification = await async_write_tou_verified(
-                self.hass, device_id, self.tou_plan
+            self.last_verification = await async_write_control_verified(
+                self.hass, device_id, control
             )
+            self._control_key = self._control_key_for(control)
+            self._applied_current = control.charge_current_a
             self.applied_plan = AppliedPlan.from_plan(
                 self.schedule_plan, self.tou_plan, dt_util.utcnow()
             )
-            self._last_apply = dt_util.utcnow()
-            self._applied_cap = None
             self.storage.async_set_battery(self.applied_plan.as_dict())
             self._clear_issue(ISSUE_INVERTER_WRITE_FAILED)
         else:
-            restore = build_restore_programs(config.settings)
-            self.last_verification = await async_write_tou_verified(
-                self.hass,
-                device_id,
-                restore,
-                work_mode=WorkMode(config.restore_work_mode),
-                enable_charge=None,
+            release = self._release_control(config)
+            self.last_verification = await async_write_control_verified(
+                self.hass, device_id, release
             )
             self.applied_plan = None
-            self._manual_charge_until = None
+            self._control_key = None
+            self._applied_current = 0
             self.storage.async_set_battery({})
 
         self.control_enabled = enabled
@@ -384,116 +379,97 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.async_set_updated_data(self.data)
         _LOGGER.info("Inverter control %s", "enabled" if enabled else "released")
 
-    async def async_charge_now(self, minutes: int = 15) -> dict[str, Any]:
-        """Program a short grid charge starting in the current minute.
-
-        This is the manual test path: it writes a window from now for a few
-        minutes, so the controls can be checked without waiting for the
-        planner's next cheap slot. The coordinator leaves the window alone
-        until it ends.
-        """
-        config = self.battery_config
-        if config is None or config.inverter_device_id is None:
-            raise ValueError("No inverter is configured for this battery")
-        if not config.allow_writes:
-            raise ValueError(
-                "Writing to the inverter is disabled in the battery settings"
+    def _current_plan(
+        self, plan: ChargePlan, window: ChargeWindow | None
+    ) -> ChargePlan:
+        """Return the plan snapshot for the window active right now."""
+        if window is None:
+            return replace(
+                plan,
+                windows=(),
+                energy_kwh=0.0,
+                cost=0.0,
+                expected_saving=0.0,
             )
-        if not self.control_enabled:
-            raise ValueError("Turn inverter control on before starting a test charge")
-
-        now = dt_util.utcnow()
-        minutes = max(1, min(60, int(minutes)))
-        start = now.replace(second=0, microsecond=0)
-        end = start + timedelta(minutes=minutes)
-        power_kw = config.max_charge_kw
-        window = ChargeWindow(
-            start=start,
-            end=end,
-            energy_kwh=power_kw * minutes / 60.0,
-            cost=0.0,
-            value=0.0,
-            profit=0.0,
-            average_price=0.0,
-            discharge_price=0.0,
-        )
-        plan = ChargePlan(
-            generated_at=now,
-            soc_pct=read_number(self.hass, config.soc_entity),
+        return replace(
+            plan,
             windows=(window,),
             energy_kwh=window.energy_kwh,
-            cost=0.0,
-            expected_saving=0.0,
-            reason="manual",
+            cost=window.cost,
+            expected_saving=window.profit,
         )
-        tou = build_tou_programs(plan, config.settings, now)
-        self.last_verification = await async_write_tou_verified(
-            self.hass, config.inverter_device_id, tou
-        )
-        self.schedule_plan = plan
-        self.tou_plan = tou
-        self.applied_plan = AppliedPlan.from_plan(plan, tou, now)
-        self._manual_charge_until = end
-        self._last_apply = now
-        self._applied_cap = None
-        self.last_control_error = None
-        self.storage.async_set_battery(self.applied_plan.as_dict())
-        self._clear_issue(ISSUE_INVERTER_WRITE_FAILED)
-        self.async_set_updated_data(self.data)
-        return {
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "minutes": minutes,
-            "power_w": round(power_kw * 1000),
-        }
 
-    async def _async_sync_inverter(
-        self,
-        now: datetime,
-        settings: BatterySettings,
-        *,
-        force: bool = False,
-    ) -> list[Blocker]:
-        """Apply the plan when it changed enough to matter.
+    def _control_key_for(self, control: ControlPlan) -> tuple:
+        """Return the values a write has to change before it is repeated."""
+        return (
+            tuple(
+                (program.power_w, program.soc_pct, int(program.source))
+                for program in control.programs
+            ),
+            control.charge_current_a,
+            int(control.work_mode),
+        )
+
+    def _discharge_power_w(self, config: BatteryConfig) -> int:
+        """Return the discharge ceiling written to the TOU power block."""
+        kw = config.max_discharge_kw or config.max_charge_kw
+        return max(0, round(kw * 1000))
+
+    def _battery_voltage(self) -> float:
+        """Return the pack voltage used to turn charge power into current."""
+        config = self.battery_config
+        if config is not None and config.battery_voltage_entity is not None:
+            voltage = read_number(self.hass, config.battery_voltage_entity)
+            if voltage is not None and voltage > 0:
+                return voltage
+        return DEFAULT_BATTERY_VOLTAGE
+
+    def _release_control(self, config: BatteryConfig) -> ControlPlan:
+        """Return the six self-consumption programs written on release."""
+        return build_control_plan(
+            config.settings,
+            charge=False,
+            hold_soc=None,
+            power_w=self._discharge_power_w(config),
+            charge_current_a=0,
+            work_mode=WorkMode(config.restore_work_mode),
+        )
+
+    async def _async_sync_inverter(self, now: datetime) -> list[Blocker]:
+        """Write the current control state when it changed.
 
         Returns the reasons the write did not happen, so they can be shown next
         to the plan instead of only living in a log line.
         """
         config = self.battery_config
-        plan = self.schedule_plan
-        tou = self.tou_plan
-        if config is None or plan is None or tou is None:
+        control = self.control_plan
+        if config is None or control is None:
             return []
         if not config.allow_writes:
             return [Blocker(SOURCE_WRITE, "writes_disabled")]
         if config.inverter_device_id is None:
             return [Blocker(SOURCE_WRITE, "no_inverter")]
-        if not self.control_enabled:
-            # Nothing is being written because the user has not switched control
-            # on. That is a reason worth showing, but only when there was
-            # something to write in the first place.
-            return [Blocker(SOURCE_WRITE, "control_off")] if plan.has_windows else []
 
-        if not should_apply(
-            plan,
-            self.applied_plan,
-            settings,
-            last_apply=self._last_apply,
-            now=now,
-            force=force,
-        ):
+        charging = any(
+            program.source is ChargeSource.GRID for program in control.programs
+        )
+        if not self.control_enabled:
+            return [Blocker(SOURCE_WRITE, "control_off")] if charging else []
+
+        key = self._control_key_for(control)
+        if key == self._control_key:
             return []
 
         try:
-            result = await async_write_tou_verified(
-                self.hass, config.inverter_device_id, tou
+            result = await async_write_control_verified(
+                self.hass, config.inverter_device_id, control
             )
         except InverterNotReadyError as err:
             # Solarman has not loaded yet (custom integrations are set up
             # concurrently). Retry on the next tick instead of raising a Repair
             # for what is only a startup ordering issue.
             self.last_control_error = str(err)
-            self._last_apply = None
+            self._control_key = None
             return [Blocker(SOURCE_WRITE, "inverter_not_ready")]
         except InverterWriteError as err:
             return self._write_failed(err)
@@ -503,26 +479,28 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.last_control_error = None
         self.last_verification = result
         self._clear_issue(ISSUE_INVERTER_WRITE_FAILED)
-        self._last_apply = now
-        # The plan that was just written carries the uncapped charge power, so
-        # the power cap has to be re-applied on this cycle.
-        self._applied_cap = None
-        self.applied_plan = AppliedPlan.from_plan(plan, tou, now)
-        self.storage.async_set_battery(self.applied_plan.as_dict())
+        self._control_key = key
+        self._applied_current = control.charge_current_a
+        if self.schedule_plan is not None and self.tou_plan is not None:
+            self.applied_plan = AppliedPlan.from_plan(
+                self.schedule_plan, self.tou_plan, now
+            )
+            self.storage.async_set_battery(self.applied_plan.as_dict())
         return []
 
     def _write_failed(self, err: Exception) -> list[Blocker]:
         """Record a refused or unconfirmed write and raise a Repair."""
         message = str(err)
         self.last_control_error = message
-        _LOGGER.error("Could not write the time-of-use programs: %s", err)
+        _LOGGER.error("Could not write the inverter control state: %s", err)
         self._raise_issue(
             ISSUE_INVERTER_WRITE_FAILED,
             placeholders={"error": message},
         )
-        # The schedule in force is not the one that was planned, so forget the
-        # snapshot: the next successful write must not be throttled against it.
-        self._last_apply = None
+        # The inverter may hold a partially written state; write it again on
+        # the next tick instead of trusting the last key.
+        self._control_key = None
+        self._applied_current = None
         return [Blocker(SOURCE_WRITE, "write_failed", {"error": message})]
 
     def _issue_id(self, key: str) -> str:
@@ -671,8 +649,8 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         the capacity the car frees when it pauses for grid rewards.
         """
         config = self.battery_config
-        tou = self.tou_plan
-        if config is None or tou is None:
+        control = self.control_plan
+        if config is None or control is None:
             return []
 
         ev_kw = (
@@ -722,36 +700,31 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             or config.inverter_device_id is None
         ):
             return blockers
-        if not any(program.source is ChargeSource.GRID for program in tou.programs):
-            return blockers
-        if self._applied_cap is not None and abs(limit - self._applied_cap) < 0.25:
+        charging = any(
+            program.source is ChargeSource.GRID for program in control.programs
+        )
+        if not charging:
+            self._applied_current = 0
             return blockers
 
-        values = [
-            round(limit * 1000)
-            if program.source is ChargeSource.GRID
-            else program.power_w
-            for program in tou.programs
-        ]
-        if values == [program.power_w for program in tou.programs]:
-            # The plan already asks for exactly this, nothing to change.
-            self._applied_cap = limit
+        current = charge_current_a(limit, self._battery_voltage())
+        if self._applied_current is not None and current == self._applied_current:
             return blockers
         try:
             await async_write_registers(
                 self.hass,
                 config.inverter_device_id,
-                {TOU_REGISTERS["power"]: values},
+                {GRID_CHARGE_CURRENT_REGISTER: [current]},
             )
         except InverterNotReadyError:
-            # Same startup race as the schedule write; try again next tick.
+            # Same startup race as the control write; try again next tick.
             return blockers
         except Exception as err:  # noqa: BLE001 - never break accounting
             self.last_control_error = str(err)
-            _LOGGER.error("Could not cap the charge power: %s", err)
+            _LOGGER.error("Could not cap the charge current: %s", err)
             return blockers
-        self._applied_cap = limit
-        _LOGGER.debug("Charge power limited to %s kW", limit)
+        self._applied_current = current
+        _LOGGER.debug("Grid charge current limited to %s A", current)
         return blockers
 
     def _read_temperature(self, entity_id: str | None) -> float | None:
@@ -977,62 +950,33 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 suppressed=(hold[0], hold[1]) if hold is not None else None,
             )
             self.battery_plan = battery_plan
-            manual_until = self._manual_charge_until
-            manual = manual_until is not None and now < manual_until
-            if manual_until is not None and not manual:
-                self._manual_charge_until = None
-            if not manual:
-                self.schedule_plan = schedule_window_plan(battery_plan, now)
-                self.tou_plan = build_tou_programs(
-                    self.schedule_plan, settings, now, hold=hold
-                )
+            active_window = battery_plan.active_window(now)
+            charge = active_window is not None
+            hold_soc = None
+            if not charge and hold is not None and hold[0] <= now < hold[1]:
+                hold_soc = hold[2]
+
+            control = build_control_plan(
+                settings,
+                charge=charge,
+                hold_soc=hold_soc,
+                power_w=self._discharge_power_w(self.battery_config),
+                charge_current_a=charge_current_a(
+                    settings.max_charge_kw if charge else 0.0,
+                    self._battery_voltage(),
+                ),
+            )
+            self.control_plan = control
+            self.tou_plan = TouPlan(programs=control.programs, truncated=False)
+            self.schedule_plan = self._current_plan(battery_plan, active_window)
 
             blockers: list[Blocker] = list(battery_plan.blockers)
             if credit.blocker is not None:
                 blockers.append(credit.blocker)
             if weekly.blocker is not None:
                 blockers.append(weekly.blocker)
-            if not manual and self.tou_plan.truncated:
-                blockers.append(
-                    Blocker(
-                        SOURCE_PLAN,
-                        "slots_truncated",
-                        {"windows": len(self.schedule_plan.windows)},
-                    )
-                )
-            if manual and manual_until is not None:
-                blockers.append(
-                    Blocker(
-                        SOURCE_WRITE,
-                        "manual_charge",
-                        {"until": manual_until.isoformat()},
-                    )
-                )
 
-            fingerprint = settings_fingerprint(settings) + (weekly.active,)
-            settings_changed = (
-                self._plan_fingerprint is not None
-                and fingerprint != self._plan_fingerprint
-            )
-            self._plan_fingerprint = fingerprint
-            # A new window (or the end of the old one) must be written even if
-            # the settings did not change: the rolling schedule has to move.
-            schedule_key = tuple(
-                (window.start, window.end) for window in self.schedule_plan.windows
-            )
-            applied_key = (
-                tuple(
-                    (window.start, window.end) for window in self.applied_plan.windows
-                )
-                if self.applied_plan is not None
-                else ()
-            )
-            force = settings_changed or schedule_key != applied_key
-
-            if not manual:
-                blockers.extend(
-                    await self._async_sync_inverter(now, settings, force=force)
-                )
+            blockers.extend(await self._async_sync_inverter(now))
             blockers.extend(
                 await self._async_update_power_cap(now, snapshots, grid_snapshot)
             )

@@ -19,6 +19,7 @@ BATTERY_HINTS: dict[str, tuple[str, ...]] = {
     "soc_entity": ("state of charge", "battery soc", "soc"),
     "house_load_entity": ("total load", "load power", "house consumption"),
     "battery_power_entity": ("battery power", "battery_power"),
+    "battery_voltage_entity": ("battery voltage", "battery_voltage"),
 }
 
 #: Name hints per car field for an EVCC loadpoint. More specific names first,
@@ -124,6 +125,8 @@ def resolve_battery(hass: HomeAssistant, config: BatteryConfig) -> BatteryConfig
         changes["house_load_entity"] = found["house_load_entity"]
     if not config.battery_power_entity and "battery_power_entity" in found:
         changes["battery_power_entity"] = found["battery_power_entity"]
+    if not config.battery_voltage_entity and "battery_voltage_entity" in found:
+        changes["battery_voltage_entity"] = found["battery_voltage_entity"]
     return replace(config, **changes) if changes else config
 
 

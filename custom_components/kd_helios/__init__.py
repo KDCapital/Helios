@@ -60,6 +60,7 @@ _SOURCE_ENTITY_FIELDS = (
     "soc_entity",
     "house_load_entity",
     "battery_power_entity",
+    "battery_voltage_entity",
     "battery_temp_entity",
     "solar_forecast_entity",
     "import_entity",

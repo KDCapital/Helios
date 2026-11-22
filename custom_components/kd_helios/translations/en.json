@@ -675,8 +675,8 @@
   },
   "services": {
     "apply_tou_programs": {
-      "name": "Write time-of-use programs",
-      "description": "Write the currently planned charging windows as the inverter's six time-of-use programs, through the Solarman integration.",
+      "name": "Write inverter control state",
+      "description": "Write the current battery control state to the inverter's six TOU programs, through the Solarman integration. The program start times are left untouched.",
       "fields": {
         "entry_id": {
           "name": "Config entry",
@@ -685,24 +685,6 @@
         "confirm": {
           "name": "Confirm",
           "description": "Must be true. Writing changes how the battery behaves."
-        }
-      }
-    },
-    "charge_now": {
-      "name": "Charge now (test)",
-      "description": "Write a short grid-charge window starting now, to check that the inverter controls are working.",
-      "fields": {
-        "entry_id": {
-          "name": "Config entry",
-          "description": "The KD Helios entry whose battery should be charged."
-        },
-        "confirm": {
-          "name": "Confirm",
-          "description": "Must be true. This buys grid energy at the current price."
-        },
-        "minutes": {
-          "name": "Minutes",
-          "description": "How long to charge, from 1 to 60 minutes. Defaults to 15."
         }
       }
     }
@@ -731,9 +713,6 @@
     },
     "inverter_not_ready": {
       "message": "The Solarman integration is still starting up. Try again once it has finished loading."
-    },
-    "control_off": {
-      "message": "Turn inverter control on before starting a test charge."
     }
   }
 }

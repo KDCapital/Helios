@@ -12,7 +12,14 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.kd_helios.battery import ChargePlan, ChargeWindow
+from custom_components.kd_helios.battery import (
+    GRID_CHARGE_CURRENT_REGISTER,
+    ChargePlan,
+    ChargeWindow,
+    TouPlan,
+    build_control_plan,
+    charge_current_a,
+)
 from custom_components.kd_helios.const import (
     CONF_ALLOW_INVERTER_WRITES,
     CONF_BATTERY_CAPACITY_KWH,
@@ -149,8 +156,20 @@ async def test_control_off_is_named_as_the_reason(hass: HomeAssistant) -> None:
     with freeze_time(FROZEN):
         await _setup(hass, entry)
         engine = entry.runtime_data.engine
-        engine._plan_fingerprint = None
-        await engine.async_refresh()
+        config = engine.battery_config
+        assert config is not None
+        engine.control_plan = build_control_plan(
+            config.settings,
+            charge=True,
+            hold_soc=None,
+            power_w=3000,
+            charge_current_a=100,
+        )
+        now = dt_util.utcnow()
+        blockers = await engine._async_sync_inverter(now)
+        engine.blockers.update(blockers, now)
+        engine.async_set_updated_data(engine.data)
+        await hass.async_block_till_done()
 
     status = hass.states.get(_entity(hass, entry, "battery_status"))
     assert status is not None
@@ -185,7 +204,7 @@ async def test_a_refused_schedule_raises_a_repair(hass: HomeAssistant) -> None:
         engine = entry.runtime_data.engine
 
         inverter.corrupt = True
-        engine.applied_plan = None
+        engine._control_key = None
         await engine.async_refresh()
 
     issue = ir.async_get(hass).async_get_issue(
@@ -208,7 +227,7 @@ async def test_a_recovered_write_clears_the_repair(hass: HomeAssistant) -> None:
         engine = entry.runtime_data.engine
 
         inverter.corrupt = True
-        engine.applied_plan = None
+        engine._control_key = None
         await engine.async_refresh()
         assert (
             ir.async_get(hass).async_get_issue(
@@ -218,7 +237,7 @@ async def test_a_recovered_write_clears_the_repair(hass: HomeAssistant) -> None:
         )
 
         inverter.corrupt = False
-        engine.applied_plan = None
+        engine._control_key = None
         with freeze_time("2026-11-20 12:30:00+00:00"):
             await engine.async_refresh()
 
@@ -372,7 +391,7 @@ async def test_the_solar_hold_stops_the_grid_charge(hass: HomeAssistant) -> None
             "sensor.solar_remaining", "40", {"unit_of_measurement": "kWh"}
         )
         hass.states.async_set("sensor.house_load", "500", {"unit_of_measurement": "W"})
-        engine.applied_plan = None
+        engine._control_key = None
         await engine.async_refresh()
 
     assert engine.battery_plan.reason == "waiting_for_solar"
@@ -400,15 +419,22 @@ async def test_the_fuse_cap_uses_the_house_load_not_the_battery(
         inverter = await _setup(hass, entry)
         engine = entry.runtime_data.engine
         engine.control_enabled = True
-        hass.states.async_set(
-            "sensor.house_load", "500", {"unit_of_measurement": "W"}
-        )
+        hass.states.async_set("sensor.house_load", "500", {"unit_of_measurement": "W"})
 
-        await engine.async_charge_now(15)
+        config = engine.battery_config
+        assert config is not None
+        control = build_control_plan(
+            config.settings,
+            charge=True,
+            hold_soc=None,
+            power_w=11000,
+            charge_current_a=charge_current_a(11.0, 51.2),
+        )
+        engine.control_plan = control
+        engine.tou_plan = TouPlan(programs=control.programs, truncated=False)
         # The meter sees the battery's 11 kW on top of the 0.5 kW house load.
         await engine._async_update_power_cap(
             dt_util.utcnow(), {}, SimpleNamespace(import_power=11640)
         )
 
-    assert inverter.registers[154] == 11000
-    assert all(inverter.registers[register] == 11000 for register in range(154, 160))
+    assert inverter.registers[GRID_CHARGE_CURRENT_REGISTER] == 185

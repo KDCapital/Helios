@@ -675,8 +675,8 @@
   },
   "services": {
     "apply_tou_programs": {
-      "name": "Tijdvensters schrijven",
-      "description": "Schrijf de geplande laadvensters als de zes tijdvensters van de omvormer, via de Solarman-integratie.",
+      "name": "Omvormerbesturing schrijven",
+      "description": "Schrijf de actuele batterijbesturing naar de zes tijdvensters van de omvormer, via de Solarman-integratie. De starttijden van de vensters blijven ongewijzigd.",
       "fields": {
         "entry_id": {
           "name": "Configuratie-item",
@@ -685,24 +685,6 @@
         "confirm": {
           "name": "Bevestigen",
           "description": "Moet true zijn. Schrijven verandert het gedrag van de batterij."
-        }
-      }
-    },
-    "charge_now": {
-      "name": "Nu laden (test)",
-      "description": "Schrijf een kort laadvenster vanaf nu om te controleren of de omvormerbesturing werkt.",
-      "fields": {
-        "entry_id": {
-          "name": "Configuratie-item",
-          "description": "Het KD Helios-item waarvan de batterij geladen moet worden."
-        },
-        "confirm": {
-          "name": "Bevestigen",
-          "description": "Moet true zijn. Dit koopt netstroom tegen het actuele tarief."
-        },
-        "minutes": {
-          "name": "Minuten",
-          "description": "Hoe lang er geladen wordt, van 1 tot 60 minuten. Standaard 15."
         }
       }
     }
@@ -731,9 +713,6 @@
     },
     "inverter_not_ready": {
       "message": "De Solarman-integratie is nog aan het opstarten. Probeer het opnieuw zodra die klaar is met laden."
-    },
-    "control_off": {
-      "message": "Zet de omvormerbesturing aan voordat je een testlading start."
     }
   }
 }

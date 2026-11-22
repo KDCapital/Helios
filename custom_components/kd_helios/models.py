@@ -16,6 +16,7 @@ from .const import (
     CONF_BATTERY_HORIZON_HOURS,
     CONF_BATTERY_POWER_ENTITY,
     CONF_BATTERY_TEMP_ENTITY,
+    CONF_BATTERY_VOLTAGE_ENTITY,
     CONF_EFFICIENCY,
     CONF_ENERGY_ENTITY,
     CONF_ERE_CREDITS_ENTITY,
@@ -438,6 +439,8 @@ class BatteryConfig:
     max_discharge_kw: float = 0.0
     #: Signed battery power in W, used to notice a schedule that is not running.
     battery_power_entity: str | None = None
+    #: Battery pack voltage in V, used to turn charge power into current.
+    battery_voltage_entity: str | None = None
     #: Battery internal temperature in °C, used to derate a hot charge.
     battery_temp_entity: str | None = None
     temp_charge_limit_enabled: bool = False
@@ -504,6 +507,7 @@ class BatteryConfig:
             restore_work_mode=int(as_float(data.get(CONF_RESTORE_WORK_MODE), 1.0)),
             max_discharge_kw=as_float(data.get(CONF_MAX_DISCHARGE_KW)),
             battery_power_entity=as_entity_id(data.get(CONF_BATTERY_POWER_ENTITY)),
+            battery_voltage_entity=as_entity_id(data.get(CONF_BATTERY_VOLTAGE_ENTITY)),
             battery_temp_entity=as_entity_id(data.get(CONF_BATTERY_TEMP_ENTITY)),
             temp_charge_limit_enabled=as_bool(data.get(CONF_TEMP_CHARGE_LIMIT_ENABLED)),
             temp_charge_limit_c=as_float(

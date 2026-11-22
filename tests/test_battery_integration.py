@@ -15,9 +15,11 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.kd_helios.battery import (
+    GRID_CHARGE_CURRENT_REGISTER,
     GRID_CHARGE_REGISTER,
     TOU_ENABLE_REGISTER,
     TOU_REGISTERS,
+    WORK_MODE_REGISTER,
     ChargeSource,
 )
 from custom_components.kd_helios.const import (
@@ -44,7 +46,6 @@ from custom_components.kd_helios.const import (
     CONF_TARGET_SOC,
     DOMAIN,
     SERVICE_APPLY_TOU,
-    SERVICE_CHARGE_NOW,
     SUBENTRY_TYPE_BATTERY,
     SUBENTRY_TYPE_EV_CHARGER,
 )
@@ -376,100 +377,44 @@ async def test_action_writes_the_schedule_and_its_master_switches(
             return_response=True,
         )
 
-    assert len(calls) == 8
+    assert len(calls) == 7
     assert [call["register"] for call in calls] == [
-        TOU_REGISTERS["times"],
+        TOU_ENABLE_REGISTER,
+        WORK_MODE_REGISTER,
+        GRID_CHARGE_REGISTER,
+        GRID_CHARGE_CURRENT_REGISTER,
         TOU_REGISTERS["power"],
         TOU_REGISTERS["soc"],
         TOU_REGISTERS["sources"],
-        GRID_CHARGE_REGISTER,
-        TOU_ENABLE_REGISTER,
-        TOU_ENABLE_REGISTER,
-        TOU_ENABLE_REGISTER,
     ]
-    assert calls[4]["values"] == [1]
-    # The TOU master is toggled off and on so the inverter reloads the table.
-    assert calls[5]["values"] == [0x00FF]
-    assert calls[6]["values"] == [0]
-    assert calls[7]["values"] == [0x00FF]
+    assert calls[0]["values"] == [0x00FF]
+    assert calls[1]["values"] == [2]
+    assert calls[2]["values"] == [1]
+    assert calls[3]["values"] == [0]
     for call in calls:
         assert call["device"] == "inverter-device-id"
         expected_count = (
-            1
-            if call["register"] in (GRID_CHARGE_REGISTER, TOU_ENABLE_REGISTER)
-            else 6
+            6
+            if call["register"]
+            in (
+                TOU_REGISTERS["power"],
+                TOU_REGISTERS["soc"],
+                TOU_REGISTERS["sources"],
+            )
+            else 1
         )
         assert len(call["values"]) == expected_count
         assert all(0 <= value <= 65535 for value in call["values"])
 
-    # A rolling schedule has one charging window, not the whole day's plan.
+    # All six slots carry the same state; the times are never rewritten.
     sources = next(
         call for call in calls if call["register"] == TOU_REGISTERS["sources"]
     )
-    assert sources["values"].count(int(ChargeSource.GRID)) == 1
+    assert len(set(sources["values"])) == 1
+    assert TOU_REGISTERS["times"] not in {call["register"] for call in calls}
 
     assert result["entry_id"] == entry.entry_id
     assert len(result["programs"]) == 6
-
-
-async def test_charge_now_writes_the_current_slot(hass: HomeAssistant) -> None:
-    """The test action charges from the current minute, not the next slot."""
-    calls: list[dict] = []
-
-    async def fake_write(call) -> None:
-        calls.append(dict(call.data))
-
-    hass.services.async_register(
-        "solarman", "write_multiple_holding_registers", fake_write
-    )
-    with freeze_time(FROZEN):
-        entry = await _setup_with_battery(
-            hass,
-            **{
-                CONF_ALLOW_INVERTER_WRITES: True,
-                CONF_INVERTER_DEVICE: "inverter-device-id",
-            },
-        )
-        engine = entry.runtime_data.engine
-        engine.control_enabled = True
-
-        result = await hass.services.async_call(
-            DOMAIN,
-            SERVICE_CHARGE_NOW,
-            {"entry_id": entry.entry_id, "confirm": True, "minutes": 15},
-            blocking=True,
-            return_response=True,
-        )
-
-        now = dt_util.utcnow()
-        assert engine._manual_charge_until == now.replace(
-            second=0, microsecond=0
-        ) + timedelta(minutes=15)
-
-    assert result["minutes"] == 15
-    assert len(calls) == 8
-    sources = next(
-        call for call in calls if call["register"] == TOU_REGISTERS["sources"]
-    )
-    assert sources["values"].count(int(ChargeSource.GRID)) == 1
-
-    start = dt_util.as_local(dt_util.parse_datetime(result["start"]))
-    times = next(block for block in calls if block["register"] == TOU_REGISTERS["times"])
-    assert start.hour * 100 + start.minute in times["values"]
-    assert engine.schedule_plan is not None
-    assert engine.schedule_plan.reason == "manual"
-
-    # The normal plan must not overwrite the test window while it runs.
-    with freeze_time("2026-11-20 12:05:00+00:00"):
-        await engine.async_refresh()
-    assert engine._manual_charge_until is not None
-    assert engine.schedule_plan.reason == "manual"
-
-    # Once it has ended, the rolling plan takes over again.
-    with freeze_time("2026-11-20 12:16:00+00:00"):
-        await engine.async_refresh()
-    assert engine._manual_charge_until is None
-    assert engine.schedule_plan.reason != "manual"
 
 
 async def test_battery_flow_creates_the_subentry(hass: HomeAssistant) -> None:

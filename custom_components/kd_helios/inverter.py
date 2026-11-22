@@ -25,12 +25,14 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 
 from .battery import (
+    GRID_CHARGE_CURRENT_REGISTER,
     GRID_CHARGE_REGISTER,
     TOU_ENABLE_ALL_DAYS,
     TOU_ENABLE_REGISTER,
     TOU_REGISTERS,
     TOU_SLOTS,
     WORK_MODE_REGISTER,
+    ControlPlan,
     TouPlan,
     WorkMode,
 )
@@ -336,6 +338,52 @@ async def _reload_tou_schedule(hass: HomeAssistant, device_id: str) -> None:
     )
 
 
+async def async_write_control_verified(
+    hass: HomeAssistant,
+    device_id: str,
+    control: ControlPlan,
+    *,
+    retries: int = WRITE_VERIFY_RETRIES,
+) -> dict[str, Any]:
+    """Write the current Deye control state and verify it."""
+    registers = control.registers()
+    attempts = max(1, retries + 1)
+    mismatches: dict[int, dict[str, int | None]] = {}
+
+    for attempt in range(1, attempts + 1):
+        await async_write_registers(hass, device_id, registers)
+        read_back = await _verify_registers(hass, device_id, registers)
+        if read_back is None:
+            _LOGGER.debug(
+                "Solarman cannot read registers; accepting the write on trust"
+            )
+            return {
+                "verified": None,
+                "attempts": attempt,
+                "mismatches": {},
+                "registers": registers,
+            }
+        if not read_back:
+            return {
+                "verified": True,
+                "attempts": attempt,
+                "mismatches": {},
+                "registers": registers,
+            }
+        mismatches = read_back
+        _LOGGER.warning(
+            "Inverter did not take the control state (attempt %s/%s): %s",
+            attempt,
+            attempts,
+            read_back,
+        )
+
+    raise InverterWriteError(
+        f"The inverter did not accept the control state after {attempts} attempts: "
+        f"{mismatches}"
+    )
+
+
 async def async_write_tou(
     hass: HomeAssistant,
     device_id: str,
@@ -415,12 +463,13 @@ async def async_write_tou_verified(
 
 
 def register_order() -> list[int]:
-    """Return the register order used for a write, for diagnostics."""
+    """Return the register order used for a control write, for diagnostics."""
     return [
-        TOU_REGISTERS["times"],
+        TOU_ENABLE_REGISTER,
+        WORK_MODE_REGISTER,
+        GRID_CHARGE_REGISTER,
+        GRID_CHARGE_CURRENT_REGISTER,
         TOU_REGISTERS["power"],
         TOU_REGISTERS["soc"],
         TOU_REGISTERS["sources"],
-        GRID_CHARGE_REGISTER,
-        TOU_ENABLE_REGISTER,
     ]
