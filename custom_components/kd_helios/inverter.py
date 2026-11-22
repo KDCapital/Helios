@@ -57,21 +57,11 @@ class InverterNotReadyError(InverterWriteError):
 
 
 def _owning_entry(hass: HomeAssistant, device_id: str) -> ConfigEntry | None:
-    """Return the entry that owns a device, preferring Solarman.
-
-    A device can be shared by integrations. The Solarman entry is the one that
-    matters here; the primary entry is only used to explain a wrong pick.
-    """
+    """Return the config entry that owns a device."""
     device = dr.async_get(hass).async_get(device_id)
-    if device is None:
+    if device is None or not device.config_entry_id:
         return None
-    for entry_id in device.config_entries:
-        entry = hass.config_entries.async_get_entry(entry_id)
-        if entry is not None and entry.domain == SOLARMAN_DOMAIN:
-            return entry
-    if not device.primary_config_entry:
-        return None
-    return hass.config_entries.async_get_entry(device.primary_config_entry)
+    return hass.config_entries.async_get_entry(device.config_entry_id)
 
 
 def _inverter_is_ready(hass: HomeAssistant, device_id: str) -> bool | None:
