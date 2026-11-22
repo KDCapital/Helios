@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 from homeassistant.core import HomeAssistant, SupportsResponse
+from homeassistant.helpers import device_registry as dr
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.kd_helios.battery import (
     ChargeSource,
@@ -11,6 +13,7 @@ from custom_components.kd_helios.battery import (
     TouProgram,
 )
 from custom_components.kd_helios.inverter import (
+    InverterNotReadyError,
     InverterWriteError,
     async_read_tou,
     async_write_tou_verified,
@@ -156,3 +159,44 @@ async def test_reading_is_unavailable_rather_than_empty(
 ) -> None:
     """No read service is None, which is not the same as all zeroes."""
     assert await async_read_tou(hass, DEVICE) is None
+
+
+async def test_an_unloaded_solarman_entry_is_not_written(
+    hass: HomeAssistant,
+) -> None:
+    """A startup ordering race is not a refused write.
+
+    Home Assistant sets up integrations concurrently. When KD Helios writes
+    before Solarman finished its own setup, Solarman's config entry has no
+    runtime data yet and its service raises AttributeError. The write must be
+    retried later instead of being reported as an inverter refusal.
+    """
+    solarman = MockConfigEntry(domain="solarman", data={})
+    solarman.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=solarman.entry_id,
+        identifiers={("solarman", "inverter-1")},
+    )
+    inverter = FakeInverter()
+    _register(hass, inverter)
+
+    with pytest.raises(InverterNotReadyError):
+        await async_write_tou_verified(hass, device.id, make_plan())
+
+    assert inverter.writes == 0
+
+
+async def test_missing_runtime_data_from_solarman_is_retryable(
+    hass: HomeAssistant,
+) -> None:
+    """The exact Solarman failure is translated, even after the entry loaded."""
+
+    async def broken_write(call) -> None:
+        raise AttributeError("'ConfigEntry' object has no attribute 'runtime_data'")
+
+    hass.services.async_register(
+        "solarman", "write_multiple_holding_registers", broken_write
+    )
+
+    with pytest.raises(InverterNotReadyError):
+        await async_write_tou_verified(hass, DEVICE, make_plan())

@@ -6,6 +6,7 @@ share exactly one interpretation of units, unavailable states and bad values.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.const import (
@@ -14,9 +15,29 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant, State
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util.unit_conversion import EnergyConverter, PowerConverter
 
 from .const import UNIT_KWH, UNIT_W
+
+_LOGGER = logging.getLogger(__name__)
+
+#: Units already reported, so one misconfigured sensor does not log every tick.
+_REPORTED_UNITS: set[tuple[str, str]] = set()
+
+
+def _report_unusable_unit(entity_id: str | None, unit: Any, kind: str) -> None:
+    """Warn once when a sensor's unit cannot be converted to ``kind``."""
+    key = (entity_id or "", str(unit))
+    if key in _REPORTED_UNITS:
+        return
+    _REPORTED_UNITS.add(key)
+    _LOGGER.warning(
+        "%s reports %r, which is not a %s unit; ignoring the reading",
+        entity_id,
+        unit,
+        kind,
+    )
 
 
 def entity_state(hass: HomeAssistant, entity_id: str | None) -> State | None:
@@ -49,7 +70,13 @@ def _as_float(state: State) -> float | None:
 
 
 def read_power(hass: HomeAssistant, entity_id: str | None) -> float | None:
-    """Read a power entity in watt."""
+    """Read a power entity in watt, or None when it is not a power value.
+
+    A sensor whose unit is not a power unit is refused rather than passed
+    through: a charging current in ampere read as watt would understate the
+    car's draw, and a refused reading merely makes the caller fall back to
+    another source.
+    """
     state = entity_state(hass, entity_id)
     if state is None:
         return None
@@ -59,12 +86,13 @@ def read_power(hass: HomeAssistant, entity_id: str | None) -> float | None:
     unit: Any = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) or UNIT_W
     try:
         return PowerConverter.convert(value, unit, UNIT_W)
-    except (TypeError, ValueError):
-        return value
+    except (HomeAssistantError, TypeError, ValueError):
+        _report_unusable_unit(entity_id, unit, "power")
+        return None
 
 
 def read_energy(hass: HomeAssistant, entity_id: str | None) -> float | None:
-    """Read a cumulative energy entity in kWh."""
+    """Read a cumulative energy entity in kWh, or None when it is not energy."""
     state = entity_state(hass, entity_id)
     if state is None:
         return None
@@ -74,5 +102,6 @@ def read_energy(hass: HomeAssistant, entity_id: str | None) -> float | None:
     unit: Any = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) or UNIT_KWH
     try:
         return EnergyConverter.convert(value, unit, UNIT_KWH)
-    except (TypeError, ValueError):
-        return value
+    except (HomeAssistantError, TypeError, ValueError):
+        _report_unusable_unit(entity_id, unit, "energy")
+        return None

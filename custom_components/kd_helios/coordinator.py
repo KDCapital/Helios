@@ -53,6 +53,7 @@ from .ev import energy_needed_kwh, ev_charge_window
 from .forecast import SolarCredit, remaining_consumption_kwh, solar_credit
 from .grid import GridSnapshot, GridTracker
 from .inverter import (
+    InverterNotReadyError,
     InverterWriteError,
     async_write_registers,
     async_write_tou_verified,
@@ -338,6 +339,13 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             result = await async_write_tou_verified(
                 self.hass, config.inverter_device_id, tou
             )
+        except InverterNotReadyError as err:
+            # Solarman has not loaded yet (custom integrations are set up
+            # concurrently). Retry on the next tick instead of raising a Repair
+            # for what is only a startup ordering issue.
+            self.last_control_error = str(err)
+            self._last_apply = None
+            return [Blocker(SOURCE_WRITE, "inverter_not_ready")]
         except InverterWriteError as err:
             return self._write_failed(err)
         except Exception as err:  # noqa: BLE001 - never break accounting
@@ -571,6 +579,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 config.inverter_device_id,
                 {TOU_REGISTERS["power"]: values},
             )
+        except InverterNotReadyError:
+            # Same startup race as the schedule write; try again next tick.
+            return blockers
         except Exception as err:  # noqa: BLE001 - never break accounting
             self.last_control_error = str(err)
             _LOGGER.error("Could not cap the charge power: %s", err)

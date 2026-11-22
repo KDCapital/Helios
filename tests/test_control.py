@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.kd_helios.battery import WORK_MODE_REGISTER, ChargeSource
@@ -22,8 +24,10 @@ from custom_components.kd_helios.const import (
     CONF_SOC_ENTITY,
     CONF_TARGET_SOC,
     DOMAIN,
+    ISSUE_INVERTER_WRITE_FAILED,
     SUBENTRY_TYPE_BATTERY,
 )
+from custom_components.kd_helios.decisions import SOURCE_WRITE
 
 FROZEN = "2026-11-20 12:00:00+00:00"
 USER_INPUT = {CONF_PROVIDER: "zonneplan", CONF_PRICE_INTERVAL: "quarterly"}
@@ -227,6 +231,44 @@ async def test_plan_is_reapplied_when_it_changes(hass: HomeAssistant) -> None:
 
     assert engine.applied_plan is not None
     assert len(recorder.blocks) == 4
+
+
+async def test_a_write_before_solarman_loads_is_retried_without_a_repair(
+    hass: HomeAssistant,
+) -> None:
+    """A startup race shows up as a blocker, not as a broken inverter."""
+    solarman = MockConfigEntry(domain="solarman", data={})
+    solarman.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=solarman.entry_id,
+        identifiers={("solarman", "inverter-1")},
+    )
+    entry = make_entry(
+        **{
+            CONF_ALLOW_INVERTER_WRITES: True,
+            CONF_INVERTER_DEVICE: device.id,
+        }
+    )
+    with freeze_time(FROZEN):
+        recorder = await _setup(hass, entry)
+    engine = entry.runtime_data.engine
+    engine.control_enabled = True
+    engine.applied_plan = None
+    recorder.clear()
+
+    with freeze_time("2026-11-20 13:00:00+00:00"):
+        await engine.async_refresh()
+
+    assert recorder.blocks == []
+    blocker = engine.blockers.get(SOURCE_WRITE)
+    assert blocker is not None
+    assert blocker.reason == "inverter_not_ready"
+    assert (
+        ir.async_get(hass).async_get_issue(
+            DOMAIN, f"{ISSUE_INVERTER_WRITE_FAILED}_{entry.entry_id}"
+        )
+        is None
+    )
 
 
 async def test_unchanged_plan_is_not_rewritten(hass: HomeAssistant) -> None:

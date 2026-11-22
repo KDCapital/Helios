@@ -23,6 +23,7 @@ from custom_components.kd_helios.const import (
     CONF_ENERGY_ENTITY,
     CONF_EV_DEPARTURE_WEEKDAY,
     CONF_EV_PACK_KWH,
+    CONF_EV_POWER_ENTITY,
     CONF_EV_SOC_ENTITY,
     CONF_EV_TARGET_SOC,
     CONF_EV_TARGET_SOC_ENTITY,
@@ -183,6 +184,56 @@ async def test_the_car_window_falls_back_to_the_chargers_power(
     start, end, soc = hold
     assert end > start
     assert soc == pytest.approx(50.0)
+
+
+async def test_a_current_sensor_does_not_break_the_accounting_tick(
+    hass: HomeAssistant,
+) -> None:
+    """An EV power sensor in ampere falls back instead of failing every tick."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=USER_INPUT,
+        unique_id="zonneplan_quarterly",
+        title="Zonneplan",
+        subentries_data=[
+            battery_subentry(),
+            {
+                "subentry_type": SUBENTRY_TYPE_EV_CHARGER,
+                "data": {
+                    CONF_NAME: "EV charger",
+                    CONF_KIND: "ev_charger",
+                    CONF_ENERGY_ENTITY: "sensor.ev_energy",
+                    # The charger's own sensor is the usable power reading.
+                    CONF_POWER_ENTITY: "sensor.ev_power",
+                    CONF_EV_PACK_KWH: 60.0,
+                    CONF_EV_TARGET_SOC: 80.0,
+                    CONF_EV_DEPARTURE_WEEKDAY: "07:00",
+                    CONF_EV_SOC_ENTITY: "sensor.car_soc",
+                    # EVCC exposes its charge current in A; this is not power.
+                    CONF_EV_POWER_ENTITY: "sensor.car_current",
+                },
+                "title": "EV charger",
+                "unique_id": None,
+            },
+        ],
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set(SOC_ENTITY, "25", {"unit_of_measurement": "%"})
+    hass.states.async_set("sensor.car_soc", "50", {"unit_of_measurement": "%"})
+    hass.states.async_set("sensor.car_current", "16", {"unit_of_measurement": "A"})
+    hass.states.async_set("sensor.ev_power", "11000", {"unit_of_measurement": "W"})
+
+    with freeze_time(FROZEN):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        engine = entry.runtime_data.engine
+        assert engine.last_update_success is True
+        hold = engine._ev_hold(dt_util.utcnow(), engine.prices.series)
+
+    assert hold is not None
+    start, end, _soc = hold
+    assert end > start
 
 
 async def test_battery_plan_attributes_expose_windows_and_programs(

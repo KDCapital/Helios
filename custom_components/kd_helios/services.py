@@ -28,7 +28,7 @@ from homeassistant.util import dt as dt_util
 
 from .battery import AppliedPlan
 from .const import DOMAIN, SERVICE_APPLY_TOU, SOLARMAN_WRITE_SERVICE
-from .inverter import async_write_tou
+from .inverter import InverterNotReadyError, async_write_tou
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,7 +97,13 @@ def async_setup_services(hass: HomeAssistant) -> None:
             engine.battery_plan, engine.tou_plan, dt_util.utcnow()
         )
         registers = applied and engine.tou_plan.registers()
-        await async_write_tou(hass, config.inverter_device_id, engine.tou_plan)
+        try:
+            await async_write_tou(hass, config.inverter_device_id, engine.tou_plan)
+        except InverterNotReadyError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="inverter_not_ready",
+            ) from err
 
         # Remember what is actually programmed, so the saving it was expected to
         # deliver stays visible instead of being overwritten by the next tick.

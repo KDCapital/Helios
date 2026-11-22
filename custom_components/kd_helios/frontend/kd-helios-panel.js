@@ -33,6 +33,7 @@ const BLOCKER_LABELS = {
   control_off: "Inverter control is switched off",
   writes_disabled: "Inverter writes are disabled",
   no_inverter: "No inverter selected",
+  inverter_not_ready: "Waiting for the inverter integration to load",
   write_failed: "The inverter refused the schedule",
   not_delivering: "The battery is not delivering",
   weekly_full_charge: "Weekly full charge for cell balancing",

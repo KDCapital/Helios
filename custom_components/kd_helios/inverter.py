@@ -19,8 +19,10 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 
 from .battery import (
     TOU_REGISTERS,
@@ -42,13 +44,78 @@ class InverterWriteError(HomeAssistantError):
     """Raised when the inverter cannot be written, or did not take the write."""
 
 
-def _ensure_write_service(hass: HomeAssistant) -> None:
-    """Fail early when Solarman cannot write."""
+class InverterNotReadyError(InverterWriteError):
+    """Raised while the integration that owns the inverter is not loaded.
+
+    Home Assistant sets up custom integrations concurrently, so a write can
+    run before Solarman has finished its own setup. Its config entry then has
+    no ``runtime_data`` yet, and calling one of its services raises an
+    ``AttributeError`` from inside Solarman. That is a startup ordering issue,
+    not a refused write, so the caller retries quietly instead of raising a
+    Repair.
+    """
+
+
+def _owning_entry(hass: HomeAssistant, device_id: str) -> ConfigEntry | None:
+    """Return the entry that owns a device, preferring Solarman.
+
+    A device can be shared by integrations. The Solarman entry is the one that
+    matters here; the primary entry is only used to explain a wrong pick.
+    """
+    device = dr.async_get(hass).async_get(device_id)
+    if device is None:
+        return None
+    for entry_id in device.config_entries:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is not None and entry.domain == SOLARMAN_DOMAIN:
+            return entry
+    if not device.primary_config_entry:
+        return None
+    return hass.config_entries.async_get_entry(device.primary_config_entry)
+
+
+def _inverter_is_ready(hass: HomeAssistant, device_id: str) -> bool | None:
+    """Return whether the inverter's integration is loaded.
+
+    ``None`` means there is no device registry entry to judge by; the service
+    call is then left to report the problem itself.
+    """
+    entry = _owning_entry(hass, device_id)
+    if entry is None:
+        return None
+    return entry.domain == SOLARMAN_DOMAIN and entry.state is ConfigEntryState.LOADED
+
+
+def _ensure_write_service(hass: HomeAssistant, device_id: str) -> None:
+    """Fail early when Solarman cannot write for this inverter."""
+    entry = _owning_entry(hass, device_id)
+    if entry is not None and entry.domain != SOLARMAN_DOMAIN:
+        raise InverterWriteError(
+            "The selected inverter device does not belong to the Solarman "
+            f"integration but to {entry.domain}"
+        )
+    if entry is not None and entry.state is not ConfigEntryState.LOADED:
+        # Checked before the service table: Solarman registers its services
+        # before it finishes loading the entry, and calling one in that window
+        # is exactly what raises the runtime-data error.
+        raise InverterNotReadyError(
+            "The Solarman integration is not loaded yet "
+            f"({entry.state.value}) for this inverter"
+        )
     if not hass.services.has_service(SOLARMAN_DOMAIN, SOLARMAN_WRITE_SERVICE):
         raise InverterWriteError(
             "The Solarman integration does not expose "
             f"{SOLARMAN_DOMAIN}.{SOLARMAN_WRITE_SERVICE}"
         )
+
+
+def _raise_if_not_ready(err: AttributeError) -> None:
+    """Translate Solarman's missing-runtime-data error into a retryable one."""
+    if "runtime_data" not in str(err):
+        raise err
+    raise InverterNotReadyError(
+        "The Solarman integration has not finished setting up this inverter"
+    ) from err
 
 
 async def async_read_registers(
@@ -63,6 +130,8 @@ async def async_read_registers(
     services, and a missing read must degrade verification, never block control.
     """
     if not hass.services.has_service(SOLARMAN_DOMAIN, SOLARMAN_READ_SERVICE):
+        return None
+    if _inverter_is_ready(hass, device_id) is False:
         return None
     try:
         response = await hass.services.async_call(
@@ -144,7 +213,7 @@ async def async_write_registers(
     work_mode: WorkMode | int | None = None,
 ) -> dict[int, list[int]]:
     """Write register blocks, and optionally the work mode, to the inverter."""
-    _ensure_write_service(hass)
+    _ensure_write_service(hass, device_id)
 
     written: dict[int, list[int]] = {}
     first = True
@@ -152,12 +221,15 @@ async def async_write_registers(
         if not first:
             await asyncio.sleep(WRITE_PAUSE)
         first = False
-        await hass.services.async_call(
-            SOLARMAN_DOMAIN,
-            SOLARMAN_WRITE_SERVICE,
-            {"device": device_id, "register": register, "values": values},
-            blocking=True,
-        )
+        try:
+            await hass.services.async_call(
+                SOLARMAN_DOMAIN,
+                SOLARMAN_WRITE_SERVICE,
+                {"device": device_id, "register": register, "values": values},
+                blocking=True,
+            )
+        except AttributeError as err:
+            _raise_if_not_ready(err)
         written[register] = values
         _LOGGER.info(
             "Wrote registers %s..%s with %s",
@@ -168,16 +240,19 @@ async def async_write_registers(
 
     if work_mode is not None:
         await asyncio.sleep(WRITE_PAUSE)
-        await hass.services.async_call(
-            SOLARMAN_DOMAIN,
-            "write_holding_register",
-            {
-                "device": device_id,
-                "register": WORK_MODE_REGISTER,
-                "value": int(work_mode),
-            },
-            blocking=True,
-        )
+        try:
+            await hass.services.async_call(
+                SOLARMAN_DOMAIN,
+                "write_holding_register",
+                {
+                    "device": device_id,
+                    "register": WORK_MODE_REGISTER,
+                    "value": int(work_mode),
+                },
+                blocking=True,
+            )
+        except AttributeError as err:
+            _raise_if_not_ready(err)
         _LOGGER.info("Wrote work mode %s", int(work_mode))
 
     return written

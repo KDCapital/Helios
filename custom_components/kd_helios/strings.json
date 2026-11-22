@@ -710,6 +710,9 @@
     },
     "solarman_unavailable": {
       "message": "The Solarman integration is not loaded, so the registers cannot be written."
+    },
+    "inverter_not_ready": {
+      "message": "The Solarman integration is still starting up. Try again once it has finished loading."
     }
   }
 }
