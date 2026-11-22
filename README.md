@@ -366,6 +366,14 @@ which is what lets the battery discharge into the expensive hours. The other
 four slots are written as idle reserve slots in the gaps, so they cannot
 interrupt the rolling window.
 
+Writing the slots is not enough on its own. KD Helios also enables **Grid
+Charge** (register 130) and the weekly **TOU schedule** (register 146 = 0x00FF),
+and switches the work mode to **Selling First** while the window is active,
+because Deye's zero-export modes suppress TOU grid charging. Selling First can
+also export battery energy, so the configured restore work mode goes back as
+soon as the window ends. Releasing control turns Grid Charge and TOU off again
+and writes the generator-only restore slots.
+
 #### Deliberately not included: saldering arbitrage
 
 While saldering runs (until 1 January 2027), energy returned to the grid is
@@ -787,7 +795,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 340 tests
+.venv/bin/python -m pytest        # 342 tests
 .venv/bin/ruff check custom_components tests
 ```
 

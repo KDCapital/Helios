@@ -93,7 +93,7 @@ async def test_a_schedule_that_reads_back_is_verified(hass: HomeAssistant) -> No
 
     assert result["verified"] is True
     assert result["attempts"] == 1
-    assert inverter.reads == 4
+    assert inverter.reads == 6
 
 
 async def test_one_bad_read_back_is_retried(hass: HomeAssistant) -> None:
@@ -106,7 +106,7 @@ async def test_one_bad_read_back_is_retried(hass: HomeAssistant) -> None:
 
     assert result["verified"] is True
     assert result["attempts"] == 2
-    assert inverter.writes == 8
+    assert inverter.writes == 12
 
 
 async def test_a_persistent_mismatch_is_an_error(hass: HomeAssistant) -> None:
@@ -118,7 +118,7 @@ async def test_a_persistent_mismatch_is_an_error(hass: HomeAssistant) -> None:
     with pytest.raises(InverterWriteError):
         await async_write_tou_verified(hass, DEVICE, make_plan())
 
-    assert inverter.writes == 8
+    assert inverter.writes == 12
 
 
 async def test_without_a_read_service_the_write_is_trusted(
@@ -137,7 +137,7 @@ async def test_without_a_read_service_the_write_is_trusted(
 
     assert result["verified"] is None
     assert result["attempts"] == 1
-    assert inverter.writes == 4
+    assert inverter.writes == 6
 
 
 async def test_the_schedule_can_be_read_back(hass: HomeAssistant) -> None:
@@ -200,3 +200,29 @@ async def test_missing_runtime_data_from_solarman_is_retryable(
 
     with pytest.raises(InverterNotReadyError):
         await async_write_tou_verified(hass, DEVICE, make_plan())
+
+
+async def test_a_charge_write_enables_grid_charge_and_tou(
+    hass: HomeAssistant,
+) -> None:
+    """The TOU table is inert until the two master switches are on."""
+    inverter = FakeInverter()
+    _register(hass, inverter)
+
+    await async_write_tou_verified(hass, DEVICE, make_plan())
+
+    assert inverter.registers[130] == 1
+    assert inverter.registers[146] == 0x00FF
+
+
+async def test_a_release_disables_grid_charge_and_tou(
+    hass: HomeAssistant,
+) -> None:
+    """Releasing control must not leave a master switch behind."""
+    inverter = FakeInverter()
+    _register(hass, inverter)
+
+    await async_write_tou_verified(hass, DEVICE, make_plan(), enable_charge=False)
+
+    assert inverter.registers[130] == 0
+    assert inverter.registers[146] == 0

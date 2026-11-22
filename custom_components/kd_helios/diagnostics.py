@@ -73,6 +73,11 @@ async def async_get_config_entry_diagnostics(
                 if runtime.engine.tou_plan
                 else None
             ),
+            "work_mode": (
+                int(runtime.engine.work_mode)
+                if runtime.engine.work_mode is not None
+                else None
+            ),
         },
         "devices": {
             subentry_id: {

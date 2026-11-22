@@ -14,7 +14,12 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.kd_helios.battery import TOU_REGISTERS, ChargeSource
+from custom_components.kd_helios.battery import (
+    GRID_CHARGE_REGISTER,
+    TOU_ENABLE_REGISTER,
+    TOU_REGISTERS,
+    ChargeSource,
+)
 from custom_components.kd_helios.const import (
     CONF_ALLOW_INVERTER_WRITES,
     CONF_BATTERY_CAPACITY_KWH,
@@ -320,8 +325,10 @@ async def test_action_refuses_without_confirmation(hass: HomeAssistant) -> None:
         )
 
 
-async def test_action_writes_the_four_register_blocks(hass: HomeAssistant) -> None:
-    """With writes enabled and confirmed, four blocks go to Solarman."""
+async def test_action_writes_the_schedule_and_its_master_switches(
+    hass: HomeAssistant,
+) -> None:
+    """With writes enabled and confirmed, the schedule and masters go to Solarman."""
     calls: list[dict] = []
 
     async def fake_write(call) -> None:
@@ -347,16 +354,26 @@ async def test_action_writes_the_four_register_blocks(hass: HomeAssistant) -> No
             return_response=True,
         )
 
-    assert len(calls) == 4
+    assert len(calls) == 6
     assert [call["register"] for call in calls] == [
         TOU_REGISTERS["times"],
         TOU_REGISTERS["power"],
         TOU_REGISTERS["soc"],
         TOU_REGISTERS["sources"],
+        GRID_CHARGE_REGISTER,
+        TOU_ENABLE_REGISTER,
     ]
+    masters = {call["register"]: call["values"] for call in calls}
+    assert masters[GRID_CHARGE_REGISTER] == [1]
+    assert masters[TOU_ENABLE_REGISTER] == [0x00FF]
     for call in calls:
         assert call["device"] == "inverter-device-id"
-        assert len(call["values"]) == 6
+        expected_count = (
+            1
+            if call["register"] in (GRID_CHARGE_REGISTER, TOU_ENABLE_REGISTER)
+            else 6
+        )
+        assert len(call["values"]) == expected_count
         assert all(0 <= value <= 65535 for value in call["values"])
 
     # A rolling schedule has one charging window, not the whole day's plan.

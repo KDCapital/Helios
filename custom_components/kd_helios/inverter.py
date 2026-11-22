@@ -25,6 +25,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 
 from .battery import (
+    GRID_CHARGE_REGISTER,
+    TOU_ENABLE_ALL_DAYS,
+    TOU_ENABLE_REGISTER,
     TOU_REGISTERS,
     TOU_SLOTS,
     WORK_MODE_REGISTER,
@@ -248,15 +251,30 @@ async def async_write_registers(
     return written
 
 
+def _tou_registers(tou: TouPlan, *, enable_charge: bool) -> dict[int, list[int]]:
+    """Return the TOU blocks plus the master switches they need.
+
+    The four time/power/SOC/source blocks are ignored by the inverter when
+    grid charging or the weekly TOU schedule is off. Those masters are written
+    last, after the programs, so the inverter never applies a half-written
+    schedule.
+    """
+    registers = tou.registers()
+    registers[GRID_CHARGE_REGISTER] = [1 if enable_charge else 0]
+    registers[TOU_ENABLE_REGISTER] = [TOU_ENABLE_ALL_DAYS if enable_charge else 0]
+    return registers
+
+
 async def async_write_tou(
     hass: HomeAssistant,
     device_id: str,
     tou: TouPlan,
     *,
     work_mode: WorkMode | int | None = None,
+    enable_charge: bool = True,
 ) -> dict[str, Any]:
     """Write a full set of six time-of-use programs."""
-    registers = tou.registers()
+    registers = _tou_registers(tou, enable_charge=enable_charge)
     written = await async_write_registers(
         hass, device_id, registers, work_mode=work_mode
     )
@@ -281,6 +299,7 @@ async def async_write_tou_verified(
     *,
     work_mode: WorkMode | int | None = None,
     retries: int = WRITE_VERIFY_RETRIES,
+    enable_charge: bool = True,
 ) -> dict[str, Any]:
     """Write the schedule and prove the inverter took it.
 
@@ -288,7 +307,7 @@ async def async_write_tou_verified(
     when a mismatch survived the retry, and None when the transport cannot read
     at all (the write is then accepted on trust, as it was before).
     """
-    registers = tou.registers()
+    registers = _tou_registers(tou, enable_charge=enable_charge)
     attempts = max(1, retries + 1)
     mismatches: dict[int, dict[str, int | None]] = {}
 
@@ -327,4 +346,6 @@ def register_order() -> list[int]:
         TOU_REGISTERS["power"],
         TOU_REGISTERS["soc"],
         TOU_REGISTERS["sources"],
+        GRID_CHARGE_REGISTER,
+        TOU_ENABLE_REGISTER,
     ]

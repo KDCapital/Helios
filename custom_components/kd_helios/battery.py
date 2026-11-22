@@ -52,6 +52,14 @@ TOU_SLOTS = 6
 #: Holding register of the inverter's work mode.
 WORK_MODE_REGISTER = 142
 
+#: Master switch for charging the battery from the grid. The TOU source alone
+#: is not enough: with this off, the inverter ignores every grid source.
+GRID_CHARGE_REGISTER = 130
+
+#: Weekly bitmask that enables the TOU schedule. 0x00FF enables every day.
+TOU_ENABLE_REGISTER = 146
+TOU_ENABLE_ALL_DAYS = 0x00FF
+
 #: Start times of the six slots used when releasing control: they only ever
 #: charge from the generator, so the grid is never used behind your back.
 RESTORE_SLOT_MINUTES = (0, 240, 480, 720, 960, 1200)

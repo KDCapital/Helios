@@ -166,7 +166,10 @@ async def test_turning_control_on_writes_the_plan(hass: HomeAssistant) -> None:
 
     assert engine.control_enabled is True
     assert engine.applied_plan is not None
-    assert len(recorder.blocks) == 4
+    assert len(recorder.blocks) == 6
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[130] == [1]
+    assert by_register[146] == [255]
     assert hass.states.get(_switch_entity(hass, entry)).state == "on"
 
 
@@ -213,6 +216,7 @@ async def test_release_honours_the_configured_work_mode(
     await hass.services.async_call(
         "switch", "turn_on", {"entity_id": entity_id}, blocking=True
     )
+    recorder.clear()
     await hass.services.async_call(
         "switch", "turn_off", {"entity_id": entity_id}, blocking=True
     )
@@ -238,7 +242,7 @@ async def test_plan_is_reapplied_when_it_changes(hass: HomeAssistant) -> None:
         await engine.async_refresh()
 
     assert engine.applied_plan is not None
-    assert len(recorder.blocks) == 4
+    assert len(recorder.blocks) == 6
 
 
 async def test_the_rolling_schedule_writes_the_next_window(
@@ -293,6 +297,15 @@ async def test_the_rolling_schedule_writes_the_next_window(
     assert engine.schedule_plan.windows == (first,)
     recorder.clear()
 
+    # 14:15 CET: the first window is active, so the inverter must be selling
+    # first or Deye's zero-export mode suppresses the grid charge.
+    with freeze_time("2026-11-20 13:15:00+00:00"):
+        await engine.async_refresh()
+
+    assert recorder.blocks == []
+    assert recorder.work_modes == [0]
+    recorder.clear()
+
     # 15:00 CET: the first window has ended and the second is next.
     with freeze_time("2026-11-20 14:00:00+00:00"):
         await engine.async_refresh()
@@ -301,6 +314,7 @@ async def test_the_rolling_schedule_writes_the_next_window(
     assert engine.schedule_plan.windows == (second,)
     assert engine.applied_plan is not None
     assert engine.applied_plan.windows == (second,)
+    assert recorder.work_modes == [1]
     local_start = dt_util.as_local(second.start)
     expected_hhmm = local_start.hour * 100 + local_start.minute
     times = next(block for block in recorder.blocks if block["register"] == 148)
