@@ -376,8 +376,27 @@ self-consumption state in all six slots.
 
 A busy inverter can answer a write with Modbus *Acknowledge* ("accepted, but
 this will take a while"). The write is retried before it is reported as
-failed. Releasing control writes the source block first, so a failure halfway
-through cannot leave a grid-charging schedule behind.
+failed. Releasing control writes the grid-charge current to 0 and the restore
+work mode before the program blocks, so a failure halfway through cannot leave
+a grid charge running.
+
+#### Reading the control decisions
+
+Every plan, control and power-cap decision is kept in a small history:
+
+- the `battery_status` sensor exposes `last_decision` and the last ten
+  `decisions`;
+- Diagnostics includes the full recent history;
+- the log gets an INFO line when the control state, the grid-charge current or
+  the charge-power clamp changes, with the inputs behind it.
+
+For example, a configured 11 kW can show up as roughly 10 kW because the Deye
+grid-charge current register stops at **185 A**. At a 54 V pack that is
+`185 × 54 / 1000 = 9.99 kW`; the decision entry records the requested current,
+the written current, the battery voltage and the effective power. The register
+cannot be pushed past 185 A, so 11 kW is not reachable at that voltage. Lower
+the configured maximum charge power to the hardware limit, or accept the
+current-limited value.
 
 #### Deliberately not included: saldering arbitrage
 
@@ -810,7 +829,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 345 tests
+.venv/bin/python -m pytest        # 346 tests
 .venv/bin/ruff check custom_components tests
 ```
 

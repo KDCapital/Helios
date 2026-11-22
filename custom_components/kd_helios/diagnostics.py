@@ -73,6 +73,7 @@ async def async_get_config_entry_diagnostics(
                 if runtime.engine.tou_plan
                 else None
             ),
+            "decisions": list(runtime.engine.decision_log),
         },
         "devices": {
             subentry_id: {

@@ -338,6 +338,16 @@ async def test_control_follows_the_active_window(
     assert engine.schedule_plan is not None
     assert engine.schedule_plan.windows == (second,)
 
+    events = {entry["event"] for entry in engine.decision_log}
+    assert {"plan", "control", "write", "cap"} <= events
+    last_control = next(
+        entry
+        for entry in reversed(engine.decision_log)
+        if entry["event"] == "control"
+    )
+    assert last_control["charge"] is True
+    assert last_control["current_a"] > 0
+
 
 async def test_a_write_before_solarman_loads_is_retried_without_a_repair(
     hass: HomeAssistant,

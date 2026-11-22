@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any
@@ -208,6 +209,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self.control_plan: ControlPlan | None = None
         self._control_key: tuple | None = None
         self._applied_current: int | None = None
+        #: Recent control decisions, newest last. Exposed through diagnostics
+        #: and the status sensor so a power or mode surprise can be explained.
+        self.decision_log: deque[dict[str, Any]] = deque(maxlen=40)
         self.applied_plan: AppliedPlan | None = (
             AppliedPlan.from_dict(storage.battery_state())
             if self.battery_config is not None
@@ -399,6 +403,16 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             expected_saving=window.profit,
         )
 
+    def _record_decision(self, event: str, **details: Any) -> None:
+        """Remember one control decision for diagnostics."""
+        entry: dict[str, Any] = {
+            "time": dt_util.utcnow().isoformat(),
+            "event": event,
+        }
+        entry.update(details)
+        self.decision_log.append(entry)
+        _LOGGER.debug("KD Helios %s: %s", event, details)
+
     def _control_key_for(self, control: ControlPlan) -> tuple:
         """Return the values a write has to change before it is repeated."""
         return (
@@ -481,6 +495,20 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self._clear_issue(ISSUE_INVERTER_WRITE_FAILED)
         self._control_key = key
         self._applied_current = control.charge_current_a
+        self._record_decision(
+            "write",
+            charge=charging,
+            current_a=control.charge_current_a,
+            work_mode=int(control.work_mode),
+            verified=result.get("verified"),
+        )
+        _LOGGER.info(
+            "KD Helios control state: %s, SOC %s%%, current %s A, work mode %s",
+            "charging" if charging else "idle",
+            control.programs[0].soc_pct,
+            control.charge_current_a,
+            int(control.work_mode),
+        )
         if self.schedule_plan is not None and self.tou_plan is not None:
             self.applied_plan = AppliedPlan.from_plan(
                 self.schedule_plan, self.tou_plan, now
@@ -492,6 +520,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         """Record a refused or unconfirmed write and raise a Repair."""
         message = str(err)
         self.last_control_error = message
+        self._record_decision("write_failed", error=message)
         _LOGGER.error("Could not write the inverter control state: %s", err)
         self._raise_issue(
             ISSUE_INVERTER_WRITE_FAILED,
@@ -694,20 +723,33 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             temp_floor_pct=config.temp_charge_limit_floor_pct,
         )
 
+        voltage = self._battery_voltage()
+        current = charge_current_a(limit, voltage)
+        charging = any(
+            program.source is ChargeSource.GRID for program in control.programs
+        )
+        self._record_decision(
+            "cap",
+            charging=charging,
+            limit_kw=round(limit, 3),
+            load_kw=round(load_kw, 2),
+            ev_kw=round(ev_kw, 2),
+            grid_kw=round(grid_kw, 2),
+            voltage_v=round(voltage, 2),
+            current_a=current,
+            effective_kw=round(current * voltage / 1000.0, 2) if charging else 0.0,
+            reasons=[blocker.reason for blocker in blockers],
+        )
         if (
             not self.control_enabled
             or not config.allow_writes
             or config.inverter_device_id is None
         ):
             return blockers
-        charging = any(
-            program.source is ChargeSource.GRID for program in control.programs
-        )
         if not charging:
             self._applied_current = 0
             return blockers
 
-        current = charge_current_a(limit, self._battery_voltage())
         if self._applied_current is not None and current == self._applied_current:
             return blockers
         try:
@@ -724,7 +766,15 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             _LOGGER.error("Could not cap the charge current: %s", err)
             return blockers
         self._applied_current = current
-        _LOGGER.debug("Grid charge current limited to %s A", current)
+        _LOGGER.info(
+            "KD Helios grid charge current set to %s A (%.2f kW at %.1f V); "
+            "cap %.2f kW reasons %s",
+            current,
+            current * voltage / 1000.0,
+            voltage,
+            limit,
+            [blocker.reason for blocker in blockers] or "none",
+        )
         return blockers
 
     def _read_temperature(self, entity_id: str | None) -> float | None:
@@ -956,19 +1006,65 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             if not charge and hold is not None and hold[0] <= now < hold[1]:
                 hold_soc = hold[2]
 
+            voltage = self._battery_voltage()
+            requested_a = (
+                round(settings.max_charge_kw * 1000.0 / voltage)
+                if charge and voltage > 0
+                else 0
+            )
+            current_a = charge_current_a(
+                settings.max_charge_kw if charge else 0.0, voltage
+            )
+            effective_kw = round(current_a * voltage / 1000.0, 2) if charge else 0.0
             control = build_control_plan(
                 settings,
                 charge=charge,
                 hold_soc=hold_soc,
                 power_w=self._discharge_power_w(self.battery_config),
-                charge_current_a=charge_current_a(
-                    settings.max_charge_kw if charge else 0.0,
-                    self._battery_voltage(),
-                ),
+                charge_current_a=current_a,
             )
             self.control_plan = control
             self.tou_plan = TouPlan(programs=control.programs, truncated=False)
             self.schedule_plan = self._current_plan(battery_plan, active_window)
+            changed = self._control_key_for(control) != self._control_key
+
+            self._record_decision(
+                "plan",
+                reason=battery_plan.reason,
+                soc_pct=soc_pct,
+                windows=len(battery_plan.windows),
+                active_start=(
+                    active_window.start.isoformat()
+                    if active_window is not None
+                    else None
+                ),
+                active_end=(
+                    active_window.end.isoformat() if active_window is not None else None
+                ),
+                prices_stale=battery_plan.prices_stale,
+            )
+            self._record_decision(
+                "control",
+                charge=charge,
+                target_soc=settings.target_soc_pct,
+                hold_soc=hold_soc,
+                voltage_v=round(voltage, 2),
+                requested_current_a=requested_a,
+                current_a=current_a,
+                effective_kw=effective_kw,
+                power_w=self._discharge_power_w(self.battery_config),
+            )
+            if charge and requested_a > current_a and changed:
+                _LOGGER.info(
+                    "KD Helios charge current limited to %s A by the inverter "
+                    "register (requested %s A at %.1f V); %.2f kW instead of "
+                    "%.2f kW",
+                    current_a,
+                    requested_a,
+                    voltage,
+                    effective_kw,
+                    settings.max_charge_kw,
+                )
 
             blockers: list[Blocker] = list(battery_plan.blockers)
             if credit.blocker is not None:

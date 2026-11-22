@@ -805,6 +805,10 @@ class HeliosBatterySensor(CoordinatorEntity[HeliosEngine], SensorEntity):
             "weekly_full_charge": bool(weekly.active) if weekly else False,
             "last_control_error": coordinator.last_control_error,
             "write_verified": (coordinator.last_verification or {}).get("verified"),
+            "last_decision": (
+                coordinator.decision_log[-1] if coordinator.decision_log else None
+            ),
+            "decisions": list(coordinator.decision_log)[-10:],
         }
 
     def _applied_attributes(self) -> dict[str, object] | None:

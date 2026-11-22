@@ -16,6 +16,7 @@ from custom_components.kd_helios.battery import (
     ChargeSource,
     ChargeWindow,
     build_tou_programs,
+    charge_current_a,
     plan_charge,
     schedule_window_plan,
 )
@@ -492,3 +493,10 @@ def test_without_a_window_the_battery_still_discharges() -> None:
         for program in tou.programs
         if program.source is ChargeSource.OFF
     )
+
+
+def test_the_charge_current_is_clamped_to_the_inverter_maximum() -> None:
+    """11 kW at 54 V would need 204 A; the Deye register stops at 185 A."""
+    assert charge_current_a(11.0, 54.0) == 185
+    assert charge_current_a(5.0, 50.0) == 100
+    assert charge_current_a(0.0, 50.0) == 0
