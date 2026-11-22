@@ -22,8 +22,14 @@ global.HTMLElement = class {
 };
 
 let Panel;
+const registry = new Map();
 global.customElements = {
-  define: (_name, cls) => {
+  get: (name) => registry.get(name),
+  define: (name, cls) => {
+    if (registry.has(name)) {
+      throw new Error(`the name "${name}" has already been used`);
+    }
+    registry.set(name, cls);
     Panel = cls;
   },
 };
@@ -34,7 +40,11 @@ global.window = {
 };
 
 const [, , source, payloadPath] = process.argv;
-new Function(fs.readFileSync(source, "utf8"))();
+const bundle = fs.readFileSync(source, "utf8");
+new Function(bundle)();
+// A second load happens in the browser when the panel is re-registered after a
+// reload. It must skip define(), not throw "already been used".
+new Function(bundle)();
 
 const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
 const element = new Panel();

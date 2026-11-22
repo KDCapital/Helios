@@ -918,4 +918,6 @@ class KdHeliosPanel extends HTMLElement {
   }
 }
 
-customElements.define("kd-helios-panel", KdHeliosPanel);
+if (!customElements.get("kd-helios-panel")) {
+  customElements.define("kd-helios-panel", KdHeliosPanel);
+}
