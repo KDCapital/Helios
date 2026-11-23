@@ -221,6 +221,9 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         self._max_charge_current_a: int | None = None
         self._max_current_source: str = "unknown"
         self._last_control_check: datetime | None = None
+        #: A window that has started must finish; a mid-window replan must not
+        #: turn the charger off just because the next quarter looks better.
+        self._held_charge: ChargeWindow | None = None
         #: End of a manual test charge, or None. It forces grid charging for
         #: the rest of the current price quarter.
         self._test_charge_until: datetime | None = None
@@ -418,6 +421,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             self._applied_current = 0
             self._last_control_check = None
             self._test_charge_until = None
+            self._held_charge = None
             self.storage.async_set_battery({})
 
         self.control_enabled = enabled
@@ -1159,7 +1163,22 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
                 suppressed=(hold[0], hold[1]) if hold is not None else None,
             )
             self.battery_plan = battery_plan
-            active_window = battery_plan.active_window(now)
+            planned_window = battery_plan.active_window(now)
+            hold_active = hold is not None and hold[0] <= now < hold[1]
+            if self._held_charge is not None:
+                held = self._held_charge
+                if (
+                    now >= held.end
+                    or hold_active
+                    or (
+                        soc_pct is not None and soc_pct >= settings.target_soc_pct - 0.5
+                    )
+                    or battery_plan.reason in {"prices_stale", "no_prices", "no_soc"}
+                ):
+                    self._held_charge = None
+            if self._held_charge is None and planned_window is not None:
+                self._held_charge = planned_window
+            active_window = self._held_charge or planned_window
             if self._test_charge_until is not None and now >= self._test_charge_until:
                 self._test_charge_until = None
             test_charge = (
@@ -1167,7 +1186,7 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             )
             charge = test_charge or active_window is not None
             hold_soc = None
-            if not charge and hold is not None and hold[0] <= now < hold[1]:
+            if not charge and hold_active:
                 hold_soc = hold[2]
 
             voltage = self._battery_voltage()
@@ -1275,7 +1294,11 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             blockers.extend(
                 await self._async_update_power_cap(now, snapshots, grid_snapshot)
             )
-            blockers.extend(self._check_not_delivering(now, battery_plan, soc_pct))
+            blockers.extend(
+                self._check_not_delivering(
+                    now, self.schedule_plan or battery_plan, soc_pct
+                )
+            )
             self.blockers.update(blockers, now)
         else:
             self.blockers.clear()

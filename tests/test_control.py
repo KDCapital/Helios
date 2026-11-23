@@ -483,3 +483,54 @@ async def test_control_reasserts_its_state_after_five_minutes(
 
     assert recorder.blocks
     assert any(block["register"] == 172 for block in recorder.blocks)
+
+
+async def test_a_started_charge_window_is_held_until_its_end(
+    hass: HomeAssistant, monkeypatch
+) -> None:
+    """A mid-window replan must not switch the charger off early."""
+    entry, recorder = await _add_control(hass)
+    engine = entry.runtime_data.engine
+    entity_id = _switch_entity(hass, entry)
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": entity_id}, blocking=True
+    )
+    recorder.clear()
+
+    start = dt_util.parse_datetime("2026-11-20 13:15:00+00:00")
+    assert start is not None
+    engine._held_charge = ChargeWindow(
+        start=start,
+        end=start + timedelta(minutes=15),
+        energy_kwh=2.0,
+        cost=0.10,
+        value=0.70,
+        profit=0.60,
+        average_price=0.05,
+        discharge_price=0.35,
+    )
+    empty = ChargePlan(
+        generated_at=start,
+        soc_pct=50.0,
+        windows=(),
+        reason="no_spread",
+    )
+    monkeypatch.setattr(
+        "custom_components.kd_helios.coordinator.plan_charge",
+        lambda *args, **kwargs: empty,
+    )
+
+    with freeze_time("2026-11-20 13:20:00+00:00"):
+        await engine.async_refresh()
+
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[172] == [int(ChargeSource.GRID)] * 6
+    assert engine.schedule_plan is not None
+    assert engine.schedule_plan.windows
+
+    recorder.clear()
+    with freeze_time("2026-11-20 13:31:00+00:00"):
+        await engine.async_refresh()
+
+    by_register = {block["register"]: block["values"] for block in recorder.blocks}
+    assert by_register[172] == [int(ChargeSource.OFF)] * 6

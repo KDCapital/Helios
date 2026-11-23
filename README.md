@@ -492,6 +492,10 @@ Two things make the automatic mode safe:
   when reads are unavailable), so a manual change to the TOU SOC, source or
   current cannot silently stay in force. The proven Deye planner does the same
   on its five-minute cycle.
+- **A window that has started finishes.** Replanning mid-window cannot turn the
+  charger off because the next quarter looks better; the active window is held
+  until its end. It is still stopped early when the target SOC is reached, the
+  car's hold starts, or prices become unusable.
 - **Releasing control never leaves grid charging behind.** All six slots are
   written with charging **off** and the reserve SOC, and the work mode is
   written back to self-consumption. Which work mode that is, is a setting:
@@ -866,7 +870,7 @@ helper, so a restart continues where it left off instead of resetting to zero.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install pytest-homeassistant-custom-component ruff
-.venv/bin/python -m pytest        # 350 tests
+.venv/bin/python -m pytest        # 351 tests
 .venv/bin/ruff check custom_components tests
 ```
 
