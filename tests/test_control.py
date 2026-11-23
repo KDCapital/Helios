@@ -427,10 +427,10 @@ async def test_control_state_survives_a_reload(hass: HomeAssistant) -> None:
     assert by_register[142] == [int(engine.control_plan.work_mode)]
 
 
-async def test_the_test_charge_runs_until_the_quarter_ends(
+async def test_the_test_charge_runs_for_fifteen_minutes(
     hass: HomeAssistant,
 ) -> None:
-    """The test button forces grid charging for the current price quarter."""
+    """The test button forces grid charging for a full 15 minutes."""
     entry, recorder = await _add_control(hass)
     engine = entry.runtime_data.engine
     entity_id = _switch_entity(hass, entry)
@@ -440,10 +440,10 @@ async def test_the_test_charge_runs_until_the_quarter_ends(
     )
     recorder.clear()
 
-    with freeze_time(FROZEN):
-        result = await engine.async_charge_quarter()
+    with freeze_time("2026-11-20 12:07:00+00:00"):
+        result = await engine.async_test_charge()
 
-    assert result["until"] == "2026-11-20T12:15:00+00:00"
+    assert result["until"] == "2026-11-20T12:22:00+00:00"
     assert engine._test_charge_until is not None
     assert engine.control_plan is not None
     assert engine.control_plan.programs[0].source is ChargeSource.GRID
@@ -453,7 +453,7 @@ async def test_the_test_charge_runs_until_the_quarter_ends(
     assert by_register[128][0] > 0
 
     recorder.clear()
-    with freeze_time("2026-11-20 12:16:00+00:00"):
+    with freeze_time("2026-11-20 12:23:00+00:00"):
         await engine.async_refresh()
 
     assert engine._test_charge_until is None

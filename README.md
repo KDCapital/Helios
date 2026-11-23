@@ -596,7 +596,7 @@ The **Decision log** tab shows the recent plan, control and power-cap decisions
 newest first, with the inputs behind each one.
 
 The dashboard header has a **Charge 15 min** button for testing. It forces grid
-charging until the end of the current 15-minute price quarter, even when the
+charging for a full 15 minutes from the moment it is pressed, even when the
 planner has no window. It requires inverter control to be on and writes to be
 enabled, and it still respects the maximum grid charge current, the fuse cap,
 EV priority and the temperature derate.

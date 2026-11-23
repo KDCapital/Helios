@@ -363,13 +363,13 @@ async def websocket_test_charge(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Start a test charge for the rest of the current price quarter."""
+    """Start a 15-minute test charge."""
     entry = _loaded_entry(hass, msg.get("entry_id"))
     if entry is None:
         connection.send_error(msg["id"], "not_found", "No KD Helios entry is loaded")
         return
     try:
-        result = await entry.runtime_data.engine.async_charge_quarter()
+        result = await entry.runtime_data.engine.async_test_charge()
     except ValueError as err:
         connection.send_error(msg["id"], "invalid_state", str(err))
         return

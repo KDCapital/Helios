@@ -352,12 +352,13 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         """Store the control state."""
         self.storage.async_set_control({"enabled": self.control_enabled})
 
-    async def async_charge_quarter(self) -> dict[str, Any]:
-        """Force a grid charge until the current 15-minute quarter ends.
+    async def async_test_charge(self, minutes: int = 15) -> dict[str, Any]:
+        """Force a grid charge for a short test period.
 
-        This is the panel's test button: it bypasses the planner for the rest
-        of the current price quarter, but still respects the current ceiling,
-        the fuse cap, EV priority and the temperature derate.
+        This is the panel's test button. It runs for a full 15 minutes from the
+        moment it is pressed, not just until the next price-quarter boundary,
+        but still respects the current ceiling, the fuse cap, EV priority and
+        the temperature derate.
         """
         config = self.battery_config
         if config is None or config.inverter_device_id is None:
@@ -370,16 +371,11 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
             raise ValueError("Turn inverter control on before starting a test charge")
 
         now = dt_util.utcnow()
-        minutes = (now.minute // 15 + 1) * 15
-        end = now.replace(minute=0, second=0, microsecond=0) + timedelta(
-            minutes=minutes
-        )
+        duration = max(1, min(60, int(minutes)))
+        end = now + timedelta(minutes=duration)
         self._test_charge_until = end
         await self.async_refresh()
-        return {
-            "until": end.isoformat(),
-            "minutes": max(1, round((end - now).total_seconds() / 60)),
-        }
+        return {"until": end.isoformat(), "minutes": duration}
 
     async def async_set_control(self, enabled: bool) -> None:
         """Take or release control of the inverter.
