@@ -363,7 +363,7 @@ async def websocket_test_charge(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Start a 15-minute test charge."""
+    """Start a two-minute test charge."""
     entry = _loaded_entry(hass, msg.get("entry_id"))
     if entry is None:
         connection.send_error(msg["id"], "not_found", "No KD Helios entry is loaded")

@@ -73,7 +73,7 @@ async def test_panel_renders_a_real_payload(hass, tmp_path) -> None:
         "Grid connection",
         "Why the battery is doing this",
         "Decision log",
-        "Charge 15 min",
+        "Charge 2 min",
         "charging · SOC 100% · 185 A (9.99 kW at 54 V)",
     ):
         assert needle in html, needle

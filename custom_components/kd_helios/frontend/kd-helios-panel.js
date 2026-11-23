@@ -1016,7 +1016,7 @@ class KdHeliosPanel extends HTMLElement {
           ${battery && battery.test_charge_until ? `<span class="chip warn"><span class="dot"></span>Test charge until ${this._clock(battery.test_charge_until)}</span>` : ""}
           ${this._error ? `<span class="chip warn"><span class="dot"></span>${this._esc(this._error)}</span>` : ""}
           <div class="ranges">${this._rangeTabs()}</div>
-          <button id="test-charge" title="Charge the battery for 15 minutes from now" ${!battery || !battery.control_enabled || !battery.allow_writes || !battery.has_inverter || battery.test_charge_until || this._busy ? "disabled" : ""}>${battery && battery.test_charge_until ? "Test charge active" : "Charge 15 min"}</button>
+          <button id="test-charge" title="Charge the battery for 2 minutes from now" ${!battery || !battery.control_enabled || !battery.allow_writes || !battery.has_inverter || battery.test_charge_until || this._busy ? "disabled" : ""}>${battery && battery.test_charge_until ? "Test charge active" : "Charge 2 min"}</button>
           <button id="refresh">Refresh</button>
         </div>
 

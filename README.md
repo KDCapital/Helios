@@ -599,11 +599,11 @@ then cards for the EV charger, the device breakdown, the battery and the tariff.
 The **Decision log** tab shows the recent plan, control and power-cap decisions
 newest first, with the inputs behind each one.
 
-The dashboard header has a **Charge 15 min** button for testing. It forces grid
-charging for a full 15 minutes from the moment it is pressed, even when the
-planner has no window. It requires inverter control to be on and writes to be
-enabled, and it still respects the maximum grid charge current, the fuse cap,
-EV priority and the temperature derate.
+The dashboard header has a **Charge 2 min** button for testing. It forces grid
+charging for two minutes from the moment it is pressed, even when the planner
+has no window. It requires inverter control to be on and writes to be enabled,
+and it still respects the maximum grid charge current, the fuse cap, EV priority
+and the temperature derate.
 
 ### What is real, and what is deliberately absent
 

@@ -355,13 +355,13 @@ class HeliosEngine(DataUpdateCoordinator[EngineData]):
         """Store the control state."""
         self.storage.async_set_control({"enabled": self.control_enabled})
 
-    async def async_test_charge(self, minutes: int = 15) -> dict[str, Any]:
+    async def async_test_charge(self, minutes: int = 2) -> dict[str, Any]:
         """Force a grid charge for a short test period.
 
-        This is the panel's test button. It runs for a full 15 minutes from the
-        moment it is pressed, not just until the next price-quarter boundary,
-        but still respects the current ceiling, the fuse cap, EV priority and
-        the temperature derate.
+        This is the panel's test button. It runs for two minutes from the
+        moment it is pressed, long enough to verify the inverter follows the
+        state without a long manual charge. It still respects the current
+        ceiling, the fuse cap, EV priority and the temperature derate.
         """
         config = self.battery_config
         if config is None or config.inverter_device_id is None:
